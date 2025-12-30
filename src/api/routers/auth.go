@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"grepdocs/api/dal"
 	"grepdocs/api/models"
 	"io"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/oauth2"
 )
 
@@ -77,6 +81,29 @@ func googleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctx := context.Background()
+
+	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
+
+	q := dal.New(pool)
+
+	user, err := q.GetUserByGoogleId(ctx, userInfo.Id)
+	if err != nil {
+		// user does not exist: create it
+		newUser, err := q.CreateUser(ctx, dal.CreateUserParams{
+			Fullname:  userInfo.FullName,
+			Email:     userInfo.Email,
+			GoogleID:  userInfo.Id,
+			CreatedAt: time.Now(),
+		})
+		if err != nil {
+			http.Error(w, "Failed to create new user: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		fmt.Fprintf(w, "User created successfully! Hello, %s", newUser.Email)
+		return
+	}
+
 	// Successfully retrieved user info
-	fmt.Fprintf(w, "Login successful! Hello, %s", userInfo.Email)
+	fmt.Fprintf(w, "Login successful! Hello, %s", user.Email)
 }
