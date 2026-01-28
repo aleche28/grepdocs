@@ -6,9 +6,8 @@ WHERE google_id = $1 LIMIT 1;
 INSERT INTO users (
 	fullname,
 	email,
-	google_id,
-	created_at
+	google_id
 ) VALUES (
-	$1, $2, $3, $4
+	$1, $2, $3
 )
 RETURNING *;

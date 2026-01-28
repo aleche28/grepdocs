@@ -11,10 +11,12 @@ import (
 )
 
 type User struct {
-	ID        int64
-	Fullname  string
-	Username  pgtype.Text
-	Email     string
-	GoogleID  string
-	CreatedAt time.Time
+	ID          int64
+	Fullname    pgtype.Text
+	Username    pgtype.Text
+	Email       string
+	GoogleID    string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	LastLoginAt time.Time
 }

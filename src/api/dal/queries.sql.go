@@ -7,35 +7,29 @@ package dal
 
 import (
 	"context"
-	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (
 	fullname,
 	email,
-	google_id,
-	created_at
+	google_id
 ) VALUES (
-	$1, $2, $3, $4
+	$1, $2, $3
 )
-RETURNING id, fullname, username, email, google_id, created_at
+RETURNING id, fullname, username, email, google_id, created_at, updated_at, last_login_at
 `
 
 type CreateUserParams struct {
-	Fullname  string
-	Email     string
-	GoogleID  string
-	CreatedAt time.Time
+	Fullname pgtype.Text
+	Email    string
+	GoogleID string
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser,
-		arg.Fullname,
-		arg.Email,
-		arg.GoogleID,
-		arg.CreatedAt,
-	)
+	row := q.db.QueryRow(ctx, createUser, arg.Fullname, arg.Email, arg.GoogleID)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -44,12 +38,14 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Email,
 		&i.GoogleID,
 		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LastLoginAt,
 	)
 	return i, err
 }
 
 const getUserByGoogleId = `-- name: GetUserByGoogleId :one
-SELECT id, fullname, username, email, google_id, created_at FROM users
+SELECT id, fullname, username, email, google_id, created_at, updated_at, last_login_at FROM users
 WHERE google_id = $1 LIMIT 1
 `
 
@@ -63,6 +59,8 @@ func (q *Queries) GetUserByGoogleId(ctx context.Context, googleID string) (User,
 		&i.Email,
 		&i.GoogleID,
 		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LastLoginAt,
 	)
 	return i, err
 }
