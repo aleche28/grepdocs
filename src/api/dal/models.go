@@ -10,6 +10,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type ExternalGitAccount struct {
+	ID              int64
+	UserID          int64
+	Provider        string
+	ProviderUserID  string
+	AccessToken     string
+	RefreshToken    pgtype.Text
+	TokenExpiresAt  time.Time
+	LinkedAt        time.Time
+	LastRefreshedAt time.Time
+}
+
 type User struct {
 	ID          int64
 	Fullname    pgtype.Text

@@ -44,6 +44,41 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
+const getExternalGitAccountsByUserId = `-- name: GetExternalGitAccountsByUserId :many
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at FROM external_git_accounts
+WHERE user_id = $1
+`
+
+func (q *Queries) GetExternalGitAccountsByUserId(ctx context.Context, userID int64) ([]ExternalGitAccount, error) {
+	rows, err := q.db.Query(ctx, getExternalGitAccountsByUserId, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ExternalGitAccount
+	for rows.Next() {
+		var i ExternalGitAccount
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Provider,
+			&i.ProviderUserID,
+			&i.AccessToken,
+			&i.RefreshToken,
+			&i.TokenExpiresAt,
+			&i.LinkedAt,
+			&i.LastRefreshedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUserByGoogleId = `-- name: GetUserByGoogleId :one
 SELECT id, fullname, username, email, google_id, created_at, updated_at, last_login_at FROM users
 WHERE google_id = $1 LIMIT 1

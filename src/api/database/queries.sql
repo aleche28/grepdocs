@@ -11,3 +11,7 @@ INSERT INTO users (
 	$1, $2, $3
 )
 RETURNING *;
+
+-- name: GetExternalGitAccountsByUserId :many
+SELECT * FROM external_git_accounts
+WHERE user_id = $1;
