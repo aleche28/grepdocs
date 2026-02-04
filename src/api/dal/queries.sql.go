@@ -7,9 +7,55 @@ package dal
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
+	"time"
 )
+
+const createExternalGitAccount = `-- name: CreateExternalGitAccount :one
+INSERT INTO external_git_accounts (
+	user_id,
+	provider,
+	provider_user_id,
+	access_token,
+	refresh_token,
+	token_expires_at
+) VALUES (
+	$1, $2, $3, $4, $5, $6
+)
+RETURNING id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at
+`
+
+type CreateExternalGitAccountParams struct {
+	UserID         int64
+	Provider       string
+	ProviderUserID string
+	AccessToken    string
+	RefreshToken   string
+	TokenExpiresAt time.Time
+}
+
+func (q *Queries) CreateExternalGitAccount(ctx context.Context, arg CreateExternalGitAccountParams) (ExternalGitAccount, error) {
+	row := q.db.QueryRow(ctx, createExternalGitAccount,
+		arg.UserID,
+		arg.Provider,
+		arg.ProviderUserID,
+		arg.AccessToken,
+		arg.RefreshToken,
+		arg.TokenExpiresAt,
+	)
+	var i ExternalGitAccount
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.ProviderUserID,
+		&i.AccessToken,
+		&i.RefreshToken,
+		&i.TokenExpiresAt,
+		&i.LinkedAt,
+		&i.LastRefreshedAt,
+	)
+	return i, err
+}
 
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (
@@ -23,7 +69,7 @@ RETURNING id, fullname, username, email, google_id, created_at, updated_at, last
 `
 
 type CreateUserParams struct {
-	Fullname pgtype.Text
+	Fullname string
 	Email    string
 	GoogleID string
 }
@@ -40,6 +86,48 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastLoginAt,
+	)
+	return i, err
+}
+
+const deleteExternalGitAccount = `-- name: DeleteExternalGitAccount :exec
+DELETE FROM external_git_accounts
+WHERE id = $1
+`
+
+func (q *Queries) DeleteExternalGitAccount(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteExternalGitAccount, id)
+	return err
+}
+
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users
+WHERE id = $1
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteUser, id)
+	return err
+}
+
+const getExternalGitAccountById = `-- name: GetExternalGitAccountById :one
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at FROM external_git_accounts
+WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetExternalGitAccountById(ctx context.Context, id int64) (ExternalGitAccount, error) {
+	row := q.db.QueryRow(ctx, getExternalGitAccountById, id)
+	var i ExternalGitAccount
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.ProviderUserID,
+		&i.AccessToken,
+		&i.RefreshToken,
+		&i.TokenExpiresAt,
+		&i.LinkedAt,
+		&i.LastRefreshedAt,
 	)
 	return i, err
 }
@@ -79,6 +167,27 @@ func (q *Queries) GetExternalGitAccountsByUserId(ctx context.Context, userID int
 	return items, nil
 }
 
+const getUserByEmail = `-- name: GetUserByEmail :one
+SELECT id, fullname, username, email, google_id, created_at, updated_at, last_login_at FROM users
+WHERE email = $1 LIMIT 1
+`
+
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, email)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Fullname,
+		&i.Username,
+		&i.Email,
+		&i.GoogleID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LastLoginAt,
+	)
+	return i, err
+}
+
 const getUserByGoogleId = `-- name: GetUserByGoogleId :one
 SELECT id, fullname, username, email, google_id, created_at, updated_at, last_login_at FROM users
 WHERE google_id = $1 LIMIT 1
@@ -98,4 +207,63 @@ func (q *Queries) GetUserByGoogleId(ctx context.Context, googleID string) (User,
 		&i.LastLoginAt,
 	)
 	return i, err
+}
+
+const getUserById = `-- name: GetUserById :one
+SELECT id, fullname, username, email, google_id, created_at, updated_at, last_login_at FROM users
+WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetUserById(ctx context.Context, id int64) (User, error) {
+	row := q.db.QueryRow(ctx, getUserById, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Fullname,
+		&i.Username,
+		&i.Email,
+		&i.GoogleID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LastLoginAt,
+	)
+	return i, err
+}
+
+const updateExternalGitAccountTokens = `-- name: UpdateExternalGitAccountTokens :exec
+UPDATE external_git_accounts
+SET 
+	access_token = $2,
+	refresh_token = COALESCE($3, refresh_token),
+	token_expires_at = $4,
+	last_refreshed_at = NOW()
+WHERE id = $1
+`
+
+type UpdateExternalGitAccountTokensParams struct {
+	ID             int64
+	AccessToken    string
+	RefreshToken   string
+	TokenExpiresAt time.Time
+}
+
+func (q *Queries) UpdateExternalGitAccountTokens(ctx context.Context, arg UpdateExternalGitAccountTokensParams) error {
+	_, err := q.db.Exec(ctx, updateExternalGitAccountTokens,
+		arg.ID,
+		arg.AccessToken,
+		arg.RefreshToken,
+		arg.TokenExpiresAt,
+	)
+	return err
+}
+
+const updateUserLastLogin = `-- name: UpdateUserLastLogin :exec
+UPDATE users
+SET last_login_at = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) UpdateUserLastLogin(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, updateUserLastLogin, id)
+	return err
 }

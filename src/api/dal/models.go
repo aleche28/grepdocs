@@ -6,8 +6,6 @@ package dal
 
 import (
 	"time"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type ExternalGitAccount struct {
@@ -16,7 +14,7 @@ type ExternalGitAccount struct {
 	Provider        string
 	ProviderUserID  string
 	AccessToken     string
-	RefreshToken    pgtype.Text
+	RefreshToken    string
 	TokenExpiresAt  time.Time
 	LinkedAt        time.Time
 	LastRefreshedAt time.Time
@@ -24,8 +22,8 @@ type ExternalGitAccount struct {
 
 type User struct {
 	ID          int64
-	Fullname    pgtype.Text
-	Username    pgtype.Text
+	Fullname    string
+	Username    string
 	Email       string
 	GoogleID    string
 	CreatedAt   time.Time

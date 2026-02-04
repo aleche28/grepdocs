@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS external_git_accounts (
 	provider VARCHAR(50) NOT NULL,
 	provider_user_id VARCHAR(255) NOT NULL,
 	access_token TEXT NOT NULL,
-	refresh_token TEXT,
+	refresh_token TEXT NOT NULL DEFAULT '',
 	token_expires_at TIMESTAMPTZ,
 	linked_at TIMESTAMPTZ DEFAULT NOW(),
 	last_refreshed_at TIMESTAMPTZ,
