@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"grepdocs/api/routers"
 	"log"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -41,6 +43,17 @@ func main() {
 		Endpoint: google.Endpoint,
 	}
 
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Fatal("DATABASE_URL is not set")
+	}
+
+	pool, err := pgxpool.New(context.Background(), dbURL)
+	if err != nil {
+		log.Fatalf("Unable to create database pool: %v", err)
+	}
+	defer pool.Close()
+
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.RequestID)
@@ -51,8 +64,8 @@ func main() {
 			w.Write([]byte("pong"))
 		})
 
-		r.Mount("/auth", routers.AuthRoutes(&AppConfig.GoogleLoginConfig))
+		r.Mount("/auth", routers.AuthRoutes(&AppConfig.GoogleLoginConfig, pool))
 	})
 
-	http.ListenAndServe(":3000", r)
+	log.Fatal(http.ListenAndServe(":3000", r))
 }

@@ -73,6 +73,8 @@ func whoAmI(w http.ResponseWriter, r *http.Request) {
 
 // googleLogin initiates the Google OAuth flow
 func googleLogin(w http.ResponseWriter, r *http.Request) {
+	// TODO: here add the option to specify the redirect URL as a query parameter,
+	// and validate it against a whitelist of allowed URLs to prevent open redirect vulnerabilities
 	// Generate a random state token for CSRF protection
 	state, err := generateStateToken()
 	if err != nil {
@@ -93,6 +95,7 @@ func googleLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
+	// offline to get a refresh token for long-term access
 	url := googleOauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
@@ -175,6 +178,8 @@ func googleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// TODO: here if the user passed the redirect URL as a query parameter in the initial /google/login request,
+	// we should redirect to that URL instead of the default homepage/dashboard
 	// Redirect to dashboard/home page
 	redirectURL := os.Getenv("FRONTEND_URL")
 	if redirectURL == "" {
