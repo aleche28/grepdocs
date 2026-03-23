@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"grepdocs/api/routers"
+	"grepdocs/api/session"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -54,6 +56,23 @@ func main() {
 	}
 	defer pool.Close()
 
+	// TODO: maybe in the future migrate to "github.com/alexedwards/scs/v2" to manage session
+	rss := session.NewRedisSessionStore(
+		"redis:6379",
+		"",
+		1*time.Hour,
+		12*time.Hour,
+	)
+
+	// Credits: https://themsaid.com/building-secure-session-manager-in-go
+	sm := session.NewSessionManager(
+		rss,
+		30*time.Hour,
+		1*time.Hour,
+		12*time.Hour,
+		"session",
+	)
+
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.RequestID)
@@ -64,8 +83,15 @@ func main() {
 			w.Write([]byte("pong"))
 		})
 
-		r.Mount("/auth", routers.AuthRoutes(&AppConfig.GoogleLoginConfig, pool))
+		r.Mount("/auth", routers.AuthRoutes(&AppConfig.GoogleLoginConfig, pool, sm))
+		r.Mount("/users", routers.UserRoutes(pool, sm))
+		r.Mount("/ext-accounts", routers.ExternalAccountsRoutes(pool, sm))
 	})
 
-	log.Fatal(http.ListenAndServe(":3000", r))
+	server := &http.Server{
+		Addr:    ":3000",
+		Handler: sm.Handle(r),
+	}
+
+	log.Fatal(server.ListenAndServe())
 }
