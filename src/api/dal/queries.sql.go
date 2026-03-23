@@ -30,7 +30,7 @@ type CreateExternalGitAccountParams struct {
 	ProviderUserID string
 	AccessToken    string
 	RefreshToken   string
-	TokenExpiresAt time.Time
+	TokenExpiresAt *time.Time
 }
 
 func (q *Queries) CreateExternalGitAccount(ctx context.Context, arg CreateExternalGitAccountParams) (ExternalGitAccount, error) {
@@ -244,7 +244,7 @@ type UpdateExternalGitAccountTokensParams struct {
 	ID             int64
 	AccessToken    string
 	RefreshToken   string
-	TokenExpiresAt time.Time
+	TokenExpiresAt *time.Time
 }
 
 func (q *Queries) UpdateExternalGitAccountTokens(ctx context.Context, arg UpdateExternalGitAccountTokensParams) error {

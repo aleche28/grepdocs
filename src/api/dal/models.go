@@ -15,9 +15,9 @@ type ExternalGitAccount struct {
 	ProviderUserID  string
 	AccessToken     string
 	RefreshToken    string
-	TokenExpiresAt  time.Time
-	LinkedAt        time.Time
-	LastRefreshedAt time.Time
+	TokenExpiresAt  *time.Time
+	LinkedAt        *time.Time
+	LastRefreshedAt *time.Time
 }
 
 type User struct {
@@ -26,7 +26,7 @@ type User struct {
 	Username    string
 	Email       string
 	GoogleID    string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	LastLoginAt time.Time
+	CreatedAt   *time.Time
+	UpdatedAt   *time.Time
+	LastLoginAt *time.Time
 }

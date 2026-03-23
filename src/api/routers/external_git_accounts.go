@@ -207,7 +207,7 @@ func (h *ExternalAccountsHandler) githubCallback(pool *pgxpool.Pool) http.Handle
 			ProviderUserID: strconv.FormatInt(githubUser.ID, 10),
 			AccessToken:    token.AccessToken,
 			RefreshToken:   refreshToken,
-			TokenExpiresAt: expiresAt,
+			TokenExpiresAt: &expiresAt,
 		})
 
 		if err != nil {
