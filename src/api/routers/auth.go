@@ -8,62 +8,61 @@ import (
 	"fmt"
 	"grepdocs/api/dal"
 	"grepdocs/api/models"
+	"grepdocs/api/session"
 	"io"
 	"net/http"
 	"os"
-	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/oauth2"
 )
 
-var (
-	googleOauthConfig *oauth2.Config
-	dbPool            *pgxpool.Pool
-)
+type AuthHandler struct {
+	oauthConfig *oauth2.Config
+	dbPool      *pgxpool.Pool
+	sessionMgr  *session.SessionManager
+}
 
 // AuthRoutes initializes the authentication routes
-func AuthRoutes(config *oauth2.Config, pool *pgxpool.Pool) chi.Router {
-	googleOauthConfig = config
-	dbPool = pool
+func AuthRoutes(config *oauth2.Config, pool *pgxpool.Pool, sm *session.SessionManager) chi.Router {
+	h := &AuthHandler{
+		oauthConfig: config,
+		dbPool:      pool,
+		sessionMgr:  sm,
+	}
 
 	r := chi.NewRouter()
 
-	r.Get("/whoami", whoAmI)
-	r.Get("/google/login", googleLogin)
-	r.Get("/google/callback", googleCallback)
-	r.Post("/logout", logout)
+	r.Get("/whoami", h.whoAmI)
+	r.Get("/google/login", h.googleLogin)
+	r.Get("/google/callback", h.googleCallback)
+	r.Post("/logout", h.logout)
 
 	return r
 }
 
 // whoAmI returns the current authenticated user information
-func whoAmI(w http.ResponseWriter, r *http.Request) {
-	// Get user ID from session/context
-	userIDStr := getUserIDFromSession(r)
-	if userIDStr == "" {
+func (h *AuthHandler) whoAmI(w http.ResponseWriter, r *http.Request) {
+	session := session.GetSession(h.sessionMgr, r)
+	if !session.IsAuthenticated() {
 		http.Error(w, "Not authenticated", http.StatusUnauthorized)
 		return
 	}
 
-	userID, err := strconv.ParseInt(userIDStr, 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
-		return
-	}
-
+	uid := session.GetUserId()
 	ctx := context.Background()
-	q := dal.New(dbPool)
+	q := dal.New(h.dbPool)
 
-	user, err := q.GetUserById(ctx, userID)
+	user, err := q.GetUserById(ctx, uid)
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"id":       user.ID,
 		"email":    user.Email,
 		"fullname": user.Fullname,
@@ -72,7 +71,7 @@ func whoAmI(w http.ResponseWriter, r *http.Request) {
 }
 
 // googleLogin initiates the Google OAuth flow
-func googleLogin(w http.ResponseWriter, r *http.Request) {
+func (h *AuthHandler) googleLogin(w http.ResponseWriter, r *http.Request) {
 	// TODO: here add the option to specify the redirect URL as a query parameter,
 	// and validate it against a whitelist of allowed URLs to prevent open redirect vulnerabilities
 	// Generate a random state token for CSRF protection
@@ -82,48 +81,32 @@ func googleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store state in session/cookie for verification in callback
-	// For now, using a cookie
-	// TODO: use a proper session store in production
-	http.SetCookie(w, &http.Cookie{
-		Name:     "oauth_state",
-		Value:    state,
-		Path:     "/",
-		MaxAge:   600, // 10 minutes
-		HttpOnly: true,
-		Secure:   os.Getenv("ENV") == "production", // Only secure in production
-		SameSite: http.SameSiteLaxMode,
-	})
+	// Store state in session for verification in callback
+	session := session.GetSession(h.sessionMgr, r)
+	session.SetOAuthStateToken(state)
+	session.SetUIRedirectPage("/")
 
 	// offline to get a refresh token for long-term access
-	url := googleOauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	url := h.oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
 // googleCallback handles the OAuth callback from Google
-func googleCallback(w http.ResponseWriter, r *http.Request) {
-	// Get state from cookie
-	stateCookie, err := r.Cookie("oauth_state")
-	if err != nil {
-		http.Error(w, "State cookie not found", http.StatusBadRequest)
+func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
+	// Get state from session
+	session := session.GetSession(h.sessionMgr, r)
+	oauthState := session.GetOAuthStateToken()
+	if oauthState == "" {
+		http.Error(w, "Oauth state token not found in session", http.StatusBadRequest)
 		return
 	}
 
 	// Extract and compare state
 	state := r.URL.Query().Get("state")
-	if state == "" || state != stateCookie.Value {
+	if state == "" || state != oauthState {
 		http.Error(w, "Invalid state parameter", http.StatusBadRequest)
 		return
 	}
-
-	// Clear the state cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     "oauth_state",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	})
 
 	// Extract the authorization code from the URL
 	code := r.URL.Query().Get("code")
@@ -134,7 +117,7 @@ func googleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Exchange the code for an access token
 	ctx := context.Background()
-	token, err := googleOauthConfig.Exchange(ctx, code)
+	token, err := h.oauthConfig.Exchange(ctx, code)
 	if err != nil {
 		http.Error(w, "Failed to exchange token: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -148,9 +131,11 @@ func googleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get or create user in database
-	q := dal.New(dbPool)
+	q := dal.New(h.dbPool)
 	user, err := q.GetUserByGoogleId(ctx, userInfo.Id)
 
+	// TODO: fix this because if the error is not "not found", it still tries to create the user,
+	// even if it might already exist
 	if err != nil {
 		// User does not exist: create it
 		user, err = q.CreateUser(ctx, dal.CreateUserParams{
@@ -168,30 +153,33 @@ func googleCallback(w http.ResponseWriter, r *http.Request) {
 	err = q.UpdateUserLastLogin(ctx, user.ID)
 	if err != nil {
 		// Log error but don't fail the login
-		fmt.Printf("Failed to update last login for user %s: %v\n", user.ID, err)
+		fmt.Printf("Failed to update last login for user %d: %v\n", user.ID, err)
 	}
 
-	// Create session for the user
-	err = createUserSession(w, r, user.ID)
-	if err != nil {
-		http.Error(w, "Failed to create session: "+err.Error(), http.StatusInternalServerError)
+	// authenticate user and save id in session
+	session.SetUserId(user.ID)
+
+	// Regenerate session ID to prevent fixation
+	if err := h.sessionMgr.Migrate(ctx, session); err != nil {
+		http.Error(w, "Session error", http.StatusInternalServerError)
 		return
 	}
 
-	// TODO: here if the user passed the redirect URL as a query parameter in the initial /google/login request,
-	// we should redirect to that URL instead of the default homepage/dashboard
-	// Redirect to dashboard/home page
+	redirectPath := session.GetUIRedirectPage()
+	if !isValidRedirectPath(redirectPath) {
+		http.Error(w, "Invalid UI redirect path: "+redirectPath, http.StatusBadRequest)
+	}
+
 	redirectURL := os.Getenv("FRONTEND_URL")
 	if redirectURL == "" {
 		redirectURL = "http://localhost:3000" // Default for development
 	}
-	http.Redirect(w, r, redirectURL+"/homepage", http.StatusTemporaryRedirect)
+	http.Redirect(w, r, redirectURL+redirectPath, http.StatusTemporaryRedirect)
 }
 
 // logout handles user logout
-func logout(w http.ResponseWriter, r *http.Request) {
-	// Clear the session
-	destroyUserSession(w, r)
+func (h *AuthHandler) logout(w http.ResponseWriter, r *http.Request) {
+	session.GetSession(h.sessionMgr, r).SetUserId(-1)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -213,7 +201,10 @@ func generateStateToken() (string, error) {
 
 // fetchGoogleUserInfo fetches user information from Google using the access token
 func fetchGoogleUserInfo(accessToken string) (*models.GoogleUserInfo, error) {
-	resp, err := http.Get("https://www.googleapis.com/oauth2/v2/userinfo?access_token=" + accessToken)
+	req, err := http.NewRequest("GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch user data: %w", err)
 	}
@@ -237,40 +228,7 @@ func fetchGoogleUserInfo(accessToken string) (*models.GoogleUserInfo, error) {
 	return &userInfo, nil
 }
 
-// Session management functions (placeholder implementations)
-// You should replace these with a proper session management library like gorilla/sessions
-
-func createUserSession(w http.ResponseWriter, r *http.Request, userID int64) error {
-	// TODO: Implement proper session management
-	// For now, using a simple cookie (NOT SECURE FOR PRODUCTION)
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session_id",
-		Value:    strconv.FormatInt(userID, 10), // TODO: In production, use a random session ID that maps to user ID
-		Path:     "/",
-		MaxAge:   86400 * 7, // 7 days
-		HttpOnly: true,
-		Secure:   os.Getenv("ENV") == "production",
-		SameSite: http.SameSiteLaxMode,
-	})
-	return nil
-}
-
-func destroyUserSession(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement proper session destruction
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session_id",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	})
-}
-
-func getUserIDFromSession(r *http.Request) string {
-	// TODO: Implement proper session retrieval
-	cookie, err := r.Cookie("session_id")
-	if err != nil {
-		return ""
-	}
-	return cookie.Value
+func isValidRedirectPath(path string) bool {
+	// Must start with / and not contain //
+	return strings.HasPrefix(path, "/") && !strings.Contains(path, "//")
 }
