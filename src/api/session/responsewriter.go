@@ -36,16 +36,17 @@ func writeCookieIfNecessary(w *sessionResponseWriter) {
 
 	session, ok := w.request.Context().Value(w.sessionMgr.sessionKey).(*models.Session)
 	if !ok {
-		panic("session not found in request context")
+		return
 	}
 
+	secure := w.sessionMgr.secureCookie
 	cookie := &http.Cookie{
 		Name:     w.sessionMgr.cookieName,
 		Value:    session.Id,
 		Domain:   "localhost",
 		HttpOnly: true,
 		Path:     "/",
-		Secure:   true,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(w.sessionMgr.idleExpiration),
 		MaxAge:   int(w.sessionMgr.idleExpiration / time.Second),

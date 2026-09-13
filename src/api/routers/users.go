@@ -37,13 +37,13 @@ func UserRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.Router {
 // getAuthenticatedUser returns the currently authenticated user
 func (h *UserHandler) getAuthenticatedUser(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session := session.GetSession(h.sessionMgr, r)
-		if !session.IsAuthenticated() {
+		sess, ok := session.GetSession(h.sessionMgr, r)
+		if !ok || !sess.IsAuthenticated() {
 			http.Error(w, "Not authenticated", http.StatusUnauthorized)
 			return
 		}
 
-		uid := session.GetUserId()
+		uid := sess.GetUserId()
 		ctx := context.Background()
 		q := dal.New(h.dbPool)
 
@@ -60,8 +60,8 @@ func (h *UserHandler) getAuthenticatedUser(pool *pgxpool.Pool) http.HandlerFunc 
 // getUserByID returns a user by their ID
 func (h *UserHandler) getUserByID(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session := session.GetSession(h.sessionMgr, r)
-		if !session.IsAuthenticated() {
+		sess, ok := session.GetSession(h.sessionMgr, r)
+		if !ok || !sess.IsAuthenticated() {
 			http.Error(w, "Not authenticated", http.StatusUnauthorized)
 			return
 		}

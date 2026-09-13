@@ -69,13 +69,13 @@ func ExternalAccountsRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.
 // listExternalAccounts returns all external git accounts for the authenticated user
 func (h *ExternalAccountsHandler) listExternalAccounts(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session := session.GetSession(h.sessionMgr, r)
-		if !session.IsAuthenticated() {
+		sess, ok := session.GetSession(h.sessionMgr, r)
+		if !ok || !sess.IsAuthenticated() {
 			http.Error(w, "Not authenticated", http.StatusUnauthorized)
 			return
 		}
 
-		userID := session.GetUserId()
+		userID := sess.GetUserId()
 		ctx := context.Background()
 		q := dal.New(pool)
 
@@ -104,8 +104,8 @@ func (h *ExternalAccountsHandler) listExternalAccounts(pool *pgxpool.Pool) http.
 
 // githubLogin initiates the GitHub OAuth flow
 func (h *ExternalAccountsHandler) githubLogin(w http.ResponseWriter, r *http.Request) {
-	session := session.GetSession(h.sessionMgr, r)
-	if !session.IsAuthenticated() {
+	sess, ok := session.GetSession(h.sessionMgr, r)
+	if !ok || !sess.IsAuthenticated() {
 		http.Error(w, "Not authenticated", http.StatusUnauthorized)
 		return
 	}
@@ -135,13 +135,13 @@ func (h *ExternalAccountsHandler) githubLogin(w http.ResponseWriter, r *http.Req
 // githubCallback handles the OAuth callback from GitHub
 func (h *ExternalAccountsHandler) githubCallback(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session := session.GetSession(h.sessionMgr, r)
-		if !session.IsAuthenticated() {
+		sess, ok := session.GetSession(h.sessionMgr, r)
+		if !ok || !sess.IsAuthenticated() {
 			http.Error(w, "Not authenticated", http.StatusUnauthorized)
 			return
 		}
 
-		userID := session.GetUserId()
+		userID := sess.GetUserId()
 
 		// Verify state
 		stateCookie, err := r.Cookie("github_oauth_state")
@@ -230,13 +230,13 @@ func (h *ExternalAccountsHandler) githubCallback(pool *pgxpool.Pool) http.Handle
 // deleteExternalAccount removes an external git account
 func (h *ExternalAccountsHandler) deleteExternalAccount(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session := session.GetSession(h.sessionMgr, r)
-		if !session.IsAuthenticated() {
+		sess, ok := session.GetSession(h.sessionMgr, r)
+		if !ok || !sess.IsAuthenticated() {
 			http.Error(w, "Not authenticated", http.StatusUnauthorized)
 			return
 		}
 
-		userID := session.GetUserId()
+		userID := sess.GetUserId()
 
 		accountIDStr := chi.URLParam(r, "id")
 		accountID, err := strconv.ParseInt(accountIDStr, 10, 64)

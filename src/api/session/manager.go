@@ -23,9 +23,11 @@ type sessionContextKey struct{}
 
 type SessionManager struct {
 	store              SessionStore
+	gcInterval         time.Duration
 	idleExpiration     time.Duration
 	absoluteExpiration time.Duration
 	cookieName         string
+	secureCookie       bool
 	sessionKey         sessionContextKey
 }
 
@@ -44,37 +46,38 @@ func NewSessionManager(
 	idleExpiration time.Duration,
 	absoluteExpiration time.Duration,
 	cookieName string,
+	secureCookie bool,
 ) *SessionManager {
 
 	m := &SessionManager{
 		store:              store,
+		gcInterval:         gcInterval,
 		idleExpiration:     idleExpiration,
 		absoluteExpiration: absoluteExpiration,
 		cookieName:         cookieName,
+		secureCookie:       secureCookie,
 		sessionKey:         sessionContextKey{},
 	}
 
 	// start the periodic goroutine for garbage collection, if needed
 	if m.store.NeedsGC() {
-		go m.gc(context.Background(), gcInterval)
+		go m.gc(context.Background(), m.gcInterval)
 	}
 
 	return m
 }
 
-func (m *SessionManager) validate(ctx context.Context, session *models.Session) bool {
-	if time.Since(session.CreatedAt) > m.absoluteExpiration ||
-		time.Since(session.LastActivityAt) > m.idleExpiration {
+func (m *SessionManager) isValid(ctx context.Context, session *models.Session) bool {
+	return time.Since(session.CreatedAt) <= m.absoluteExpiration &&
+		time.Since(session.LastActivityAt) <= m.idleExpiration
+}
 
-		err := m.store.Destroy(ctx, session.Id)
-		if err != nil {
-			panic(err)
+func (m *SessionManager) destroyExpiredIfNeeded(ctx context.Context, session *models.Session) {
+	if !m.isValid(ctx, session) {
+		if err := m.store.Destroy(ctx, session.Id); err != nil {
+			fmt.Printf("Failed to destroy expired session: %v\n", err)
 		}
-
-		return false
 	}
-
-	return true
 }
 
 func (m *SessionManager) start(ctx context.Context, r *http.Request) (*models.Session, *http.Request) {
@@ -84,11 +87,12 @@ func (m *SessionManager) start(ctx context.Context, r *http.Request) (*models.Se
 	if err == nil {
 		session, err = m.store.Read(ctx, cookie.Value)
 		if err != nil {
-			fmt.Errorf("Failed to read session from store: %v", err)
+			fmt.Printf("Failed to read session from store: %v\n", err)
 		}
 	}
 
-	if session == nil || !m.validate(ctx, session) {
+	if session == nil || !m.isValid(ctx, session) {
+		m.destroyExpiredIfNeeded(ctx, session)
 		// no existing session: create it
 		session = newSession()
 	}
@@ -103,24 +107,22 @@ func (m *SessionManager) start(ctx context.Context, r *http.Request) (*models.Se
 func (m *SessionManager) save(ctx context.Context, session *models.Session) error {
 	session.LastActivityAt = time.Now()
 
-	err := m.store.Write(ctx, session)
-	if err != nil {
+	if err := m.store.Write(ctx, session); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// migrate regenerates session id, preventing session fixation
-func (m *SessionManager) Migrate(ctx context.Context, session *models.Session) error {
-	// TODO: add mutex to session if necessary
-
-	err := m.store.Destroy(ctx, session.Id)
-	if err != nil {
-		return err
+// Regenerate regenerates session id, preventing session fixation
+func (m *SessionManager) Regenerate(ctx context.Context, session *models.Session) error {
+	if err := m.store.Destroy(ctx, session.Id); err != nil {
+		return fmt.Errorf("failed to destroy old session: %w", err)
 	}
 
 	session.Id = generateSessionId()
+	session.CreatedAt = time.Now()
+	session.LastActivityAt = time.Now()
 
 	return nil
 }
@@ -157,20 +159,45 @@ func (m *SessionManager) Handle(next http.Handler) http.Handler {
 		// call next handler passing NEW response writer and request
 		next.ServeHTTP(sw, rws)
 
-		m.save(rws.Context(), session)
+		if err := m.save(rws.Context(), session); err != nil {
+			fmt.Printf("Failed to save session: %v\n", err)
+		}
 
 		// write the session cookie to the response if not already written
 		writeCookieIfNecessary(sw)
 	})
 }
 
-func GetSession(sm *SessionManager, r *http.Request) *models.Session {
-	session, ok := r.Context().Value(sm.sessionKey).(*models.Session)
+func (m *SessionManager) GetSession(r *http.Request) (*models.Session, bool) {
+	session, ok := r.Context().Value(m.sessionKey).(*models.Session)
 	if !ok {
-		panic("Session not found in request context")
+		return nil, false
 	}
 
-	return session
+	return session, true
+}
+
+// GetSession retrieves the session from the request context.
+func GetSession(sm *SessionManager, r *http.Request) (*models.Session, bool) {
+	return sm.GetSession(r)
+}
+
+// Destroy invalidates the session in the store
+func (m *SessionManager) Destroy(ctx context.Context, session *models.Session) {
+	m.store.Destroy(ctx, session.Id)
+}
+
+// ClearCookie returns a cookie that immediately expires, removing the session cookie from the browser
+func (m *SessionManager) ClearCookie() *http.Cookie {
+	return &http.Cookie{
+		Name:     m.cookieName,
+		Value:    "",
+		Domain:   "localhost",
+		HttpOnly: true,
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+	}
 }
 
 func generateSessionId() string {

@@ -65,12 +65,14 @@ func main() {
 	)
 
 	// Credits: https://themsaid.com/building-secure-session-manager-in-go
+	secureCookie := os.Getenv("ENV") == "production"
 	sm := session.NewSessionManager(
 		rss,
 		30*time.Hour,
 		1*time.Hour,
 		12*time.Hour,
 		"session",
+		secureCookie,
 	)
 
 	r := chi.NewRouter()

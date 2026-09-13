@@ -45,13 +45,13 @@ func AuthRoutes(config *oauth2.Config, pool *pgxpool.Pool, sm *session.SessionMa
 
 // whoAmI returns the current authenticated user information
 func (h *AuthHandler) whoAmI(w http.ResponseWriter, r *http.Request) {
-	session := session.GetSession(h.sessionMgr, r)
-	if !session.IsAuthenticated() {
+	sess, ok := session.GetSession(h.sessionMgr, r)
+	if !ok || !sess.IsAuthenticated() {
 		http.Error(w, "Not authenticated", http.StatusUnauthorized)
 		return
 	}
 
-	uid := session.GetUserId()
+	uid := sess.GetUserId()
 	ctx := context.Background()
 	q := dal.New(h.dbPool)
 
@@ -82,9 +82,9 @@ func (h *AuthHandler) googleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Store state in session for verification in callback
-	session := session.GetSession(h.sessionMgr, r)
-	session.SetOAuthStateToken(state)
-	session.SetUIRedirectPage("/")
+	sess, _ := session.GetSession(h.sessionMgr, r)
+	sess.SetOAuthStateToken(state)
+	sess.SetUIRedirectPage("/")
 
 	// offline to get a refresh token for long-term access
 	url := h.oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
@@ -94,8 +94,8 @@ func (h *AuthHandler) googleLogin(w http.ResponseWriter, r *http.Request) {
 // googleCallback handles the OAuth callback from Google
 func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	// Get state from session
-	session := session.GetSession(h.sessionMgr, r)
-	oauthState := session.GetOAuthStateToken()
+	sess, _ := session.GetSession(h.sessionMgr, r)
+	oauthState := sess.GetOAuthStateToken()
 	if oauthState == "" {
 		http.Error(w, "Oauth state token not found in session", http.StatusBadRequest)
 		return
@@ -157,15 +157,15 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// authenticate user and save id in session
-	session.SetUserId(user.ID)
+	sess.SetUserId(user.ID)
 
 	// Regenerate session ID to prevent fixation
-	if err := h.sessionMgr.Migrate(ctx, session); err != nil {
+	if err := h.sessionMgr.Regenerate(ctx, sess); err != nil {
 		http.Error(w, "Session error", http.StatusInternalServerError)
 		return
 	}
 
-	redirectPath := session.GetUIRedirectPage()
+	redirectPath := sess.GetUIRedirectPage()
 	if !isValidRedirectPath(redirectPath) {
 		http.Error(w, "Invalid UI redirect path: "+redirectPath, http.StatusBadRequest)
 	}
@@ -179,9 +179,19 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 
 // logout handles user logout
 func (h *AuthHandler) logout(w http.ResponseWriter, r *http.Request) {
-	session.GetSession(h.sessionMgr, r).SetUserId(-1)
+	session, ok := session.GetSession(h.sessionMgr, r)
+	if !ok {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": "Logged out successfully",
+		})
+		return
+	}
 
+	ctx := r.Context()
+	h.sessionMgr.Destroy(ctx, session)
 	w.Header().Set("Content-Type", "application/json")
+	http.SetCookie(w, h.sessionMgr.ClearCookie())
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Logged out successfully",
 	})
