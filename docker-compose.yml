@@ -5,19 +5,19 @@ services:
     container_name: postgres
     restart: always
     ports:
-      - 5432:5432
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
-      POSTGRES_DB: grepdocs
-      POSTGRES_USER: alessio
-      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ${POSTGRES_DB:-grepdocs}
+      POSTGRES_USER: ${POSTGRES_USER:-grepdocs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
 
   pgadmin:
     image: dpage/pgadmin4
     container_name: pgadmin
     restart: always
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@example.com
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
     ports:
       - "8080:80"
 
@@ -26,7 +26,7 @@ services:
     container_name: redis
     restart: always
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - cache:/data
 
