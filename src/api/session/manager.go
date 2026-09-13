@@ -48,7 +48,6 @@ func NewSessionManager(
 	cookieName string,
 	secureCookie bool,
 ) *SessionManager {
-
 	m := &SessionManager{
 		store:              store,
 		gcInterval:         gcInterval,
@@ -68,12 +67,15 @@ func NewSessionManager(
 }
 
 func (m *SessionManager) isValid(ctx context.Context, session *models.Session) bool {
+	if session == nil {
+		return false
+	}
 	return time.Since(session.CreatedAt) <= m.absoluteExpiration &&
 		time.Since(session.LastActivityAt) <= m.idleExpiration
 }
 
 func (m *SessionManager) destroyExpiredIfNeeded(ctx context.Context, session *models.Session) {
-	if !m.isValid(ctx, session) {
+	if session != nil && !m.isValid(ctx, session) {
 		if err := m.store.Destroy(ctx, session.Id); err != nil {
 			fmt.Printf("Failed to destroy expired session: %v\n", err)
 		}
