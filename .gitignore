@@ -8,8 +8,9 @@
 *.so
 *.dylib
 
-# Test binary, built with `go test -c`
+# Go test / build binaries
 *.test
+/src/api/api
 
 # Code coverage profiles and other test artifacts
 *.out
