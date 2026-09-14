@@ -29,7 +29,7 @@ WHERE id = $1;
 DELETE FROM users
 WHERE id = $1;
 
--- name: GetExternalGitAccountsByUserId :many
+-- name: GetExternalGitAccountsByUserID :many
 SELECT * FROM external_git_accounts
 WHERE user_id = $1;
 

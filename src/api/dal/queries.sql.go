@@ -132,13 +132,13 @@ func (q *Queries) GetExternalGitAccountById(ctx context.Context, id int64) (Exte
 	return i, err
 }
 
-const getExternalGitAccountsByUserId = `-- name: GetExternalGitAccountsByUserId :many
+const getExternalGitAccountsByUserID = `-- name: GetExternalGitAccountsByUserID :many
 SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at FROM external_git_accounts
 WHERE user_id = $1
 `
 
-func (q *Queries) GetExternalGitAccountsByUserId(ctx context.Context, userID int64) ([]ExternalGitAccount, error) {
-	rows, err := q.db.Query(ctx, getExternalGitAccountsByUserId, userID)
+func (q *Queries) GetExternalGitAccountsByUserID(ctx context.Context, userID int64) ([]ExternalGitAccount, error) {
+	rows, err := q.db.Query(ctx, getExternalGitAccountsByUserID, userID)
 	if err != nil {
 		return nil, err
 	}

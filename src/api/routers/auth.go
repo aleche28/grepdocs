@@ -129,7 +129,7 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// authenticate user and save id in session
-	sess.SetUserId(user.ID)
+	sess.SetUserID(user.ID)
 
 	// Regenerate session ID to prevent fixation
 	if err := h.sessionMgr.Regenerate(ctx, sess); err != nil {

@@ -35,7 +35,7 @@ func UserRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.Router {
 
 // getAuthenticatedUser returns the currently authenticated user
 func (h *UserHandler) getAuthenticatedUser(w http.ResponseWriter, r *http.Request) {
-	uid, _ := middleware.CurrentUserId(r)
+	uid, _ := middleware.CurrentUserID(r)
 	ctx := context.Background()
 	q := dal.New(h.dbPool)
 

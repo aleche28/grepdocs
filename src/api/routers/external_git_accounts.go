@@ -65,11 +65,11 @@ func ExternalAccountsRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.
 
 // listExternalAccounts returns all external git accounts for the authenticated user
 func (h *ExternalAccountsHandler) listExternalAccounts(w http.ResponseWriter, r *http.Request) {
-	userID, _ := middleware.CurrentUserId(r)
+	userID, _ := middleware.CurrentUserID(r)
 	ctx := context.Background()
 	q := dal.New(h.dbPool)
 
-	accounts, err := q.GetExternalGitAccountsByUserId(ctx, userID)
+	accounts, err := q.GetExternalGitAccountsByUserID(ctx, userID)
 	if err != nil {
 		http.Error(w, "Failed to fetch accounts: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -129,7 +129,7 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 		return
 	}
 
-	userID, _ := middleware.CurrentUserId(r)
+	userID, _ := middleware.CurrentUserID(r)
 
 	// Verify state
 	stateCookie, err := r.Cookie(provider + "_oauth_state")
@@ -213,7 +213,7 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 
 // deleteExternalAccount removes an external git account
 func (h *ExternalAccountsHandler) deleteExternalAccount(w http.ResponseWriter, r *http.Request) {
-	userID, _ := middleware.CurrentUserId(r)
+	userID, _ := middleware.CurrentUserID(r)
 
 	accountIDStr := chi.URLParam(r, "id")
 	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)

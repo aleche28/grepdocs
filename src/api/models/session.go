@@ -6,7 +6,7 @@ type Session struct {
 	CreatedAt      time.Time
 	LastActivityAt time.Time
 	Id             string
-	UserId         int64
+	UserID         int64
 	Authenticated  bool
 	Data           map[string]any
 }
@@ -27,13 +27,13 @@ func (s *Session) IsAuthenticated() bool {
 	return s.Authenticated
 }
 
-func (s *Session) SetUserId(id int64) {
-	s.UserId = id
+func (s *Session) SetUserID(id int64) {
+	s.UserID = id
 	s.Authenticated = id > 0
 }
 
-func (s *Session) GetUserId() int64 {
-	return s.UserId
+func (s *Session) GetUserID() int64 {
+	return s.UserID
 }
 
 func (s *Session) SetOAuthStateToken(token string) {

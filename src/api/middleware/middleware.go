@@ -21,13 +21,14 @@ func RequireAuth(sm *session.SessionManager) func(http.Handler) http.Handler {
 			}
 
 			// store userId in context
-			ctx := context.WithValue(r.Context(), uidKey, sess.GetUserId())
+			ctx := context.WithValue(r.Context(), uidKey, sess.GetUserID())
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
-func CurrentUserId(r *http.Request) (int64, bool) {
+// CurrentUserID returns the ID of the authenticated user from the request context.
+func CurrentUserID(r *http.Request) (int64, bool) {
 	v := r.Context().Value(uidKey)
 	if id, ok := v.(int64); ok {
 		return id, ok
