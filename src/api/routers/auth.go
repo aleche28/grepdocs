@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"grepdocs/api/dal"
+	"grepdocs/api/httpx"
 	"grepdocs/api/models"
 	"grepdocs/api/session"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -49,7 +51,7 @@ func (h *AuthHandler) googleLogin(w http.ResponseWriter, r *http.Request) {
 	// Generate a random state token for CSRF protection
 	state, err := generateStateToken()
 	if err != nil {
-		http.Error(w, "Failed to generate state token", http.StatusInternalServerError)
+		httpx.WriteInternalError(w, err)
 		return
 	}
 
@@ -69,21 +71,21 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	sess, _ := session.GetSession(h.sessionMgr, r)
 	oauthState := sess.GetOAuthStateToken()
 	if oauthState == "" {
-		http.Error(w, "Oauth state token not found in session", http.StatusBadRequest)
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Oauth state token not found in session")
 		return
 	}
 
 	// Extract and compare state
 	state := r.URL.Query().Get("state")
 	if state == "" || state != oauthState {
-		http.Error(w, "Invalid state parameter", http.StatusBadRequest)
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Invalid state parameter")
 		return
 	}
 
 	// Extract the authorization code from the URL
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		http.Error(w, "Code not found in URL", http.StatusBadRequest)
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Code not found in URL")
 		return
 	}
 
@@ -91,14 +93,15 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	token, err := h.oauthConfig.Exchange(ctx, code)
 	if err != nil {
-		http.Error(w, "Failed to exchange token: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("oauth token exchange failed: %v", err)
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Invalid or expired authorization code")
 		return
 	}
 
 	// Fetch user info from Google
 	userInfo, err := fetchGoogleUserInfo(token.AccessToken)
 	if err != nil {
-		http.Error(w, "Failed to fetch user data: "+err.Error(), http.StatusInternalServerError)
+		httpx.WriteInternalError(w, err)
 		return
 	}
 
@@ -116,7 +119,7 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 			GoogleID: userInfo.Id,
 		})
 		if err != nil {
-			http.Error(w, "Failed to create new user: "+err.Error(), http.StatusInternalServerError)
+			httpx.WriteInternalError(w, err)
 			return
 		}
 	}
@@ -133,13 +136,13 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Regenerate session ID to prevent fixation
 	if err := h.sessionMgr.Regenerate(ctx, sess); err != nil {
-		http.Error(w, "Session error", http.StatusInternalServerError)
+		httpx.WriteInternalError(w, err)
 		return
 	}
 
 	redirectPath := sess.GetUIRedirectPage()
 	if !isValidRedirectPath(redirectPath) {
-		http.Error(w, "Invalid UI redirect path: "+redirectPath, http.StatusBadRequest)
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Invalid UI redirect path: "+redirectPath)
 		return
 	}
 
@@ -153,19 +156,12 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 // logout handles user logout
 func (h *AuthHandler) logout(w http.ResponseWriter, r *http.Request) {
 	session, ok := session.GetSession(h.sessionMgr, r)
-	if !ok {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
-			"message": "Logged out successfully",
-		})
-		return
+	if ok {
+		h.sessionMgr.Destroy(r.Context(), session)
+		http.SetCookie(w, h.sessionMgr.ClearCookie())
 	}
 
-	ctx := r.Context()
-	h.sessionMgr.Destroy(ctx, session)
-	w.Header().Set("Content-Type", "application/json")
-	http.SetCookie(w, h.sessionMgr.ClearCookie())
-	json.NewEncoder(w).Encode(map[string]string{
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{
 		"message": "Logged out successfully",
 	})
 }

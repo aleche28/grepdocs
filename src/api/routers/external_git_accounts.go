@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"grepdocs/api/dal"
+	"grepdocs/api/httpx"
 	"grepdocs/api/middleware"
 	"grepdocs/api/session"
 	"io"
@@ -71,7 +72,7 @@ func (h *ExternalAccountsHandler) listExternalAccounts(w http.ResponseWriter, r 
 
 	accounts, err := q.GetExternalGitAccountsByUserID(ctx, userID)
 	if err != nil {
-		http.Error(w, "Failed to fetch accounts: "+err.Error(), http.StatusInternalServerError)
+		httpx.WriteInternalError(w, err)
 		return
 	}
 
@@ -88,21 +89,21 @@ func (h *ExternalAccountsHandler) listExternalAccounts(w http.ResponseWriter, r 
 		}
 	}
 
-	respondJSON(w, http.StatusOK, sanitizedAccounts)
+	httpx.WriteJSON(w, http.StatusOK, sanitizedAccounts)
 }
 
 // providerLogin initiates the OAuth flow for a git provider
 func (h *ExternalAccountsHandler) providerLogin(w http.ResponseWriter, r *http.Request) {
 	provider := chi.URLParam(r, "provider")
 	if provider != "github" {
-		http.Error(w, "Provider not supported: "+provider, http.StatusNotImplemented)
+		httpx.WriteError(w, http.StatusNotImplemented, httpx.CodeNotImplemented, "Provider not supported: "+provider)
 		return
 	}
 
 	// Generate state token for CSRF protection
 	state, err := generateStateToken()
 	if err != nil {
-		http.Error(w, "Failed to generate state token", http.StatusInternalServerError)
+		httpx.WriteInternalError(w, err)
 		return
 	}
 
@@ -125,7 +126,7 @@ func (h *ExternalAccountsHandler) providerLogin(w http.ResponseWriter, r *http.R
 func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *http.Request) {
 	provider := chi.URLParam(r, "provider")
 	if provider != "github" {
-		http.Error(w, "Provider not supported: "+provider, http.StatusNotImplemented)
+		httpx.WriteError(w, http.StatusNotImplemented, httpx.CodeNotImplemented, "Provider not supported: "+provider)
 		return
 	}
 
@@ -134,13 +135,13 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 	// Verify state
 	stateCookie, err := r.Cookie(provider + "_oauth_state")
 	if err != nil {
-		http.Error(w, "State cookie not found", http.StatusBadRequest)
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "State cookie not found")
 		return
 	}
 
 	state := r.URL.Query().Get("state")
 	if state == "" || state != stateCookie.Value {
-		http.Error(w, "Invalid state parameter", http.StatusBadRequest)
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Invalid state parameter")
 		return
 	}
 
@@ -156,7 +157,7 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 	// Get authorization code
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		http.Error(w, "Code not found in URL", http.StatusBadRequest)
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Code not found in URL")
 		return
 	}
 
@@ -164,14 +165,14 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 	ctx := context.Background()
 	token, err := h.githubOauthConfig.Exchange(ctx, code)
 	if err != nil {
-		http.Error(w, "Failed to exchange token: "+err.Error(), http.StatusInternalServerError)
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Invalid or expired authorization code")
 		return
 	}
 
 	// Fetch GitHub user info
 	githubUser, err := fetchGitHubUserInfo(token.AccessToken)
 	if err != nil {
-		http.Error(w, "Failed to fetch GitHub user: "+err.Error(), http.StatusInternalServerError)
+		httpx.WriteInternalError(w, err)
 		return
 	}
 
@@ -199,7 +200,7 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 	})
 
 	if err != nil {
-		http.Error(w, "Failed to link GitHub account: "+err.Error(), http.StatusInternalServerError)
+		httpx.WriteInternalError(w, err)
 		return
 	}
 
@@ -218,7 +219,7 @@ func (h *ExternalAccountsHandler) deleteExternalAccount(w http.ResponseWriter, r
 	accountIDStr := chi.URLParam(r, "id")
 	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
 	if err != nil {
-		http.Error(w, "Invalid account ID", http.StatusBadRequest)
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Invalid account ID")
 		return
 	}
 
@@ -228,23 +229,23 @@ func (h *ExternalAccountsHandler) deleteExternalAccount(w http.ResponseWriter, r
 	// Verify the account belongs to the user
 	account, err := q.GetExternalGitAccountById(ctx, accountID)
 	if err != nil {
-		http.Error(w, "Account not found", http.StatusNotFound)
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "Account not found")
 		return
 	}
 
 	if account.UserID != userID {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Forbidden")
 		return
 	}
 
 	// Delete the account
 	err = q.DeleteExternalGitAccount(ctx, accountID)
 	if err != nil {
-		http.Error(w, "Failed to delete account: "+err.Error(), http.StatusInternalServerError)
+		httpx.WriteInternalError(w, err)
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{
 		"message": "External account unlinked successfully",
 	})
 }
@@ -290,11 +291,4 @@ func fetchGitHubUserInfo(accessToken string) (*GitHubUser, error) {
 	}
 
 	return &user, nil
-}
-
-// respondJSON is a helper to send JSON responses
-func respondJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
 }

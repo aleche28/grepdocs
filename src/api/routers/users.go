@@ -3,6 +3,7 @@ package routers
 import (
 	"context"
 	"grepdocs/api/dal"
+	"grepdocs/api/httpx"
 	"grepdocs/api/middleware"
 	"grepdocs/api/session"
 	"net/http"
@@ -41,11 +42,11 @@ func (h *UserHandler) getAuthenticatedUser(w http.ResponseWriter, r *http.Reques
 
 	user, err := q.GetUserById(ctx, uid)
 	if err != nil {
-		http.Error(w, "User not found", http.StatusNotFound)
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "User not found")
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"id":         user.ID,
 		"fullname":   user.Fullname,
 		"username":   user.Username,

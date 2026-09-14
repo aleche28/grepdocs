@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"grepdocs/api/httpx"
 	"grepdocs/api/session"
 	"net/http"
 )
@@ -16,7 +17,7 @@ func RequireAuth(sm *session.SessionManager) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			sess, ok := session.GetSession(sm, r)
 			if !ok || !sess.IsAuthenticated() {
-				http.Error(w, "Not authenticated", http.StatusUnauthorized)
+				httpx.WriteError(w, http.StatusUnauthorized, httpx.CodeNotAuthenticated, "You must be signed in")
 				return
 			}
 
