@@ -35,39 +35,11 @@ func AuthRoutes(config *oauth2.Config, pool *pgxpool.Pool, sm *session.SessionMa
 
 	r := chi.NewRouter()
 
-	r.Get("/whoami", h.whoAmI)
 	r.Get("/google/login", h.googleLogin)
 	r.Get("/google/callback", h.googleCallback)
 	r.Post("/logout", h.logout)
 
 	return r
-}
-
-// whoAmI returns the current authenticated user information
-func (h *AuthHandler) whoAmI(w http.ResponseWriter, r *http.Request) {
-	sess, ok := session.GetSession(h.sessionMgr, r)
-	if !ok || !sess.IsAuthenticated() {
-		http.Error(w, "Not authenticated", http.StatusUnauthorized)
-		return
-	}
-
-	uid := sess.GetUserId()
-	ctx := context.Background()
-	q := dal.New(h.dbPool)
-
-	user, err := q.GetUserById(ctx, uid)
-	if err != nil {
-		http.Error(w, "User not found", http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"id":       user.ID,
-		"email":    user.Email,
-		"fullname": user.Fullname,
-		"username": user.Username,
-	})
 }
 
 // googleLogin initiates the Google OAuth flow
@@ -168,6 +140,7 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	redirectPath := sess.GetUIRedirectPage()
 	if !isValidRedirectPath(redirectPath) {
 		http.Error(w, "Invalid UI redirect path: "+redirectPath, http.StatusBadRequest)
+		return
 	}
 
 	redirectURL := os.Getenv("FRONTEND_URL")
