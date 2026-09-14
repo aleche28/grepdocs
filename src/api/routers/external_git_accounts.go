@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"grepdocs/api/dal"
+	"grepdocs/api/middleware"
 	"grepdocs/api/session"
 	"io"
 	"net/http"
@@ -47,7 +48,7 @@ func ExternalAccountsRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.
 	r := chi.NewRouter()
 
 	// All routes require authentication
-	// r.Use(AuthMiddleware) // TODO: Add authentication middleware
+	r.Use(middleware.RequireAuth(sm))
 
 	// List all external accounts for authenticated user
 	r.Get("/", h.listExternalAccounts)
@@ -64,13 +65,7 @@ func ExternalAccountsRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.
 
 // listExternalAccounts returns all external git accounts for the authenticated user
 func (h *ExternalAccountsHandler) listExternalAccounts(w http.ResponseWriter, r *http.Request) {
-	sess, ok := session.GetSession(h.sessionMgr, r)
-	if !ok || !sess.IsAuthenticated() {
-		http.Error(w, "Not authenticated", http.StatusUnauthorized)
-		return
-	}
-
-	userID := sess.GetUserId()
+	userID, _ := middleware.CurrentUserId(r)
 	ctx := context.Background()
 	q := dal.New(h.dbPool)
 
@@ -98,12 +93,6 @@ func (h *ExternalAccountsHandler) listExternalAccounts(w http.ResponseWriter, r 
 
 // providerLogin initiates the OAuth flow for a git provider
 func (h *ExternalAccountsHandler) providerLogin(w http.ResponseWriter, r *http.Request) {
-	sess, ok := session.GetSession(h.sessionMgr, r)
-	if !ok || !sess.IsAuthenticated() {
-		http.Error(w, "Not authenticated", http.StatusUnauthorized)
-		return
-	}
-
 	provider := chi.URLParam(r, "provider")
 	if provider != "github" {
 		http.Error(w, "Provider not supported: "+provider, http.StatusNotImplemented)
@@ -134,19 +123,13 @@ func (h *ExternalAccountsHandler) providerLogin(w http.ResponseWriter, r *http.R
 
 // providerCallback handles the OAuth callback from a git provider
 func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *http.Request) {
-	sess, ok := session.GetSession(h.sessionMgr, r)
-	if !ok || !sess.IsAuthenticated() {
-		http.Error(w, "Not authenticated", http.StatusUnauthorized)
-		return
-	}
-
 	provider := chi.URLParam(r, "provider")
 	if provider != "github" {
 		http.Error(w, "Provider not supported: "+provider, http.StatusNotImplemented)
 		return
 	}
 
-	userID := sess.GetUserId()
+	userID, _ := middleware.CurrentUserId(r)
 
 	// Verify state
 	stateCookie, err := r.Cookie(provider + "_oauth_state")
@@ -230,13 +213,7 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 
 // deleteExternalAccount removes an external git account
 func (h *ExternalAccountsHandler) deleteExternalAccount(w http.ResponseWriter, r *http.Request) {
-	sess, ok := session.GetSession(h.sessionMgr, r)
-	if !ok || !sess.IsAuthenticated() {
-		http.Error(w, "Not authenticated", http.StatusUnauthorized)
-		return
-	}
-
-	userID := sess.GetUserId()
+	userID, _ := middleware.CurrentUserId(r)
 
 	accountIDStr := chi.URLParam(r, "id")
 	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)

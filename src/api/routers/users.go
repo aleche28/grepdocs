@@ -3,6 +3,7 @@ package routers
 import (
 	"context"
 	"grepdocs/api/dal"
+	"grepdocs/api/middleware"
 	"grepdocs/api/session"
 	"net/http"
 
@@ -25,7 +26,7 @@ func UserRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.Router {
 	r := chi.NewRouter()
 
 	// All routes require authentication
-	// r.Use(AuthMiddleware) // TODO: Add authentication middleware
+	r.Use(middleware.RequireAuth(sm))
 
 	r.Get("/me", h.getAuthenticatedUser)
 
@@ -34,13 +35,7 @@ func UserRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.Router {
 
 // getAuthenticatedUser returns the currently authenticated user
 func (h *UserHandler) getAuthenticatedUser(w http.ResponseWriter, r *http.Request) {
-	sess, ok := session.GetSession(h.sessionMgr, r)
-	if !ok || !sess.IsAuthenticated() {
-		http.Error(w, "Not authenticated", http.StatusUnauthorized)
-		return
-	}
-
-	uid := sess.GetUserId()
+	uid, _ := middleware.CurrentUserId(r)
 	ctx := context.Background()
 	q := dal.New(h.dbPool)
 
