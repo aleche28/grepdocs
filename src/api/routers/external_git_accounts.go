@@ -50,67 +50,67 @@ func ExternalAccountsRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.
 	// r.Use(AuthMiddleware) // TODO: Add authentication middleware
 
 	// List all external accounts for authenticated user
-	r.Get("/", h.listExternalAccounts(pool))
+	r.Get("/", h.listExternalAccounts)
 
-	// GitHub OAuth flow
-	r.Get("/github/login", h.githubLogin)
-	r.Get("/github/callback", h.githubCallback(pool))
-
-	// Bitbucket OAuth flow (TODO)
-	// r.Get("/bitbucket/login", bitbucketLogin)
-	// r.Get("/bitbucket/callback", bitbucketCallback(pool))
+	// Provider OAuth flow
+	r.Get("/{provider}/login", h.providerLogin)
+	r.Get("/{provider}/callback", h.providerCallback)
 
 	// Delete external account
-	r.Delete("/{id}", h.deleteExternalAccount(pool))
+	r.Delete("/{id}", h.deleteExternalAccount)
 
 	return r
 }
 
 // listExternalAccounts returns all external git accounts for the authenticated user
-func (h *ExternalAccountsHandler) listExternalAccounts(pool *pgxpool.Pool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		sess, ok := session.GetSession(h.sessionMgr, r)
-		if !ok || !sess.IsAuthenticated() {
-			http.Error(w, "Not authenticated", http.StatusUnauthorized)
-			return
-		}
-
-		userID := sess.GetUserId()
-		ctx := context.Background()
-		q := dal.New(pool)
-
-		accounts, err := q.GetExternalGitAccountsByUserId(ctx, userID)
-		if err != nil {
-			http.Error(w, "Failed to fetch accounts: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Sanitize response - don't send tokens to client
-		sanitizedAccounts := make([]map[string]interface{}, len(accounts))
-		for i, acc := range accounts {
-			sanitizedAccounts[i] = map[string]interface{}{
-				"id":                acc.ID,
-				"provider":          acc.Provider,
-				"provider_user_id":  acc.ProviderUserID,
-				"linked_at":         acc.LinkedAt,
-				"last_refreshed_at": acc.LastRefreshedAt,
-				"token_expires_at":  acc.TokenExpiresAt,
-			}
-		}
-
-		respondJSON(w, http.StatusOK, sanitizedAccounts)
-	}
-}
-
-// githubLogin initiates the GitHub OAuth flow
-func (h *ExternalAccountsHandler) githubLogin(w http.ResponseWriter, r *http.Request) {
+func (h *ExternalAccountsHandler) listExternalAccounts(w http.ResponseWriter, r *http.Request) {
 	sess, ok := session.GetSession(h.sessionMgr, r)
 	if !ok || !sess.IsAuthenticated() {
 		http.Error(w, "Not authenticated", http.StatusUnauthorized)
 		return
 	}
 
-	// Generate state token with user ID embedded
+	userID := sess.GetUserId()
+	ctx := context.Background()
+	q := dal.New(h.dbPool)
+
+	accounts, err := q.GetExternalGitAccountsByUserId(ctx, userID)
+	if err != nil {
+		http.Error(w, "Failed to fetch accounts: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Sanitize response - don't send tokens to client
+	sanitizedAccounts := make([]map[string]interface{}, len(accounts))
+	for i, acc := range accounts {
+		sanitizedAccounts[i] = map[string]interface{}{
+			"id":                acc.ID,
+			"provider":          acc.Provider,
+			"provider_user_id":  acc.ProviderUserID,
+			"linked_at":         acc.LinkedAt,
+			"last_refreshed_at": acc.LastRefreshedAt,
+			"token_expires_at":  acc.TokenExpiresAt,
+		}
+	}
+
+	respondJSON(w, http.StatusOK, sanitizedAccounts)
+}
+
+// providerLogin initiates the OAuth flow for a git provider
+func (h *ExternalAccountsHandler) providerLogin(w http.ResponseWriter, r *http.Request) {
+	sess, ok := session.GetSession(h.sessionMgr, r)
+	if !ok || !sess.IsAuthenticated() {
+		http.Error(w, "Not authenticated", http.StatusUnauthorized)
+		return
+	}
+
+	provider := chi.URLParam(r, "provider")
+	if provider != "github" {
+		http.Error(w, "Provider not supported: "+provider, http.StatusNotImplemented)
+		return
+	}
+
+	// Generate state token for CSRF protection
 	state, err := generateStateToken()
 	if err != nil {
 		http.Error(w, "Failed to generate state token", http.StatusInternalServerError)
@@ -119,7 +119,7 @@ func (h *ExternalAccountsHandler) githubLogin(w http.ResponseWriter, r *http.Req
 
 	// Store state in cookie
 	http.SetCookie(w, &http.Cookie{
-		Name:     "github_oauth_state",
+		Name:     provider + "_oauth_state",
 		Value:    state,
 		Path:     "/",
 		MaxAge:   600, // 10 minutes
@@ -132,145 +132,144 @@ func (h *ExternalAccountsHandler) githubLogin(w http.ResponseWriter, r *http.Req
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
-// githubCallback handles the OAuth callback from GitHub
-func (h *ExternalAccountsHandler) githubCallback(pool *pgxpool.Pool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		sess, ok := session.GetSession(h.sessionMgr, r)
-		if !ok || !sess.IsAuthenticated() {
-			http.Error(w, "Not authenticated", http.StatusUnauthorized)
-			return
-		}
-
-		userID := sess.GetUserId()
-
-		// Verify state
-		stateCookie, err := r.Cookie("github_oauth_state")
-		if err != nil {
-			http.Error(w, "State cookie not found", http.StatusBadRequest)
-			return
-		}
-
-		state := r.URL.Query().Get("state")
-		if state == "" || state != stateCookie.Value {
-			http.Error(w, "Invalid state parameter", http.StatusBadRequest)
-			return
-		}
-
-		// Clear state cookie
-		http.SetCookie(w, &http.Cookie{
-			Name:     "github_oauth_state",
-			Value:    "",
-			Path:     "/",
-			MaxAge:   -1,
-			HttpOnly: true,
-		})
-
-		// Get authorization code
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			http.Error(w, "Code not found in URL", http.StatusBadRequest)
-			return
-		}
-
-		// Exchange code for token
-		ctx := context.Background()
-		token, err := h.githubOauthConfig.Exchange(ctx, code)
-		if err != nil {
-			http.Error(w, "Failed to exchange token: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Fetch GitHub user info
-		githubUser, err := fetchGitHubUserInfo(token.AccessToken)
-		if err != nil {
-			http.Error(w, "Failed to fetch GitHub user: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Store external account
-		q := dal.New(pool)
-
-		// Calculate token expiration (GitHub tokens don't expire by default, set to far future)
-		expiresAt := time.Now().AddDate(1, 0, 0) // 1 year from now
-		if !token.Expiry.IsZero() {
-			expiresAt = token.Expiry
-		}
-
-		refreshToken := ""
-		if token.RefreshToken != "" {
-			refreshToken = token.RefreshToken
-		}
-
-		account, err := q.CreateExternalGitAccount(ctx, dal.CreateExternalGitAccountParams{
-			UserID:         userID,
-			Provider:       "github",
-			ProviderUserID: strconv.FormatInt(githubUser.ID, 10),
-			AccessToken:    token.AccessToken,
-			RefreshToken:   refreshToken,
-			TokenExpiresAt: &expiresAt,
-		})
-
-		if err != nil {
-			http.Error(w, "Failed to link GitHub account: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Redirect to frontend success page
-		redirectURL := os.Getenv("FRONTEND_URL")
-		if redirectURL == "" {
-			redirectURL = "http://localhost:3000"
-		}
-		http.Redirect(w, r, redirectURL+"/settings/accounts?linked=github", http.StatusTemporaryRedirect)
-
-		// Alternative: Return JSON response
-		_ = account // Use account if returning JSON
+// providerCallback handles the OAuth callback from a git provider
+func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *http.Request) {
+	sess, ok := session.GetSession(h.sessionMgr, r)
+	if !ok || !sess.IsAuthenticated() {
+		http.Error(w, "Not authenticated", http.StatusUnauthorized)
+		return
 	}
+
+	provider := chi.URLParam(r, "provider")
+	if provider != "github" {
+		http.Error(w, "Provider not supported: "+provider, http.StatusNotImplemented)
+		return
+	}
+
+	userID := sess.GetUserId()
+
+	// Verify state
+	stateCookie, err := r.Cookie(provider + "_oauth_state")
+	if err != nil {
+		http.Error(w, "State cookie not found", http.StatusBadRequest)
+		return
+	}
+
+	state := r.URL.Query().Get("state")
+	if state == "" || state != stateCookie.Value {
+		http.Error(w, "Invalid state parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Clear state cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     provider + "_oauth_state",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+	})
+
+	// Get authorization code
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		http.Error(w, "Code not found in URL", http.StatusBadRequest)
+		return
+	}
+
+	// Exchange code for token
+	ctx := context.Background()
+	token, err := h.githubOauthConfig.Exchange(ctx, code)
+	if err != nil {
+		http.Error(w, "Failed to exchange token: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Fetch GitHub user info
+	githubUser, err := fetchGitHubUserInfo(token.AccessToken)
+	if err != nil {
+		http.Error(w, "Failed to fetch GitHub user: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Store external account
+	q := dal.New(h.dbPool)
+
+	// Calculate token expiration (GitHub tokens don't expire by default, set to far future)
+	expiresAt := time.Now().AddDate(1, 0, 0) // 1 year from now
+	if !token.Expiry.IsZero() {
+		expiresAt = token.Expiry
+	}
+
+	refreshToken := ""
+	if token.RefreshToken != "" {
+		refreshToken = token.RefreshToken
+	}
+
+	_, err = q.CreateExternalGitAccount(ctx, dal.CreateExternalGitAccountParams{
+		UserID:         userID,
+		Provider:       provider,
+		ProviderUserID: strconv.FormatInt(githubUser.ID, 10),
+		AccessToken:    token.AccessToken,
+		RefreshToken:   refreshToken,
+		TokenExpiresAt: &expiresAt,
+	})
+
+	if err != nil {
+		http.Error(w, "Failed to link GitHub account: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Redirect to frontend success page
+	redirectURL := os.Getenv("FRONTEND_URL")
+	if redirectURL == "" {
+		redirectURL = "http://localhost:3000"
+	}
+	http.Redirect(w, r, redirectURL+"/settings/accounts?linked="+provider, http.StatusTemporaryRedirect)
 }
 
 // deleteExternalAccount removes an external git account
-func (h *ExternalAccountsHandler) deleteExternalAccount(pool *pgxpool.Pool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		sess, ok := session.GetSession(h.sessionMgr, r)
-		if !ok || !sess.IsAuthenticated() {
-			http.Error(w, "Not authenticated", http.StatusUnauthorized)
-			return
-		}
-
-		userID := sess.GetUserId()
-
-		accountIDStr := chi.URLParam(r, "id")
-		accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
-		if err != nil {
-			http.Error(w, "Invalid account ID", http.StatusBadRequest)
-			return
-		}
-
-		ctx := context.Background()
-		q := dal.New(pool)
-
-		// Verify the account belongs to the user
-		account, err := q.GetExternalGitAccountById(ctx, accountID)
-		if err != nil {
-			http.Error(w, "Account not found", http.StatusNotFound)
-			return
-		}
-
-		if account.UserID != userID {
-			http.Error(w, "Forbidden", http.StatusForbidden)
-			return
-		}
-
-		// Delete the account
-		err = q.DeleteExternalGitAccount(ctx, accountID)
-		if err != nil {
-			http.Error(w, "Failed to delete account: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		respondJSON(w, http.StatusOK, map[string]string{
-			"message": "External account unlinked successfully",
-		})
+func (h *ExternalAccountsHandler) deleteExternalAccount(w http.ResponseWriter, r *http.Request) {
+	sess, ok := session.GetSession(h.sessionMgr, r)
+	if !ok || !sess.IsAuthenticated() {
+		http.Error(w, "Not authenticated", http.StatusUnauthorized)
+		return
 	}
+
+	userID := sess.GetUserId()
+
+	accountIDStr := chi.URLParam(r, "id")
+	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid account ID", http.StatusBadRequest)
+		return
+	}
+
+	ctx := context.Background()
+	q := dal.New(h.dbPool)
+
+	// Verify the account belongs to the user
+	account, err := q.GetExternalGitAccountById(ctx, accountID)
+	if err != nil {
+		http.Error(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	if account.UserID != userID {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Delete the account
+	err = q.DeleteExternalGitAccount(ctx, accountID)
+	if err != nil {
+		http.Error(w, "Failed to delete account: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{
+		"message": "External account unlinked successfully",
+	})
 }
 
 // Helper functions

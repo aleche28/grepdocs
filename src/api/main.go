@@ -92,7 +92,7 @@ func main() {
 
 		r.Mount("/auth", routers.AuthRoutes(&AppConfig.GoogleLoginConfig, pool, sm))
 		r.Mount("/users", routers.UserRoutes(pool, sm))
-		r.Mount("/ext-accounts", routers.ExternalAccountsRoutes(pool, sm))
+		r.Mount("/accounts", routers.ExternalAccountsRoutes(pool, sm))
 	})
 
 	server := &http.Server{
