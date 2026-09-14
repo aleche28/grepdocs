@@ -5,7 +5,6 @@ import (
 	"grepdocs/api/dal"
 	"grepdocs/api/session"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -28,62 +27,34 @@ func UserRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.Router {
 	// All routes require authentication
 	// r.Use(AuthMiddleware) // TODO: Add authentication middleware
 
-	r.Get("/me", h.getAuthenticatedUser(pool)) // TODO: this probably duplicates the /whoami in auth.go
-	r.Get("/{id}", h.getUserByID(pool))
+	r.Get("/me", h.getAuthenticatedUser)
 
 	return r
 }
 
 // getAuthenticatedUser returns the currently authenticated user
-func (h *UserHandler) getAuthenticatedUser(pool *pgxpool.Pool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		sess, ok := session.GetSession(h.sessionMgr, r)
-		if !ok || !sess.IsAuthenticated() {
-			http.Error(w, "Not authenticated", http.StatusUnauthorized)
-			return
-		}
-
-		uid := sess.GetUserId()
-		ctx := context.Background()
-		q := dal.New(h.dbPool)
-
-		user, err := q.GetUserById(ctx, uid)
-		if err != nil {
-			http.Error(w, "User not found", http.StatusNotFound)
-			return
-		}
-
-		respondJSON(w, http.StatusOK, user)
+func (h *UserHandler) getAuthenticatedUser(w http.ResponseWriter, r *http.Request) {
+	sess, ok := session.GetSession(h.sessionMgr, r)
+	if !ok || !sess.IsAuthenticated() {
+		http.Error(w, "Not authenticated", http.StatusUnauthorized)
+		return
 	}
-}
 
-// getUserByID returns a user by their ID
-func (h *UserHandler) getUserByID(pool *pgxpool.Pool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		sess, ok := session.GetSession(h.sessionMgr, r)
-		if !ok || !sess.IsAuthenticated() {
-			http.Error(w, "Not authenticated", http.StatusUnauthorized)
-			return
-		}
+	uid := sess.GetUserId()
+	ctx := context.Background()
+	q := dal.New(h.dbPool)
 
-		idParam := chi.URLParam(r, "id")
-		userID, err := strconv.ParseInt(idParam, 10, 64)
-		if err != nil {
-			http.Error(w, "Invalid user ID", http.StatusBadRequest)
-			return
-		}
-
-		// TODO: should check user role for permissions to view this user
-
-		ctx := context.Background()
-		q := dal.New(pool)
-
-		user, err := q.GetUserById(ctx, userID)
-		if err != nil {
-			http.Error(w, "User not found", http.StatusNotFound)
-			return
-		}
-
-		respondJSON(w, http.StatusOK, user)
+	user, err := q.GetUserById(ctx, uid)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
 	}
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"id":         user.ID,
+		"fullname":   user.Fullname,
+		"username":   user.Username,
+		"email":      user.Email,
+		"created_at": user.CreatedAt,
+	})
 }
