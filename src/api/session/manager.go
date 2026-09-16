@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"grepdocs/api/models"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -77,7 +78,7 @@ func (m *SessionManager) isValid(ctx context.Context, session *models.Session) b
 func (m *SessionManager) destroyExpiredIfNeeded(ctx context.Context, session *models.Session) {
 	if session != nil && !m.isValid(ctx, session) {
 		if err := m.store.Destroy(ctx, session.Id); err != nil {
-			fmt.Printf("Failed to destroy expired session: %v\n", err)
+			log.Printf("Failed to destroy expired session: %v\n", err)
 		}
 	}
 }
@@ -89,7 +90,7 @@ func (m *SessionManager) start(ctx context.Context, r *http.Request) (*models.Se
 	if err == nil {
 		session, err = m.store.Read(ctx, cookie.Value)
 		if err != nil {
-			fmt.Printf("Failed to read session from store: %v\n", err)
+			log.Printf("Failed to read session from store: %v\n", err)
 		}
 	}
 
@@ -162,7 +163,7 @@ func (m *SessionManager) Handle(next http.Handler) http.Handler {
 		next.ServeHTTP(sw, rws)
 
 		if err := m.save(rws.Context(), session); err != nil {
-			fmt.Printf("Failed to save session: %v\n", err)
+			log.Printf("Failed to save session: %v\n", err)
 		}
 
 		// write the session cookie to the response if not already written
@@ -194,7 +195,6 @@ func (m *SessionManager) ClearCookie() *http.Cookie {
 	return &http.Cookie{
 		Name:     m.cookieName,
 		Value:    "",
-		Domain:   "localhost",
 		HttpOnly: true,
 		Path:     "/",
 		Expires:  time.Unix(0, 0),

@@ -43,7 +43,6 @@ func writeCookieIfNecessary(w *sessionResponseWriter) {
 	cookie := &http.Cookie{
 		Name:     w.sessionMgr.cookieName,
 		Value:    session.Id,
-		Domain:   "localhost",
 		HttpOnly: true,
 		Path:     "/",
 		Secure:   secure,
