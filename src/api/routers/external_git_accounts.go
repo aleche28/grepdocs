@@ -264,8 +264,7 @@ func fetchGitHubUserInfo(ctx context.Context, accessToken string) (*GitHubUser, 
 	req.Header.Set("Authorization", "token "+accessToken)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch user data: %w", err)
 	}

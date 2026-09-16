@@ -171,7 +171,7 @@ func fetchGoogleUserInfo(ctx context.Context, accessToken string) (*models.Googl
 	}
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch user data: %w", err)
 	}
