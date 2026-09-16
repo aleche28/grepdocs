@@ -1,7 +1,6 @@
 package routers
 
 import (
-	"context"
 	"grepdocs/api/dal"
 	"grepdocs/api/httpx"
 	"grepdocs/api/middleware"
@@ -37,10 +36,9 @@ func UserRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.Router {
 // getAuthenticatedUser returns the currently authenticated user
 func (h *UserHandler) getAuthenticatedUser(w http.ResponseWriter, r *http.Request) {
 	uid, _ := middleware.CurrentUserID(r)
-	ctx := context.Background()
 	q := dal.New(h.dbPool)
 
-	user, err := q.GetUserById(ctx, uid)
+	user, err := q.GetUserById(r.Context(), uid)
 	if err != nil {
 		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "User not found")
 		return

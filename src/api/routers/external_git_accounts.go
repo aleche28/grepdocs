@@ -67,10 +67,9 @@ func ExternalAccountsRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.
 // listExternalAccounts returns all external git accounts for the authenticated user
 func (h *ExternalAccountsHandler) listExternalAccounts(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.CurrentUserID(r)
-	ctx := context.Background()
 	q := dal.New(h.dbPool)
 
-	accounts, err := q.GetExternalGitAccountsByUserID(ctx, userID)
+	accounts, err := q.GetExternalGitAccountsByUserID(r.Context(), userID)
 	if err != nil {
 		httpx.WriteInternalError(w, err)
 		return
@@ -162,15 +161,14 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 	}
 
 	// Exchange code for token
-	ctx := context.Background()
-	token, err := h.githubOauthConfig.Exchange(ctx, code)
+	token, err := h.githubOauthConfig.Exchange(r.Context(), code)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Invalid or expired authorization code")
 		return
 	}
 
 	// Fetch GitHub user info
-	githubUser, err := fetchGitHubUserInfo(token.AccessToken)
+	githubUser, err := fetchGitHubUserInfo(r.Context(), token.AccessToken)
 	if err != nil {
 		httpx.WriteInternalError(w, err)
 		return
@@ -190,7 +188,7 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 		refreshToken = token.RefreshToken
 	}
 
-	_, err = q.CreateExternalGitAccount(ctx, dal.CreateExternalGitAccountParams{
+	_, err = q.CreateExternalGitAccount(r.Context(), dal.CreateExternalGitAccountParams{
 		UserID:         userID,
 		Provider:       provider,
 		ProviderUserID: strconv.FormatInt(githubUser.ID, 10),
@@ -198,7 +196,6 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 		RefreshToken:   refreshToken,
 		TokenExpiresAt: &expiresAt,
 	})
-
 	if err != nil {
 		httpx.WriteInternalError(w, err)
 		return
@@ -223,11 +220,10 @@ func (h *ExternalAccountsHandler) deleteExternalAccount(w http.ResponseWriter, r
 		return
 	}
 
-	ctx := context.Background()
 	q := dal.New(h.dbPool)
 
 	// Verify the account belongs to the user
-	account, err := q.GetExternalGitAccountById(ctx, accountID)
+	account, err := q.GetExternalGitAccountById(r.Context(), accountID)
 	if err != nil {
 		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "Account not found")
 		return
@@ -239,7 +235,7 @@ func (h *ExternalAccountsHandler) deleteExternalAccount(w http.ResponseWriter, r
 	}
 
 	// Delete the account
-	err = q.DeleteExternalGitAccount(ctx, accountID)
+	err = q.DeleteExternalGitAccount(r.Context(), accountID)
 	if err != nil {
 		httpx.WriteInternalError(w, err)
 		return
@@ -259,10 +255,10 @@ type GitHubUser struct {
 	Name  string `json:"name"`
 }
 
-func fetchGitHubUserInfo(accessToken string) (*GitHubUser, error) {
-	req, err := http.NewRequest("GET", "https://api.github.com/user", nil)
+func fetchGitHubUserInfo(ctx context.Context, accessToken string) (*GitHubUser, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user", nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch user data: %w", err)
 	}
 
 	req.Header.Set("Authorization", "token "+accessToken)

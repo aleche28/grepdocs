@@ -90,8 +90,7 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Exchange the code for an access token
-	ctx := context.Background()
-	token, err := h.oauthConfig.Exchange(ctx, code)
+	token, err := h.oauthConfig.Exchange(r.Context(), code)
 	if err != nil {
 		log.Printf("oauth token exchange failed: %v", err)
 		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Invalid or expired authorization code")
@@ -99,7 +98,7 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch user info from Google
-	userInfo, err := fetchGoogleUserInfo(token.AccessToken)
+	userInfo, err := fetchGoogleUserInfo(r.Context(), token.AccessToken)
 	if err != nil {
 		httpx.WriteInternalError(w, err)
 		return
@@ -107,13 +106,12 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Get or create user in database
 	q := dal.New(h.dbPool)
-	user, err := q.GetUserByGoogleId(ctx, userInfo.Id)
-
+	user, err := q.GetUserByGoogleId(r.Context(), userInfo.Id)
 	// TODO: fix this because if the error is not "not found", it still tries to create the user,
 	// even if it might already exist
 	if err != nil {
 		// User does not exist: create it
-		user, err = q.CreateUser(ctx, dal.CreateUserParams{
+		user, err = q.CreateUser(r.Context(), dal.CreateUserParams{
 			Fullname: userInfo.FullName,
 			Email:    userInfo.Email,
 			GoogleID: userInfo.Id,
@@ -125,7 +123,7 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update last login timestamp
-	err = q.UpdateUserLastLogin(ctx, user.ID)
+	err = q.UpdateUserLastLogin(r.Context(), user.ID)
 	if err != nil {
 		// Log error but don't fail the login
 		fmt.Printf("Failed to update last login for user %d: %v\n", user.ID, err)
@@ -135,7 +133,7 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	sess.SetUserID(user.ID)
 
 	// Regenerate session ID to prevent fixation
-	if err := h.sessionMgr.Regenerate(ctx, sess); err != nil {
+	if err := h.sessionMgr.Regenerate(r.Context(), sess); err != nil {
 		httpx.WriteInternalError(w, err)
 		return
 	}
@@ -179,10 +177,13 @@ func generateStateToken() (string, error) {
 }
 
 // fetchGoogleUserInfo fetches user information from Google using the access token
-func fetchGoogleUserInfo(accessToken string) (*models.GoogleUserInfo, error) {
-	req, err := http.NewRequest("GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
-	req.Header.Set("Authorization", "Bearer "+accessToken)
+func fetchGoogleUserInfo(ctx context.Context, accessToken string) (*models.GoogleUserInfo, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user data: %w", err)
+	}
 
+	req.Header.Set("Authorization", "Bearer "+accessToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch user data: %w", err)
