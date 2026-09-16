@@ -27,6 +27,8 @@ type ExternalAccountsHandler struct {
 	bitbucketOauthConfig *oauth2.Config
 }
 
+const providerGithub = "github"
+
 // ExternalAccountsRoutes initializes the external git accounts routes
 func ExternalAccountsRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.Router {
 	// Initialize OAuth configs
@@ -94,7 +96,7 @@ func (h *ExternalAccountsHandler) listExternalAccounts(w http.ResponseWriter, r 
 // providerLogin initiates the OAuth flow for a git provider
 func (h *ExternalAccountsHandler) providerLogin(w http.ResponseWriter, r *http.Request) {
 	provider := chi.URLParam(r, "provider")
-	if provider != "github" {
+	if provider != providerGithub {
 		httpx.WriteError(w, http.StatusNotImplemented, httpx.CodeNotImplemented, "Provider not supported: "+provider)
 		return
 	}
@@ -106,16 +108,9 @@ func (h *ExternalAccountsHandler) providerLogin(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Store state in cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     provider + "_oauth_state",
-		Value:    state,
-		Path:     "/",
-		MaxAge:   600, // 10 minutes
-		HttpOnly: true,
-		Secure:   os.Getenv("ENV") == "production",
-		SameSite: http.SameSiteLaxMode,
-	})
+	// Store state in session for verification in callback
+	sess, _ := session.GetSession(h.sessionMgr, r)
+	sess.SetOAuthStateToken(state)
 
 	url := h.githubOauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
@@ -124,34 +119,26 @@ func (h *ExternalAccountsHandler) providerLogin(w http.ResponseWriter, r *http.R
 // providerCallback handles the OAuth callback from a git provider
 func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *http.Request) {
 	provider := chi.URLParam(r, "provider")
-	if provider != "github" {
+	if provider != providerGithub {
 		httpx.WriteError(w, http.StatusNotImplemented, httpx.CodeNotImplemented, "Provider not supported: "+provider)
 		return
 	}
 
 	userID, _ := middleware.CurrentUserID(r)
 
-	// Verify state
-	stateCookie, err := r.Cookie(provider + "_oauth_state")
-	if err != nil {
-		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "State cookie not found")
+	// Verify state (single-use: retrieved and cleared from the session)
+	sess, _ := session.GetSession(h.sessionMgr, r)
+	sessState := sess.GetOAuthStateToken()
+	if sessState == "" {
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Oauth state token not found in session")
 		return
 	}
 
 	state := r.URL.Query().Get("state")
-	if state == "" || state != stateCookie.Value {
+	if state != sessState {
 		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Invalid state parameter")
 		return
 	}
-
-	// Clear state cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     provider + "_oauth_state",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	})
 
 	// Get authorization code
 	code := r.URL.Query().Get("code")
