@@ -57,39 +57,6 @@ func (q *Queries) CreateExternalGitAccount(ctx context.Context, arg CreateExtern
 	return i, err
 }
 
-const createUser = `-- name: CreateUser :one
-INSERT INTO users (
-	fullname,
-	email,
-	google_id
-) VALUES (
-	$1, $2, $3
-)
-RETURNING id, fullname, username, email, google_id, created_at, updated_at, last_login_at
-`
-
-type CreateUserParams struct {
-	Fullname string
-	Email    string
-	GoogleID string
-}
-
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Fullname, arg.Email, arg.GoogleID)
-	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Fullname,
-		&i.Username,
-		&i.Email,
-		&i.GoogleID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.LastLoginAt,
-	)
-	return i, err
-}
-
 const deleteExternalGitAccount = `-- name: DeleteExternalGitAccount :exec
 DELETE FROM external_git_accounts
 WHERE id = $1
@@ -188,27 +155,6 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 	return i, err
 }
 
-const getUserByGoogleId = `-- name: GetUserByGoogleId :one
-SELECT id, fullname, username, email, google_id, created_at, updated_at, last_login_at FROM users
-WHERE google_id = $1 LIMIT 1
-`
-
-func (q *Queries) GetUserByGoogleId(ctx context.Context, googleID string) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByGoogleId, googleID)
-	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Fullname,
-		&i.Username,
-		&i.Email,
-		&i.GoogleID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.LastLoginAt,
-	)
-	return i, err
-}
-
 const getUserById = `-- name: GetUserById :one
 SELECT id, fullname, username, email, google_id, created_at, updated_at, last_login_at FROM users
 WHERE id = $1 LIMIT 1
@@ -266,4 +212,38 @@ WHERE id = $1
 func (q *Queries) UpdateUserLastLogin(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, updateUserLastLogin, id)
 	return err
+}
+
+const upsertUserByGoogleId = `-- name: UpsertUserByGoogleId :one
+INSERT INTO users (
+	fullname,
+	email,
+	google_id
+) VALUES (
+	$1, $2, $3
+)
+ON CONFLICT (google_id) DO UPDATE SET last_login_at = NOW()
+RETURNING id, fullname, username, email, google_id, created_at, updated_at, last_login_at
+`
+
+type UpsertUserByGoogleIdParams struct {
+	Fullname string
+	Email    string
+	GoogleID string
+}
+
+func (q *Queries) UpsertUserByGoogleId(ctx context.Context, arg UpsertUserByGoogleIdParams) (User, error) {
+	row := q.db.QueryRow(ctx, upsertUserByGoogleId, arg.Fullname, arg.Email, arg.GoogleID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Fullname,
+		&i.Username,
+		&i.Email,
+		&i.GoogleID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LastLoginAt,
+	)
+	return i, err
 }

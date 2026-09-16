@@ -106,27 +106,14 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Get or create user in database
 	q := dal.New(h.dbPool)
-	user, err := q.GetUserByGoogleId(r.Context(), userInfo.Id)
-	// TODO: fix this because if the error is not "not found", it still tries to create the user,
-	// even if it might already exist
+	user, err := q.UpsertUserByGoogleId(r.Context(), dal.UpsertUserByGoogleIdParams{
+		Fullname: userInfo.FullName,
+		Email:    userInfo.Email,
+		GoogleID: userInfo.Id,
+	})
 	if err != nil {
-		// User does not exist: create it
-		user, err = q.CreateUser(r.Context(), dal.CreateUserParams{
-			Fullname: userInfo.FullName,
-			Email:    userInfo.Email,
-			GoogleID: userInfo.Id,
-		})
-		if err != nil {
-			httpx.WriteInternalError(w, err)
-			return
-		}
-	}
-
-	// Update last login timestamp
-	err = q.UpdateUserLastLogin(r.Context(), user.ID)
-	if err != nil {
-		// Log error but don't fail the login
-		fmt.Printf("Failed to update last login for user %d: %v\n", user.ID, err)
+		httpx.WriteInternalError(w, err)
+		return
 	}
 
 	// authenticate user and save id in session

@@ -1,7 +1,3 @@
--- name: GetUserByGoogleId :one
-SELECT * FROM users
-WHERE google_id = $1 LIMIT 1;
-
 -- name: GetUserById :one
 SELECT * FROM users
 WHERE id = $1 LIMIT 1;
@@ -10,7 +6,7 @@ WHERE id = $1 LIMIT 1;
 SELECT * FROM users
 WHERE email = $1 LIMIT 1;
 
--- name: CreateUser :one
+-- name: UpsertUserByGoogleId :one
 INSERT INTO users (
 	fullname,
 	email,
@@ -18,6 +14,7 @@ INSERT INTO users (
 ) VALUES (
 	$1, $2, $3
 )
+ON CONFLICT (google_id) DO UPDATE SET last_login_at = NOW()
 RETURNING *;
 
 -- name: UpdateUserLastLogin :exec
