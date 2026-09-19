@@ -34,11 +34,11 @@ WHERE user_id = $1;
 SELECT * FROM external_git_accounts
 WHERE id = $1 LIMIT 1;
 
--- name: GetExternalGitAccountByUserIDAndProvider :one
+-- name: GetExternalGitAccountsByUserIDAndProvider :many
 SELECT * FROM external_git_accounts
-WHERE user_id = $1 AND provider = $2 LIMIT 1;
+WHERE user_id = $1 AND provider = $2;
 
--- name: CreateExternalGitAccount :one
+-- name: UpsertExternalGitAccount :one
 INSERT INTO external_git_accounts (
 	user_id,
 	provider,
@@ -49,6 +49,12 @@ INSERT INTO external_git_accounts (
 ) VALUES (
 	$1, $2, $3, $4, $5, $6
 )
+ON CONFLICT (user_id, provider, provider_user_id)
+	DO UPDATE SET
+		access_token = EXCLUDED.access_token,
+		refresh_token = COALESCE(NULLIF(EXCLUDED.refresh_token, ''), external_git_accounts.refresh_token),
+		token_expires_at = EXCLUDED.token_expires_at,
+		last_refreshed_at = NOW()
 RETURNING *;
 
 -- name: UpdateExternalGitAccountTokens :exec

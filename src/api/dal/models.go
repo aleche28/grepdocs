@@ -18,6 +18,7 @@ type ExternalGitAccount struct {
 	TokenExpiresAt  *time.Time
 	LinkedAt        *time.Time
 	LastRefreshedAt *time.Time
+	Label           string
 }
 
 type User struct {

@@ -10,53 +10,6 @@ import (
 	"time"
 )
 
-const createExternalGitAccount = `-- name: CreateExternalGitAccount :one
-INSERT INTO external_git_accounts (
-	user_id,
-	provider,
-	provider_user_id,
-	access_token,
-	refresh_token,
-	token_expires_at
-) VALUES (
-	$1, $2, $3, $4, $5, $6
-)
-RETURNING id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at
-`
-
-type CreateExternalGitAccountParams struct {
-	UserID         int64
-	Provider       string
-	ProviderUserID string
-	AccessToken    string
-	RefreshToken   string
-	TokenExpiresAt *time.Time
-}
-
-func (q *Queries) CreateExternalGitAccount(ctx context.Context, arg CreateExternalGitAccountParams) (ExternalGitAccount, error) {
-	row := q.db.QueryRow(ctx, createExternalGitAccount,
-		arg.UserID,
-		arg.Provider,
-		arg.ProviderUserID,
-		arg.AccessToken,
-		arg.RefreshToken,
-		arg.TokenExpiresAt,
-	)
-	var i ExternalGitAccount
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.Provider,
-		&i.ProviderUserID,
-		&i.AccessToken,
-		&i.RefreshToken,
-		&i.TokenExpiresAt,
-		&i.LinkedAt,
-		&i.LastRefreshedAt,
-	)
-	return i, err
-}
-
 const deleteExternalGitAccount = `-- name: DeleteExternalGitAccount :exec
 DELETE FROM external_git_accounts
 WHERE id = $1
@@ -78,7 +31,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 }
 
 const getExternalGitAccountById = `-- name: GetExternalGitAccountById :one
-SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at FROM external_git_accounts
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label FROM external_git_accounts
 WHERE id = $1 LIMIT 1
 `
 
@@ -95,39 +48,13 @@ func (q *Queries) GetExternalGitAccountById(ctx context.Context, id int64) (Exte
 		&i.TokenExpiresAt,
 		&i.LinkedAt,
 		&i.LastRefreshedAt,
-	)
-	return i, err
-}
-
-const getExternalGitAccountByUserIDAndProvider = `-- name: GetExternalGitAccountByUserIDAndProvider :one
-SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at FROM external_git_accounts
-WHERE user_id = $1 AND provider = $2 LIMIT 1
-`
-
-type GetExternalGitAccountByUserIDAndProviderParams struct {
-	UserID   int64
-	Provider string
-}
-
-func (q *Queries) GetExternalGitAccountByUserIDAndProvider(ctx context.Context, arg GetExternalGitAccountByUserIDAndProviderParams) (ExternalGitAccount, error) {
-	row := q.db.QueryRow(ctx, getExternalGitAccountByUserIDAndProvider, arg.UserID, arg.Provider)
-	var i ExternalGitAccount
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.Provider,
-		&i.ProviderUserID,
-		&i.AccessToken,
-		&i.RefreshToken,
-		&i.TokenExpiresAt,
-		&i.LinkedAt,
-		&i.LastRefreshedAt,
+		&i.Label,
 	)
 	return i, err
 }
 
 const getExternalGitAccountsByUserID = `-- name: GetExternalGitAccountsByUserID :many
-SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at FROM external_git_accounts
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label FROM external_git_accounts
 WHERE user_id = $1
 `
 
@@ -150,6 +77,48 @@ func (q *Queries) GetExternalGitAccountsByUserID(ctx context.Context, userID int
 			&i.TokenExpiresAt,
 			&i.LinkedAt,
 			&i.LastRefreshedAt,
+			&i.Label,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getExternalGitAccountsByUserIDAndProvider = `-- name: GetExternalGitAccountsByUserIDAndProvider :many
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label FROM external_git_accounts
+WHERE user_id = $1 AND provider = $2
+`
+
+type GetExternalGitAccountsByUserIDAndProviderParams struct {
+	UserID   int64
+	Provider string
+}
+
+func (q *Queries) GetExternalGitAccountsByUserIDAndProvider(ctx context.Context, arg GetExternalGitAccountsByUserIDAndProviderParams) ([]ExternalGitAccount, error) {
+	rows, err := q.db.Query(ctx, getExternalGitAccountsByUserIDAndProvider, arg.UserID, arg.Provider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ExternalGitAccount
+	for rows.Next() {
+		var i ExternalGitAccount
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Provider,
+			&i.ProviderUserID,
+			&i.AccessToken,
+			&i.RefreshToken,
+			&i.TokenExpiresAt,
+			&i.LinkedAt,
+			&i.LastRefreshedAt,
+			&i.Label,
 		); err != nil {
 			return nil, err
 		}
@@ -239,6 +208,60 @@ WHERE id = $1
 func (q *Queries) UpdateUserLastLogin(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, updateUserLastLogin, id)
 	return err
+}
+
+const upsertExternalGitAccount = `-- name: UpsertExternalGitAccount :one
+INSERT INTO external_git_accounts (
+	user_id,
+	provider,
+	provider_user_id,
+	access_token,
+	refresh_token,
+	token_expires_at
+) VALUES (
+	$1, $2, $3, $4, $5, $6
+)
+ON CONFLICT (user_id, provider, provider_user_id)
+	DO UPDATE SET
+		access_token = EXCLUDED.access_token,
+		refresh_token = COALESCE(NULLIF(EXCLUDED.refresh_token, ''), external_git_accounts.refresh_token),
+		token_expires_at = EXCLUDED.token_expires_at,
+		last_refreshed_at = NOW()
+RETURNING id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label
+`
+
+type UpsertExternalGitAccountParams struct {
+	UserID         int64
+	Provider       string
+	ProviderUserID string
+	AccessToken    string
+	RefreshToken   string
+	TokenExpiresAt *time.Time
+}
+
+func (q *Queries) UpsertExternalGitAccount(ctx context.Context, arg UpsertExternalGitAccountParams) (ExternalGitAccount, error) {
+	row := q.db.QueryRow(ctx, upsertExternalGitAccount,
+		arg.UserID,
+		arg.Provider,
+		arg.ProviderUserID,
+		arg.AccessToken,
+		arg.RefreshToken,
+		arg.TokenExpiresAt,
+	)
+	var i ExternalGitAccount
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.ProviderUserID,
+		&i.AccessToken,
+		&i.RefreshToken,
+		&i.TokenExpiresAt,
+		&i.LinkedAt,
+		&i.LastRefreshedAt,
+		&i.Label,
+	)
+	return i, err
 }
 
 const upsertUserByGoogleId = `-- name: UpsertUserByGoogleId :one

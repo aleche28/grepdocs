@@ -3,6 +3,7 @@ package routers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"grepdocs/api/dal"
 	"grepdocs/api/httpx"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
@@ -35,6 +37,12 @@ const maxGitHubResponseBytes = 8 * 1024 * 1024
 
 // Safety cap for pagination (100 pages * 100 repos = 10000 repos)
 const maxGitHubPages = 100
+
+// Errors returned by resolveAccount; callers map them to HTTP responses.
+var (
+	errAccountNotFound  = errors.New("external account not found")
+	errAccountAmbiguous = errors.New("multiple external accounts for provider")
+)
 
 // ExternalAccountsRoutes initializes the external git accounts routes
 func ExternalAccountsRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.Router {
@@ -95,6 +103,7 @@ func (h *ExternalAccountsHandler) listExternalAccounts(w http.ResponseWriter, r 
 			"linked_at":         acc.LinkedAt,
 			"last_refreshed_at": acc.LastRefreshedAt,
 			"token_expires_at":  acc.TokenExpiresAt,
+			"label":             acc.Label,
 		}
 	}
 
@@ -183,7 +192,7 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 		refreshToken = token.RefreshToken
 	}
 
-	_, err = q.CreateExternalGitAccount(r.Context(), dal.CreateExternalGitAccountParams{
+	_, err = q.UpsertExternalGitAccount(r.Context(), dal.UpsertExternalGitAccountParams{
 		UserID:         userID,
 		Provider:       provider,
 		ProviderUserID: strconv.FormatInt(githubUser.ID, 10),
@@ -252,12 +261,27 @@ func (h *ExternalAccountsHandler) listExternalRepositories(w http.ResponseWriter
 	userID, _ := middleware.CurrentUserID(r)
 	q := dal.New(h.dbPool)
 
-	account, err := q.GetExternalGitAccountByUserIDAndProvider(r.Context(), dal.GetExternalGitAccountByUserIDAndProviderParams{
-		UserID:   userID,
-		Provider: provider,
-	})
-	if err != nil {
+	accountIDParam := r.URL.Query().Get("account_id")
+	var accountID int64
+	if accountIDParam != "" {
+		parsed, err := strconv.ParseInt(accountIDParam, 10, 64)
+		if err != nil || parsed <= 0 {
+			httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Invalid account_id param: should be a positive int")
+			return
+		}
+		accountID = parsed
+	}
+
+	account, err := resolveAccount(r.Context(), q, userID, provider, accountID)
+	switch {
+	case errors.Is(err, errAccountNotFound):
 		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "No account found for provider "+provider)
+		return
+	case errors.Is(err, errAccountAmbiguous):
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Multiple accounts found for provider "+provider+", please specify account_id to select one")
+		return
+	case err != nil:
+		httpx.WriteInternalError(w, err)
 		return
 	}
 
@@ -281,6 +305,44 @@ func (h *ExternalAccountsHandler) listExternalRepositories(w http.ResponseWriter
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, repos)
+}
+
+// resolveAccount selects the external account an account-scoped request refers
+// to. With a positive accountID it loads that account and verifies it belongs to
+// userID and matches provider. Otherwise it resolves the single account for
+// (userID, provider), returning errAccountAmbiguous when more than one exists so
+// the caller can require an explicit account_id.
+func resolveAccount(ctx context.Context, q *dal.Queries, userID int64, provider string, accountID int64) (dal.ExternalGitAccount, error) {
+	if accountID > 0 {
+		account, err := q.GetExternalGitAccountById(ctx, accountID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return dal.ExternalGitAccount{}, errAccountNotFound
+		}
+		if err != nil {
+			return dal.ExternalGitAccount{}, err
+		}
+		if account.UserID != userID || account.Provider != provider {
+			return dal.ExternalGitAccount{}, errAccountNotFound
+		}
+		return account, nil
+	}
+
+	accounts, err := q.GetExternalGitAccountsByUserIDAndProvider(ctx, dal.GetExternalGitAccountsByUserIDAndProviderParams{
+		UserID:   userID,
+		Provider: provider,
+	})
+	if err != nil {
+		return dal.ExternalGitAccount{}, err
+	}
+
+	switch len(accounts) {
+	case 0:
+		return dal.ExternalGitAccount{}, errAccountNotFound
+	case 1:
+		return accounts[0], nil
+	default:
+		return dal.ExternalGitAccount{}, errAccountAmbiguous
+	}
 }
 
 // Helper functions
