@@ -59,6 +59,7 @@ func ExternalAccountsRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.
 	// Provider OAuth flow
 	r.Get("/{provider}/login", h.providerLogin)
 	r.Get("/{provider}/callback", h.providerCallback)
+	r.Get("/{provider}/repositories", h.listExternalRepositories)
 
 	// Delete external account
 	r.Delete("/{id}", h.deleteExternalAccount)
@@ -233,6 +234,54 @@ func (h *ExternalAccountsHandler) deleteExternalAccount(w http.ResponseWriter, r
 	})
 }
 
+// listExternalRepositories returns all external git accounts repositories for the authenticated user
+func (h *ExternalAccountsHandler) listExternalRepositories(w http.ResponseWriter, r *http.Request) {
+	provider := chi.URLParam(r, "provider")
+	if provider != providerGithub {
+		httpx.WriteError(w, http.StatusNotImplemented, httpx.CodeNotImplemented, "Provider not supported: "+provider)
+		return
+	}
+
+	userID, _ := middleware.CurrentUserID(r)
+	q := dal.New(h.dbPool)
+
+	accounts, err := q.GetExternalGitAccountsByUserID(r.Context(), userID)
+	if err != nil {
+		httpx.WriteInternalError(w, err)
+		return
+	}
+
+	for _, acc := range accounts {
+		if acc.Provider != provider {
+			continue
+		}
+
+		if acc.AccessToken == "" || (acc.TokenExpiresAt != nil && acc.TokenExpiresAt.Before(time.Now())) {
+			// No refresh flow yet: the user must re-link the account
+			httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Empty access token or expired")
+			return
+		}
+
+		// this should be under a layer to abstract providers' implementations
+		repos, status, err := fetchGithubUserRepos(r.Context(), acc.AccessToken)
+		if err != nil {
+			// 401/403 mean the stored token is no longer valid; without a
+			// refresh flow the user must re-link the account
+			if status == http.StatusUnauthorized || status == http.StatusForbidden {
+				httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "GitHub access token is invalid or revoked, please re-link your account")
+				return
+			}
+			httpx.WriteInternalError(w, err)
+			return
+		}
+
+		httpx.WriteJSON(w, http.StatusOK, repos)
+		return
+	}
+
+	httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "No account found for provider "+provider)
+}
+
 // Helper functions
 
 type GitHubUser struct {
@@ -242,14 +291,25 @@ type GitHubUser struct {
 	Name  string `json:"name"`
 }
 
-func fetchGitHubUserInfo(ctx context.Context, accessToken string) (*GitHubUser, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user", nil)
+// newGitHubRequest creates an authenticated GET request against the GitHub API
+func newGitHubRequest(ctx context.Context, url, accessToken string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch user data: %w", err)
+		return nil, err
 	}
 
 	req.Header.Set("Authorization", "token "+accessToken)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
+
+	return req, nil
+}
+
+func fetchGitHubUserInfo(ctx context.Context, accessToken string) (*GitHubUser, error) {
+	req, err := newGitHubRequest(ctx, "https://api.github.com/user", accessToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user data: %w", err)
+	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -273,4 +333,69 @@ func fetchGitHubUserInfo(ctx context.Context, accessToken string) (*GitHubUser, 
 	}
 
 	return &user, nil
+}
+
+// TODO: GitHubRepo is the GitHub API mapping; define a dedicated response DTO later
+type GitHubRepo struct {
+	Id            int64  `json:"id"`
+	NodeId        string `json:"node_id"`
+	Name          string `json:"name"`      // ex: Hello-World
+	FullName      string `json:"full_name"` // ex: octocat/Hello-World
+	Private       bool   `json:"private"`
+	HtmlUrl       string `json:"html_url"` // ex: https://github.com/octocat/Hello-World
+	Description   string `json:"description"`
+	Url           string `json:"url"` // ex: https://api.github.com/repos/octocat/Hello-World
+	DefaultBranch string `json:"default_branch"`
+}
+
+// fetchGithubUserRepos fetches all repositories of the authenticated user across
+// GitHub pagination. On a non-200 response the HTTP status is returned so the
+// caller can distinguish invalid tokens from other failures.
+func fetchGithubUserRepos(ctx context.Context, accessToken string) ([]GitHubRepo, int, error) {
+	// NOTE: this fetches ALL user's repos, but if they have a large number of them
+	// it may take too much time. May consider adding a limit and paging the
+	// api endpoint
+	perPage := 100
+	page := 1
+	baseUrl := "https://api.github.com/user/repos"
+	var repos []GitHubRepo
+
+	for {
+		reqUrl := fmt.Sprintf("%s?per_page=%d&page=%d", baseUrl, perPage, page)
+		req, err := newGitHubRequest(ctx, reqUrl, accessToken)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to fetch user github repos: %w", err)
+		}
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to fetch user github repos: %w", err)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to read response body: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			// TODO: distinguish rate-limit (403 with X-RateLimit-Remaining: 0)
+			// from invalid tokens without surfacing 429 for internal calls
+			return nil, resp.StatusCode, fmt.Errorf("github API returned status: %d", resp.StatusCode)
+		}
+
+		var res []GitHubRepo
+		err = json.Unmarshal(body, &res)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to parse user repos: %w", err)
+		}
+
+		repos = append(repos, res...)
+		if len(res) < perPage {
+			break
+		}
+		page++
+	}
+
+	return repos, 0, nil
 }
