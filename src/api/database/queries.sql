@@ -34,6 +34,10 @@ WHERE user_id = $1;
 SELECT * FROM external_git_accounts
 WHERE id = $1 LIMIT 1;
 
+-- name: GetExternalGitAccountByUserIDAndProvider :one
+SELECT * FROM external_git_accounts
+WHERE user_id = $1 AND provider = $2 LIMIT 1;
+
 -- name: CreateExternalGitAccount :one
 INSERT INTO external_git_accounts (
 	user_id,

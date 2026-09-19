@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -28,6 +29,12 @@ type ExternalAccountsHandler struct {
 }
 
 const providerGithub = "github"
+
+// Bound the size of GitHub API response bodies before decoding
+const maxGitHubResponseBytes = 8 * 1024 * 1024
+
+// Safety cap for pagination (100 pages * 100 repos = 10000 repos)
+const maxGitHubPages = 100
 
 // ExternalAccountsRoutes initializes the external git accounts routes
 func ExternalAccountsRoutes(pool *pgxpool.Pool, sm *session.SessionManager) chi.Router {
@@ -245,41 +252,35 @@ func (h *ExternalAccountsHandler) listExternalRepositories(w http.ResponseWriter
 	userID, _ := middleware.CurrentUserID(r)
 	q := dal.New(h.dbPool)
 
-	accounts, err := q.GetExternalGitAccountsByUserID(r.Context(), userID)
+	account, err := q.GetExternalGitAccountByUserIDAndProvider(r.Context(), dal.GetExternalGitAccountByUserIDAndProviderParams{
+		UserID:   userID,
+		Provider: provider,
+	})
 	if err != nil {
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "No account found for provider "+provider)
+		return
+	}
+
+	if account.AccessToken == "" || (account.TokenExpiresAt != nil && account.TokenExpiresAt.Before(time.Now())) {
+		// No refresh flow yet: the user must re-link the account
+		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Empty access token or expired")
+		return
+	}
+
+	// this should be under a layer to abstract providers' implementations
+	repos, status, err := fetchGithubUserRepos(r.Context(), account.AccessToken)
+	if err != nil {
+		// 401/403 mean the stored token is no longer valid; without a
+		// refresh flow the user must re-link the account
+		if status == http.StatusUnauthorized || status == http.StatusForbidden {
+			httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "GitHub access token is invalid or revoked, please re-link your account")
+			return
+		}
 		httpx.WriteInternalError(w, err)
 		return
 	}
 
-	for _, acc := range accounts {
-		if acc.Provider != provider {
-			continue
-		}
-
-		if acc.AccessToken == "" || (acc.TokenExpiresAt != nil && acc.TokenExpiresAt.Before(time.Now())) {
-			// No refresh flow yet: the user must re-link the account
-			httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Empty access token or expired")
-			return
-		}
-
-		// this should be under a layer to abstract providers' implementations
-		repos, status, err := fetchGithubUserRepos(r.Context(), acc.AccessToken)
-		if err != nil {
-			// 401/403 mean the stored token is no longer valid; without a
-			// refresh flow the user must re-link the account
-			if status == http.StatusUnauthorized || status == http.StatusForbidden {
-				httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "GitHub access token is invalid or revoked, please re-link your account")
-				return
-			}
-			httpx.WriteInternalError(w, err)
-			return
-		}
-
-		httpx.WriteJSON(w, http.StatusOK, repos)
-		return
-	}
-
-	httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "No account found for provider "+provider)
+	httpx.WriteJSON(w, http.StatusOK, repos)
 }
 
 // Helper functions
@@ -315,19 +316,15 @@ func fetchGitHubUserInfo(ctx context.Context, accessToken string) (*GitHubUser, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch user data: %w", err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
 		return nil, fmt.Errorf("github API returned status: %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
 	var user GitHubUser
-	err = json.Unmarshal(body, &user)
+	err = json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseBytes)).Decode(&user)
+	resp.Body.Close()
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse user data: %w", err)
 	}
@@ -348,20 +345,36 @@ type GitHubRepo struct {
 	DefaultBranch string `json:"default_branch"`
 }
 
+// nextGitHubPage returns the URL of the next page from the response Link header,
+// or "" when there are no more pages
+func nextGitHubPage(resp *http.Response) string {
+	link := resp.Header.Get("Link")
+	if link == "" {
+		return ""
+	}
+
+	for _, part := range strings.Split(link, ",") {
+		for _, tag := range strings.Split(part, ";") {
+			if strings.Contains(tag, `rel="next"`) {
+				return strings.Trim(strings.Split(part, ";")[0], " \t<>")
+			}
+		}
+	}
+
+	return ""
+}
+
 // fetchGithubUserRepos fetches all repositories of the authenticated user across
 // GitHub pagination. On a non-200 response the HTTP status is returned so the
 // caller can distinguish invalid tokens from other failures.
 func fetchGithubUserRepos(ctx context.Context, accessToken string) ([]GitHubRepo, int, error) {
-	// NOTE: this fetches ALL user's repos, but if they have a large number of them
-	// it may take too much time. May consider adding a limit and paging the
-	// api endpoint
 	perPage := 100
 	page := 1
 	baseUrl := "https://api.github.com/user/repos"
 	var repos []GitHubRepo
+	reqUrl := fmt.Sprintf("%s?per_page=%d&page=%d", baseUrl, perPage, page)
 
 	for {
-		reqUrl := fmt.Sprintf("%s?per_page=%d&page=%d", baseUrl, perPage, page)
 		req, err := newGitHubRequest(ctx, reqUrl, accessToken)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to fetch user github repos: %w", err)
@@ -372,29 +385,30 @@ func fetchGithubUserRepos(ctx context.Context, accessToken string) ([]GitHubRepo
 			return nil, 0, fmt.Errorf("failed to fetch user github repos: %w", err)
 		}
 
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to read response body: %w", err)
-		}
-
 		if resp.StatusCode != http.StatusOK {
 			// TODO: distinguish rate-limit (403 with X-RateLimit-Remaining: 0)
 			// from invalid tokens without surfacing 429 for internal calls
+			resp.Body.Close()
 			return nil, resp.StatusCode, fmt.Errorf("github API returned status: %d", resp.StatusCode)
 		}
 
 		var res []GitHubRepo
-		err = json.Unmarshal(body, &res)
+		err = json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseBytes)).Decode(&res)
+		resp.Body.Close()
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to parse user repos: %w", err)
 		}
 
 		repos = append(repos, res...)
-		if len(res) < perPage {
+
+		reqUrl = nextGitHubPage(resp)
+		if reqUrl == "" {
 			break
 		}
 		page++
+		if page > maxGitHubPages {
+			break
+		}
 	}
 
 	return repos, 0, nil

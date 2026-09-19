@@ -99,6 +99,33 @@ func (q *Queries) GetExternalGitAccountById(ctx context.Context, id int64) (Exte
 	return i, err
 }
 
+const getExternalGitAccountByUserIDAndProvider = `-- name: GetExternalGitAccountByUserIDAndProvider :one
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at FROM external_git_accounts
+WHERE user_id = $1 AND provider = $2 LIMIT 1
+`
+
+type GetExternalGitAccountByUserIDAndProviderParams struct {
+	UserID   int64
+	Provider string
+}
+
+func (q *Queries) GetExternalGitAccountByUserIDAndProvider(ctx context.Context, arg GetExternalGitAccountByUserIDAndProviderParams) (ExternalGitAccount, error) {
+	row := q.db.QueryRow(ctx, getExternalGitAccountByUserIDAndProvider, arg.UserID, arg.Provider)
+	var i ExternalGitAccount
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.ProviderUserID,
+		&i.AccessToken,
+		&i.RefreshToken,
+		&i.TokenExpiresAt,
+		&i.LinkedAt,
+		&i.LastRefreshedAt,
+	)
+	return i, err
+}
+
 const getExternalGitAccountsByUserID = `-- name: GetExternalGitAccountsByUserID :many
 SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at FROM external_git_accounts
 WHERE user_id = $1
