@@ -145,6 +145,10 @@ flow; expired tokens mean re-linking.
   amplification, no tests). Update the relevant checkbox when you close one.
 - `docs/requirements.md`, `docs/user-stories.md` — product spec.
 - `docs/howto/` — Google/GitHub OAuth setup, golang-migrate workflow, sqlc usage.
+- `docs/roadmap.md` — phased build-out plan (not dated), interleaving new features with the open
+  checklist items each phase depends on or exposes. Update it as phases complete or scope shifts.
+- `docs/roadmap-stakeholders.md` — non-technical companion to `docs/roadmap.md`: same plan grouped
+  into Now/Next/Later, feature language only. Keep the two in sync when phases change.
 
 ## Known inconsistencies
 
