@@ -129,7 +129,7 @@ is planned, so only self endpoints exist.
 | GET    | `/accounts`                       | Y    | Implemented (no pagination)    | List linked accounts (sanitized, **no tokens**)                  |
 | GET    | `/accounts/{provider}/login`      | Y    | Implemented for `github`       | Redirect: start linking a provider account                       |
 | GET    | `/accounts/{provider}/callback`   | Y    | Implemented for `github`       | Provider OAuth callback (verify state, store tokens, redirect)   |
-| GET    | `/accounts/{provider}/repositories` | Y  | Implemented for `github`, unfiltered | Discover available repos from a linked provider account   |
+| GET    | `/accounts/{provider}/repositories` | Y  | Implemented for `github`, unfiltered | Discover repos from a linked account (`?account_id=` disambiguates) |
 | DELETE | `/accounts/{id}`                  | Y    | Implemented                    | Unlink account (must own it)                                      |
 
 `bitbucket` (and any other non-`github` value) currently returns `501 not_implemented` on all four
@@ -142,11 +142,20 @@ provider-scoped routes.
   "id": 3,
   "provider": "github",
   "provider_user_id": "123456",
+  "label": "",
   "linked_at": "2026-03-02T10:11:12Z",
   "last_refreshed_at": "2026-03-02T10:11:12Z",
   "token_expires_at": "2027-03-02T10:11:12Z"
 }
 ```
+
+`label` exists in the schema so a user can tell multiple accounts for one provider apart (e.g.
+"personal" vs "work"). It is read-only for now (always `""`); no write endpoint exists yet.
+
+A user may link more than one account per provider. `GET /api/accounts/{provider}/repositories`
+therefore accepts `?account_id=` to select which linked account to read from. The account must
+belong to the caller. With exactly one linked account the parameter is optional; with several,
+omitting it returns `400 bad_request` rather than guessing.
 
 `GET /api/accounts/{provider}/repositories` — **Proposed** filters and shape; today it returns the
 full raw GitHub repo list from the linked account with no filtering, pagination, or `tracked`
