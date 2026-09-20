@@ -7,21 +7,20 @@ import (
 )
 
 type User struct {
-	ProviderUserId string
-	Login          string
-	Email          string
-	Name           string
+	ProviderUserID string `json:"provider_user_id"`
+	Login          string `json:"login"`
+	Email          string `json:"email"`
+	Name           string `json:"name"`
 }
 
 type Repository struct {
-	Provider       string
-	ProviderRepoId string
-	Name           string
-	FullName       string
-	Description    string
-	IsPrivate      bool
-	HtmlUrl        string
-	DefaultBranch  string
+	Provider       string `json:"provider"`
+	ProviderRepoID string `json:"provider_repo_id"`
+	Name           string `json:"name"`
+	FullName       string `json:"full_name"`
+	IsPrivate      bool   `json:"is_private"`
+	HTMLURL        string `json:"html_url"`
+	DefaultBranch  string `json:"default_branch"`
 }
 
 type Provider interface {
