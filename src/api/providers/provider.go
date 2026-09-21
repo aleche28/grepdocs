@@ -30,3 +30,8 @@ type Provider interface {
 	FetchUser(ctx context.Context, accessToken string) (User, error)
 	ListRepositories(ctx context.Context, accessToken string) ([]Repository, error)
 }
+
+// Refresher is implemented by providers whose token can be refreshed (not GitHub)
+type Refresher interface {
+	Refresh(ctx context.Context, refreshToken string) (*oauth2.Token, error)
+}
