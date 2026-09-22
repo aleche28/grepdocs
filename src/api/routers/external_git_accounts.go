@@ -17,7 +17,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/github"
 )
 
 type ExternalAccountsHandler struct {
@@ -25,7 +24,6 @@ type ExternalAccountsHandler struct {
 	sessionMgr           *session.SessionManager
 	providerRegistry     *providers.Registry
 	bitbucketOauthConfig *oauth2.Config
-	githubOauthConfig    *oauth2.Config
 }
 
 // Errors returned by resolveAccount; callers map them to HTTP responses.
@@ -36,20 +34,10 @@ var (
 
 // ExternalAccountsRoutes initializes the external git accounts routes
 func ExternalAccountsRoutes(pool *pgxpool.Pool, sm *session.SessionManager, pr *providers.Registry) chi.Router {
-	// Initialize OAuth configs
-	ghConfig := &oauth2.Config{
-		ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
-		ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
-		RedirectURL:  os.Getenv("GITHUB_REDIRECT_URL"),
-		Scopes:       []string{"repo", "user:email"},
-		Endpoint:     github.Endpoint,
-	}
-
 	h := &ExternalAccountsHandler{
-		dbPool:            pool,
-		sessionMgr:        sm,
-		providerRegistry:  pr,
-		githubOauthConfig: ghConfig,
+		dbPool:           pool,
+		sessionMgr:       sm,
+		providerRegistry: pr,
 	}
 
 	r := chi.NewRouter()
