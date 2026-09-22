@@ -4,10 +4,10 @@ type Registry struct {
 	providers map[string]Provider
 }
 
-func NewRegistry(providers ...Provider) *Registry {
+func NewRegistry(ps ...Provider) *Registry {
 	r := &Registry{}
 	r.providers = make(map[string]Provider)
-	for _, p := range providers {
+	for _, p := range ps {
 		r.providers[p.Name()] = p
 	}
 	return r

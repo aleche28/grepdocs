@@ -106,10 +106,10 @@ func (ghp *GitHubProvider) ListRepositories(ctx context.Context, accessToken str
 	perPage := 100
 	page := 1
 	var repos []githubRepo
-	reqUrl := fmt.Sprintf("%s/user/repos?per_page=%d&page=%d", ghp.options.BaseURL, perPage, page)
+	reqURL := fmt.Sprintf("%s/user/repos?per_page=%d&page=%d", ghp.options.BaseURL, perPage, page)
 
 	for {
-		req, err := newGitHubRequest(ctx, reqUrl, accessToken)
+		req, err := newGitHubRequest(ctx, reqURL, accessToken)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch user github repos: %w", err)
 		}
@@ -135,8 +135,8 @@ func (ghp *GitHubProvider) ListRepositories(ctx context.Context, accessToken str
 
 		repos = append(repos, res...)
 
-		reqUrl = nextGitHubPage(resp)
-		if reqUrl == "" {
+		reqURL = nextGitHubPage(resp)
+		if reqURL == "" {
 			break
 		}
 		page++
@@ -145,7 +145,7 @@ func (ghp *GitHubProvider) ListRepositories(ctx context.Context, accessToken str
 		}
 	}
 
-	return mapToDtos(repos), nil
+	return toRepositories(repos), nil
 }
 
 // private helpers
@@ -158,7 +158,7 @@ type githubUser struct {
 }
 
 type githubRepo struct {
-	Id            int64  `json:"id"`
+	ID            int64  `json:"id"`
 	Name          string `json:"name"`      // ex: Hello-World
 	FullName      string `json:"full_name"` // ex: octocat/Hello-World
 	Private       bool   `json:"private"`
@@ -199,12 +199,12 @@ func nextGitHubPage(resp *http.Response) string {
 	return ""
 }
 
-func mapToDtos(ghRepos []githubRepo) []Repository {
+func toRepositories(ghRepos []githubRepo) []Repository {
 	repos := make([]Repository, 0, len(ghRepos))
 	for _, r := range ghRepos {
 		repos = append(repos, Repository{
 			Provider:       GitHub,
-			ProviderRepoID: strconv.FormatInt(r.Id, 10),
+			ProviderRepoID: strconv.FormatInt(r.ID, 10),
 			Name:           r.Name,
 			FullName:       r.FullName,
 			IsPrivate:      r.Private,
