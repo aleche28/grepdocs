@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"grepdocs/api/providers"
 	"grepdocs/api/routers"
 	"grepdocs/api/session"
 	"log"
@@ -83,6 +84,12 @@ func main() {
 		secureCookie,
 	)
 
+	registry := providers.NewRegistry(providers.NewGitHub(providers.GitHubOptions{
+		ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
+		ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
+		RedirectURL:  os.Getenv("GITHUB_REDIRECT_URL"),
+	}))
+
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.RequestID)
@@ -95,7 +102,7 @@ func main() {
 
 		r.Mount("/auth", routers.AuthRoutes(&AppConfig.GoogleLoginConfig, pool, sm))
 		r.Mount("/users", routers.UserRoutes(pool, sm))
-		r.Mount("/accounts", routers.ExternalAccountsRoutes(pool, sm))
+		r.Mount("/accounts", routers.ExternalAccountsRoutes(pool, sm, registry))
 	})
 
 	// about timeouts: https://blog.cloudflare.com/the-complete-guide-to-golang-net-http-timeouts/#httplistenandserve-is-doing-it-wrong
