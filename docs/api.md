@@ -129,7 +129,7 @@ is planned, so only self endpoints exist.
 | GET    | `/accounts`                       | Y    | Implemented (no pagination)    | List linked accounts (sanitized, **no tokens**)                  |
 | GET    | `/accounts/{provider}/login`      | Y    | Implemented for `github`       | Redirect: start linking a provider account                       |
 | GET    | `/accounts/{provider}/callback`   | Y    | Implemented for `github`       | Provider OAuth callback (verify state, store tokens, redirect)   |
-| GET    | `/accounts/{provider}/repositories` | Y  | Implemented for `github`, unfiltered | Discover repos from a linked account (`?account_id=` disambiguates) |
+| GET    | `/accounts/{provider}/repositories` | Y  | Implemented for `github` (no filtering yet) | Discover repos from a linked account (`?account_id=` disambiguates) |
 | DELETE | `/accounts/{id}`                  | Y    | Implemented                    | Unlink account (must own it)                                      |
 
 `bitbucket` (and any other non-`github` value) currently returns `501 not_implemented` on all four
@@ -157,14 +157,19 @@ therefore accepts `?account_id=` to select which linked account to read from. Th
 belong to the caller. With exactly one linked account the parameter is optional; with several,
 omitting it returns `400 bad_request` rather than guessing.
 
-`GET /api/accounts/{provider}/repositories` — **Proposed** filters and shape; today it returns the
-full raw GitHub repo list from the linked account with no filtering, pagination, or `tracked`
-marker:
+`GET /api/accounts/{provider}/repositories` returns the account's repositories normalized to a
+provider-neutral shape; GitHub pagination is followed internally. **Not yet implemented**: the
+`q`/`private`/`type` filters below and the `tracked` marker.
 
+- Each item includes: `provider`, `provider_repo_id` (**string** — Bitbucket uses UUIDs),
+  `name`, `full_name`, `html_url`, `is_private`, `default_branch`.
 - Filters (Proposed): `?q=`, `?private=true|false`, `?type=owner|member|all`, plus the standard
   pagination params.
-- Each item should include: `provider`, `provider_repo_id`, `name`, `full_name`, `html_url`,
-  `is_private`, `default_branch`, and whether it is already tracked (`tracked: true`).
+- `tracked: true` will be added to each item once repositories can be tracked (Phase 2).
+
+Failures: `403 forbidden` when the stored token is invalid or revoked (the user must re-link the
+account), `429 rate_limited` when the provider's rate limit is hit, `501 not_implemented` for a
+provider that has no registered implementation.
 
 Both provider OAuth routes verify a single-use, session-bound `state` value the same way as
 Google login — a linking flow using a state cookie instead of the session would be a regression,
@@ -196,7 +201,7 @@ not an alternative implementation.
 {
   "provider": "github",
   "account_id": 3,
-  "provider_repo_id": 123456,
+  "provider_repo_id": "123456",
   "owner": "acme",
   "name": "docs",
   "tracked_branch": "main"

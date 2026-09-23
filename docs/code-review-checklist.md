@@ -3,7 +3,7 @@
 Source: senior review of `src/api` (first critique). One item per checkbox, update with
 the file/commit that closed it.
 
-Legend: `[x]` done · `[ ]` open · last updated 2026-09-16
+Legend: `[x]` done · `[ ]` open · last updated 2026-09-23
 
 ## A. Security
 
@@ -44,9 +44,13 @@ Legend: `[x]` done · `[ ]` open · last updated 2026-09-16
 
 ## C. Architecture
 
-- [ ] **C1 — No service / provider abstraction layer.** GitHub API calls live in handlers;
-      requirements demand an extensible provider system (Bitbucket, GitLab). Extract a
-      `providers` interface + service/use-case layer between handlers and `dal`.
+- [x] **C1 — No service / provider abstraction layer.** Fixed: new `providers` package
+      (`Provider` interface, `Registry`, GitHub impl in `providers/github.go`) — handlers depend on
+      the interface, `main.go` builds the registry, GitHub HTTP/OAuth code moved out of
+      `routers/external_git_accounts.go`, and provider failures are normalized to
+      `ErrInvalidToken`/`ErrRateLimited` and mapped to `403`/`429`. A service/use-case layer was
+      deliberately **not** added yet — deferred to Phase 2, where sync orchestration gives it real
+      work.
 - [x] **C2 — No shared auth middleware.** Fixed: `middleware/middleware.go` provides
       `RequireAuth(sm)` (JSON-less plain 401 today, see C5) and `CurrentUserID(r)`; wired into the
       `users` and `accounts` routers. Handlers no longer re-check `GetSession`.

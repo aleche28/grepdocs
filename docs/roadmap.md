@@ -19,10 +19,12 @@ Goal: remove the one-account-per-provider ceiling and put a real provider abstra
 since both the multi-account work and any future non-GitHub provider need the same seam. Token
 encryption rides along because multi-account multiplies the number of tokens at rest.
 
-Status: **schema + linking done** — migration `000004` moves the unique key to
-`(user_id, provider, provider_user_id)` and adds `label`; `UpsertExternalGitAccount` makes relinking
-idempotent; account-scoped reads take `?account_id=`. Still open in this phase: provider abstraction
-(C1), token encryption (A2/D1), and the seed tests (E1).
+Status: **schema + linking + provider abstraction done** — migration `000004` moves the unique key
+to `(user_id, provider, provider_user_id)` and adds `label`; `UpsertExternalGitAccount` makes
+relinking idempotent; account-scoped reads take `?account_id=`; GitHub access now sits behind the
+`providers` package (`Provider` interface + `Registry`), with provider failures normalized to
+`ErrInvalidToken`/`ErrRateLimited` and mapped to `403`/`429`. Still open in this phase: token
+encryption (A2/D1) and the seed tests (E1).
 
 - **Schema**: `external_git_accounts` currently enforces `UNIQUE(user_id, provider)`
   (`database/migrations/000002_create_external_git_accounts_table.up.sql:12`). New migration
@@ -41,7 +43,9 @@ idempotent; account-scoped reads take `?account_id=`. Still open in this phase: 
   repositories, refresh token) out of the inline GitHub calls in
   `routers/external_git_accounts.go`. Multi-account and a future Bitbucket/GitLab provider both
   need this seam — build it once here rather than duplicating inline GitHub-shaped code per
-  provider later.
+  provider later. **Done** — `providers` package with a `Registry`; GitHub lives behind it. Token
+  refresh is modeled as an optional `Refresher` capability rather than a method on every provider,
+  since GitHub tokens don't refresh.
 - **Token encryption (checklist A2/D1)**: `access_token`/`refresh_token` are plaintext today. Add
   at-rest encryption (app-level AEAD or KMS envelope) before the number of stored tokens grows
   with multi-account.
