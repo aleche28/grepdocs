@@ -55,7 +55,7 @@ func main() {
 		log.Fatal("TOKEN_ENCRYPTION_KEY is not set")
 	}
 
-	tokenCipher, err := secrets.NewAESGCMCipher(enckey)
+	tokenCipher, err := secrets.NewAESGCMCipher([]byte(enckey))
 	if err != nil {
 		log.Fatal(err)
 	}
