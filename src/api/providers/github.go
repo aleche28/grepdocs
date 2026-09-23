@@ -82,7 +82,7 @@ func (ghp *GitHubProvider) FetchUser(ctx context.Context, accessToken string) (U
 
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return User{}, fmt.Errorf("github API returned status: %d", resp.StatusCode)
+		return User{}, classifyGitHubResponse(resp)
 	}
 
 	var ghUser githubUser
@@ -120,10 +120,8 @@ func (ghp *GitHubProvider) ListRepositories(ctx context.Context, accessToken str
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			// TODO: distinguish rate-limit (403 with X-RateLimit-Remaining: 0)
-			// from invalid tokens without surfacing 429 for internal calls
 			resp.Body.Close()
-			return nil, fmt.Errorf("github API returned status: %d", resp.StatusCode)
+			return nil, classifyGitHubResponse(resp)
 		}
 
 		var res []githubRepo
@@ -213,4 +211,21 @@ func toRepositories(ghRepos []githubRepo) []Repository {
 		})
 	}
 	return repos
+}
+
+func classifyGitHubResponse(res *http.Response) error {
+	switch res.StatusCode {
+	case http.StatusUnauthorized:
+		return ErrInvalidToken
+	case http.StatusForbidden:
+		// GitHub reuses 403 for revoked tokens and rate limits
+		if res.Header.Get("X-RateLimit-Remaining") == "0" {
+			return ErrRateLimited
+		}
+		return ErrInvalidToken
+	case http.StatusTooManyRequests:
+		return ErrRateLimited
+	default:
+		return fmt.Errorf("github API returned status: %d", res.StatusCode)
+	}
 }

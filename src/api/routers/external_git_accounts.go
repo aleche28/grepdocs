@@ -16,14 +16,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"golang.org/x/oauth2"
 )
 
 type ExternalAccountsHandler struct {
-	dbPool               *pgxpool.Pool
-	sessionMgr           *session.SessionManager
-	providerRegistry     *providers.Registry
-	bitbucketOauthConfig *oauth2.Config
+	dbPool           *pgxpool.Pool
+	sessionMgr       *session.SessionManager
+	providerRegistry *providers.Registry
 }
 
 // Errors returned by resolveAccount; callers map them to HTTP responses.
@@ -152,6 +150,10 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 
 	// Fetch provider user info
 	provUser, err := provider.FetchUser(r.Context(), token.AccessToken)
+	if errors.Is(err, providers.ErrInvalidToken) {
+		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Invalid or revoked access token")
+		return
+	}
 	if err != nil {
 		httpx.WriteInternalError(w, err)
 		return
@@ -272,10 +274,17 @@ func (h *ExternalAccountsHandler) listExternalRepositories(w http.ResponseWriter
 	}
 
 	repos, err := provider.ListRepositories(r.Context(), account.AccessToken)
-	if err != nil {
-		// 401/403 mean the stored token is no longer valid; without a
-		// refresh flow the user must re-link the account
-		// TODO: if provider impls Refreshed interface, refresh token
+	switch {
+	case errors.Is(err, providers.ErrInvalidToken):
+		// TODO: if provider impls Refresher, refresh token
+		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
+			"The linked account's access token is invalid or revoked, please re-link your account")
+		return
+	case errors.Is(err, providers.ErrRateLimited):
+		httpx.WriteError(w, http.StatusTooManyRequests, httpx.CodeRateLimited,
+			"Provider rate limit exceeded, try again later")
+		return
+	case err != nil:
 		httpx.WriteInternalError(w, err)
 		return
 	}

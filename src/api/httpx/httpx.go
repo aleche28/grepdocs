@@ -14,6 +14,7 @@ const (
 	CodeConflict         = "conflict"
 	CodeNotImplemented   = "not_implemented"
 	CodeInternal         = "internal"
+	CodeRateLimited      = "rate_limited"
 )
 
 func WriteJSON(w http.ResponseWriter, status int, data any) {

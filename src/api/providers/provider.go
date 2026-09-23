@@ -2,8 +2,14 @@ package providers
 
 import (
 	"context"
+	"errors"
 
 	"golang.org/x/oauth2"
+)
+
+var (
+	ErrInvalidToken = errors.New("provider token invalid or revoked")
+	ErrRateLimited  = errors.New("provider rate limit exceeded")
 )
 
 type User struct {
