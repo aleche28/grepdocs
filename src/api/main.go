@@ -5,6 +5,7 @@ import (
 	"errors"
 	"grepdocs/api/providers"
 	"grepdocs/api/routers"
+	"grepdocs/api/secrets"
 	"grepdocs/api/session"
 	"log"
 	"net/http"
@@ -47,6 +48,16 @@ func main() {
 			"openid",
 		},
 		Endpoint: google.Endpoint,
+	}
+
+	enckey := os.Getenv("TOKEN_ENCRYPTION_KEY")
+	if enckey == "" {
+		log.Fatal("TOKEN_ENCRYPTION_KEY is not set")
+	}
+
+	tokenCipher, err := secrets.NewAESGCMCipher(enckey)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	dbURL := os.Getenv("DATABASE_URL")
@@ -102,7 +113,7 @@ func main() {
 
 		r.Mount("/auth", routers.AuthRoutes(&AppConfig.GoogleLoginConfig, pool, sm))
 		r.Mount("/users", routers.UserRoutes(pool, sm))
-		r.Mount("/accounts", routers.ExternalAccountsRoutes(pool, sm, registry))
+		r.Mount("/accounts", routers.ExternalAccountsRoutes(pool, sm, registry, tokenCipher))
 	})
 
 	// about timeouts: https://blog.cloudflare.com/the-complete-guide-to-golang-net-http-timeouts/#httplistenandserve-is-doing-it-wrong

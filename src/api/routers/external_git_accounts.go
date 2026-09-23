@@ -7,6 +7,7 @@ import (
 	"grepdocs/api/httpx"
 	"grepdocs/api/middleware"
 	"grepdocs/api/providers"
+	"grepdocs/api/secrets"
 	"grepdocs/api/session"
 	"net/http"
 	"os"
@@ -22,6 +23,7 @@ type ExternalAccountsHandler struct {
 	dbPool           *pgxpool.Pool
 	sessionMgr       *session.SessionManager
 	providerRegistry *providers.Registry
+	cipher           secrets.Cipher
 }
 
 // Errors returned by resolveAccount; callers map them to HTTP responses.
@@ -31,11 +33,12 @@ var (
 )
 
 // ExternalAccountsRoutes initializes the external git accounts routes
-func ExternalAccountsRoutes(pool *pgxpool.Pool, sm *session.SessionManager, pr *providers.Registry) chi.Router {
+func ExternalAccountsRoutes(pool *pgxpool.Pool, sm *session.SessionManager, pr *providers.Registry, c secrets.Cipher) chi.Router {
 	h := &ExternalAccountsHandler{
 		dbPool:           pool,
 		sessionMgr:       sm,
 		providerRegistry: pr,
+		cipher:           c,
 	}
 
 	r := chi.NewRouter()
@@ -173,12 +176,27 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 		refreshToken = token.RefreshToken
 	}
 
+	encAccTok, err := h.cipher.Encrypt(token.AccessToken)
+	if err != nil {
+		httpx.WriteInternalError(w, err)
+		return
+	}
+
+	encRefTok := ""
+	if len(refreshToken) > 0 {
+		encRefTok, err = h.cipher.Encrypt(refreshToken)
+		if err != nil {
+			httpx.WriteInternalError(w, err)
+			return
+		}
+	}
+
 	_, err = q.UpsertExternalGitAccount(r.Context(), dal.UpsertExternalGitAccountParams{
 		UserID:         userID,
 		Provider:       provider.Name(),
 		ProviderUserID: provUser.ProviderUserID,
-		AccessToken:    token.AccessToken,
-		RefreshToken:   refreshToken,
+		AccessToken:    encAccTok,
+		RefreshToken:   encRefTok,
 		TokenExpiresAt: &expiresAt,
 	})
 	if err != nil {
@@ -273,7 +291,13 @@ func (h *ExternalAccountsHandler) listExternalRepositories(w http.ResponseWriter
 		return
 	}
 
-	repos, err := provider.ListRepositories(r.Context(), account.AccessToken)
+	tok, err := h.cipher.Decrypt(account.AccessToken)
+	if err != nil {
+		httpx.WriteInternalError(w, err)
+		return
+	}
+
+	repos, err := provider.ListRepositories(r.Context(), tok)
 	switch {
 	case errors.Is(err, providers.ErrInvalidToken):
 		// TODO: if provider impls Refresher, refresh token
