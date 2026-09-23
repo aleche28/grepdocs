@@ -9,11 +9,17 @@ import (
 	"strings"
 )
 
+const keySize = 32 // AES-256
+
 type AESGCMCipher struct {
 	aead cipher.AEAD
 }
 
 func NewAESGCMCipher(key []byte) (*AESGCMCipher, error) {
+	if len(key) != keySize {
+		return nil, fmt.Errorf("invalid encryption key: want %d bytes, got %d", keySize, len(key))
+	}
+
 	blk, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("invalid encryption key: %w", err)

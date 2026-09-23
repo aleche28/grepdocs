@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"grepdocs/api/providers"
 	"grepdocs/api/routers"
@@ -50,12 +51,12 @@ func main() {
 		Endpoint: google.Endpoint,
 	}
 
-	enckey := os.Getenv("TOKEN_ENCRYPTION_KEY")
-	if enckey == "" {
-		log.Fatal("TOKEN_ENCRYPTION_KEY is not set")
+	encKey, err := base64.StdEncoding.DecodeString(os.Getenv("TOKEN_ENCRYPTION_KEY"))
+	if err != nil {
+		log.Fatalf("TOKEN_ENCRYPTION_KEY must be base64-encoded: %v", err)
 	}
 
-	tokenCipher, err := secrets.NewAESGCMCipher([]byte(enckey))
+	tokenCipher, err := secrets.NewAESGCMCipher(encKey)
 	if err != nil {
 		log.Fatal(err)
 	}
