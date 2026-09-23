@@ -19,12 +19,13 @@ Goal: remove the one-account-per-provider ceiling and put a real provider abstra
 since both the multi-account work and any future non-GitHub provider need the same seam. Token
 encryption rides along because multi-account multiplies the number of tokens at rest.
 
-Status: **schema + linking + provider abstraction done** — migration `000004` moves the unique key
-to `(user_id, provider, provider_user_id)` and adds `label`; `UpsertExternalGitAccount` makes
-relinking idempotent; account-scoped reads take `?account_id=`; GitHub access now sits behind the
-`providers` package (`Provider` interface + `Registry`), with provider failures normalized to
-`ErrInvalidToken`/`ErrRateLimited` and mapped to `403`/`429`. Still open in this phase: token
-encryption (A2/D1) and the seed tests (E1).
+Status: **schema + linking + provider abstraction + token encryption done** — migration `000004`
+moves the unique key to `(user_id, provider, provider_user_id)` and adds `label`;
+`UpsertExternalGitAccount` makes relinking idempotent; account-scoped reads take `?account_id=`;
+GitHub access now sits behind the `providers` package (`Provider` interface + `Registry`), with
+provider failures normalized to `ErrInvalidToken`/`ErrRateLimited` and mapped to `403`/`429`;
+provider tokens are encrypted at rest with AES-256-GCM behind the `secrets.Cipher` interface.
+Still open in this phase: the seed tests (E1).
 
 - **Schema**: `external_git_accounts` currently enforces `UNIQUE(user_id, provider)`
   (`database/migrations/000002_create_external_git_accounts_table.up.sql:12`). New migration
@@ -48,7 +49,10 @@ encryption (A2/D1) and the seed tests (E1).
   since GitHub tokens don't refresh.
 - **Token encryption (checklist A2/D1)**: `access_token`/`refresh_token` are plaintext today. Add
   at-rest encryption (app-level AEAD or KMS envelope) before the number of stored tokens grows
-  with multi-account.
+  with multi-account. **Done** — app-level AES-256-GCM in the `secrets` package, keyed by a
+  base64 `TOKEN_ENCRYPTION_KEY` validated at startup; ciphertext is versioned (`v1:`) and
+  base64-encoded for safe storage in the existing `TEXT` columns. KMS envelope remains a future
+  swap behind `secrets.Cipher`.
 - **Tests (checklist E1, started here not deferred)**: first unit tests for session lifecycle and
   an OAuth callback integration test (fake provider via `httptest`) — the riskiest logic in the
   app, and this phase touches it directly.

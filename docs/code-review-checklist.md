@@ -9,9 +9,13 @@ Legend: `[x]` done · `[ ]` open · last updated 2026-09-23
 
 - [x] **A1 — `GET /users/{id}` leaked any user's PII** (email, google_id) to any authenticated user.
       Fixed by removing the route (`routers/users.go`); users are private, self-only per `docs/api.md`.
-- [ ] **A2 — Provider tokens stored in plaintext** (`external_git_accounts.access_token` /
-      `refresh_token`, scope `repo` = full write access to private repos). Needs at-rest
-      encryption (KMS envelope) or a secrets store.
+- [x] **A2 — Provider tokens stored in plaintext** (`external_git_accounts.access_token` /
+      `refresh_token`, scope `repo` = full write access to private repos). Fixed: app-level
+      AES-256-GCM (`secrets` package) encrypts tokens before persistence and decrypts on read;
+      key from base64 `TOKEN_ENCRYPTION_KEY`, validated at startup. Ciphertext is versioned
+      (`v1:`) and base64-encoded so it is TEXT-safe. A KMS envelope can replace the impl behind
+      the `secrets.Cipher` interface later. Existing plaintext rows must be re-linked (no
+      backfill yet).
 - [x] **A3 — Missing `return` after invalid redirect-path check** in `googleCallback` (latent
       open redirect). Fixed: handler now returns before redirecting.
 - [x] **A4 — Server error details returned to clients** (`http.Error(..., err.Error())` in
@@ -83,7 +87,7 @@ Legend: `[x]` done · `[ ]` open · last updated 2026-09-23
 
 ## D. Database / DAL
 
-- [ ] **D1 — Tokens at rest plaintext** (dup of A2; track under A2).
+- [x] **D1 — Tokens at rest plaintext** (dup of A2; closed with A2 — see `secrets` package).
 - [x] **D2 — `user_id BIGSERIAL` FK in migration `000002`** should be `BIGINT` (BIGSERIAL implies
       auto-generate). Fixed: new migration `000003` drops the id default + sequence; applied and
       verified in the live schema.

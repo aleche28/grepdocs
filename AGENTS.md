@@ -101,6 +101,24 @@ behalf; write the files and tell them the commands.
 
 sqlc overrides map `timestamptz` to `time.Time` / `*time.Time` rather than `pgtype` wrappers.
 
+### Token encryption (`src/api/secrets`)
+
+Provider `access_token`/`refresh_token` are encrypted at rest with app-level AES-256-GCM; the DB
+only ever sees base64 ciphertext prefixed `v1:`. The `secrets.Cipher` interface is the seam — a
+KMS-envelope implementation can replace `AESGCMCipher` without touching call sites. `main.go`
+reads `TOKEN_ENCRYPTION_KEY` (base64, 32 bytes), validates it at startup, and **fatals** if it is
+missing, malformed, or the wrong length.
+
+Rules:
+
+- Never commit a key. Generate with `openssl rand -base64 32` and keep it in `.env`; the key must
+  stay stable or every stored token becomes unreadable.
+- Encrypt before every write to `external_git_accounts` and decrypt after every read; the current
+  sites are `providerCallback` and `listExternalRepositories`. `secrets` is not wired into the DAL
+  automatically, so new read/write paths must not forget this.
+- Keep the `v1:` prefix on ciphertext; it is what makes format/key rotation possible.
+- Unit tests live in `secrets/aesgcm_test.go` (round-trip, tamper, wrong key, malformed input).
+
 ### HTTP responses (`src/api/httpx`)
 
 Every response goes through `httpx`. Never use `http.Error` or hand-rolled JSON encoding.
@@ -116,10 +134,10 @@ Handlers build response DTOs explicitly (inline `map[string]any` today). Token f
 
 ### Git providers
 
-Only GitHub is implemented, and its API calls sit directly in `routers/external_git_accounts.go`
-behind a `provider != providerGithub → 501` guard. Extracting a provider abstraction is known
-outstanding work (C1 in the review checklist) — when adding Bitbucket, build that layer rather than
-adding a second inline implementation.
+Only GitHub is implemented, behind the `providers.Provider` interface + `Registry` (new providers
+go in `src/api/providers/`, not inline in handlers). Provider failures are normalized to
+`ErrInvalidToken`/`ErrRateLimited` and mapped by callers to `403`/`429`. When adding Bitbucket,
+build a `Refresher` implementation rather than adding a second inline flow.
 
 GitHub specifics worth preserving: the shared `httpClient` from `routers/http.go` (10s timeout),
 `newGitHubRequest` for auth/accept headers, `io.LimitReader` bounding every decode, `Link`-header
@@ -140,9 +158,9 @@ flow; expired tokens mean re-linking.
   documents, search, groups, pagination) is not implemented. Treat it as the target shape for new
   endpoints, and check it before inventing a route or response body.
 - `docs/code-review-checklist.md` — tracked findings from a senior review, with `[ ]` items marking
-  known open problems (plaintext provider tokens, no CORS/rate limiting, no provider abstraction,
-  config split between `main.go` and `os.Getenv` in router constructors, session write
-  amplification, no tests). Update the relevant checkbox when you close one.
+  known open problems (no CORS/rate limiting, config split between `main.go` and `os.Getenv` in
+  router constructors, session write amplification, no token refresh path, no tests). Update the
+  relevant checkbox when you close one.
 - `docs/requirements.md`, `docs/user-stories.md` — product spec.
 - `docs/howto/` — Google/GitHub OAuth setup, golang-migrate workflow, sqlc usage.
 - `docs/roadmap.md` — phased build-out plan (not dated), interleaving new features with the open
