@@ -8,7 +8,7 @@ MIGR_PATH   := ./database/migrations
 # the command line, e.g. `make migrate-up DATABASE_URL=...`).
 DATABASE_URL ?= $(shell sed -n 's/^[[:space:]]*DATABASE_URL[[:space:]]*=[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}[[:space:]]*$$/\1/p' $(ENV_FILE))
 
-.PHONY: help infra-up infra-down env run build fmt vet tidy sqlc-generate migrate-up migrate-down migrate-new
+.PHONY: help infra-up infra-down env run build test test-race fmt vet tidy sqlc-generate migrate-up migrate-down migrate-new
 
 help:
 	@echo "GrepDocs targets:"
@@ -17,6 +17,8 @@ help:
 	@echo "  env             Create $(ENV_FILE) from $(ENV_EXAMPLE) if missing"
 	@echo "  run             Run the API server (go run main.go)"
 	@echo "  build           Build the API module"
+	@echo "  test            Run the test suite (go test ./...)"
+	@echo "  test-race       Run the test suite with the race detector"
 	@echo "  fmt, vet        Go formatting / vetting (quality gates)"
 	@echo "  tidy            Sync go.sum with go.mod"
 	@echo "  sqlc-generate   Regenerate src/api/dal from schema + queries.sql"
@@ -38,6 +40,12 @@ run:
 
 build:
 	cd $(GO_DIR) && go build
+
+test:
+	cd $(GO_DIR) && go test ./...
+
+test-race:
+	cd $(GO_DIR) && go test -race ./...
 
 fmt:
 	cd $(GO_DIR) && go fmt
