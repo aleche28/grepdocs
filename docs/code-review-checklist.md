@@ -3,7 +3,7 @@
 Source: senior review of `src/api` (first critique). One item per checkbox, update with
 the file/commit that closed it.
 
-Legend: `[x]` done · `[ ]` open · last updated 2026-09-23
+Legend: `[x]` done · `[ ]` open · last updated 2026-09-25
 
 ## A. Security
 
@@ -99,9 +99,15 @@ Legend: `[x]` done · `[ ]` open · last updated 2026-09-23
 
 ## E. Testing & quality
 
-- [ ] **E1 — No tests or CI** in a codebase whose riskiest logic is sessions + OAuth. Add unit tests
-      (session lifecycle, `RequireAuth`) and an OAuth callback integration test with a fake provider
-      (`httptest`); at minimum a `ping` smoke test in CI. `go vet`/`go fmt` won't catch the bugs in B.
+- [ ] **E1 — Tests exist; the OAuth callback integration test and CI are still missing.** Done:
+      unit tests for session lifecycle (`session/manager_test.go`), `RequireAuth`/`CurrentUserID`
+      (`middleware/middleware_test.go`), provider HTTP + pagination against `httptest`
+      (`providers/github_test.go`), response envelopes (`httpx/httpx_test.go`), and the session
+      model (`models/session_test.go`); runnable via `make test` / `make test-race`. Still open:
+      the OAuth callback integration test with a fake provider — blocked because handlers hold a
+      concrete `*pgxpool.Pool` and there is no DB seam to inject a fake (or a test Postgres) — plus
+      a `ping` smoke test (`/ping` is an inline closure in `main.go`, not a testable router) and CI.
+      `go vet`/`go fmt` won't catch the bugs in B.
 
 ## Completed during refactor (out of the original list)
 

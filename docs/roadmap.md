@@ -11,7 +11,8 @@ open), `docs/requirements.md` / `docs/user-stories.md` (product spec).
 Implemented: Google OAuth login, session management (Redis-backed), GitHub account linking
 (OAuth, **one account per provider per user**), GitHub repository discovery for a linked account,
 self-service user endpoints. No tracked repositories, documents, search, groups, commit-back, or
-UI yet. No tests/CI.
+UI yet. Unit tests cover sessions, auth middleware, providers, response envelopes, and the session
+model; no CI.
 
 ## Phase 1 — Multi-account & provider foundation
 
@@ -25,7 +26,8 @@ moves the unique key to `(user_id, provider, provider_user_id)` and adds `label`
 GitHub access now sits behind the `providers` package (`Provider` interface + `Registry`), with
 provider failures normalized to `ErrInvalidToken`/`ErrRateLimited` and mapped to `403`/`429`;
 provider tokens are encrypted at rest with AES-256-GCM behind the `secrets.Cipher` interface.
-Still open in this phase: the seed tests (E1).
+Still open in this phase: the rest of the seed tests (E1) — the session/`RequireAuth`/provider unit
+tests landed, but the OAuth callback integration test (needs a DB seam) and CI are outstanding.
 
 - **Schema**: `external_git_accounts` currently enforces `UNIQUE(user_id, provider)`
   (`database/migrations/000002_create_external_git_accounts_table.up.sql:12`). New migration
@@ -54,8 +56,10 @@ Still open in this phase: the seed tests (E1).
   base64-encoded for safe storage in the existing `TEXT` columns. KMS envelope remains a future
   swap behind `secrets.Cipher`.
 - **Tests (checklist E1, started here not deferred)**: first unit tests for session lifecycle and
-  an OAuth callback integration test (fake provider via `httptest`) — the riskiest logic in the
-  app, and this phase touches it directly.
+  `RequireAuth` are in (`session/manager_test.go`, `middleware/middleware_test.go`), alongside
+  provider HTTP/pagination tests against `httptest` (`providers/github_test.go`) and response
+  envelope tests (`httpx`). The OAuth callback integration test with a fake provider is still open —
+  it needs a DB seam (handlers hold a concrete `*pgxpool.Pool`) or a test Postgres — as is CI.
 
 ## Phase 2 — Repository tracking
 

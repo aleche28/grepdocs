@@ -9,8 +9,10 @@ GrepDocs: a centralized tool to browse, search, and edit Markdown documentation 
 multiple git repositories, committing edits back to source control. Only the backend exists today
 (`src/api`, Go module `grepdocs/api`); `src/ui` is reserved for a future frontend and is absent.
 
-There are no tests and no CI. `go vet` and `go fmt` are the only quality gates — run both before
-committing.
+There is no CI. `go test ./...`, `go vet`, and `go fmt` are the quality gates — run all three before
+committing (`make test`, `make vet`, `make fmt`). Unit tests cover sessions, auth middleware,
+providers, response envelopes, and the session model; `routers` is still untested (handlers hold a
+concrete `*pgxpool.Pool`, so there is no DB seam yet).
 
 ## Commands
 
@@ -24,6 +26,8 @@ at the repo root wraps them and handles the `cd` for you:
 | Create `.env`         | `make env`                         |
 | Run the API (`:3000`) | `make run`                         |
 | Build                 | `make build`                       |
+| Run tests             | `make test`                        |
+| Tests + race detector | `make test-race`                   |
 | Format / vet          | `make fmt` / `make vet`            |
 | Apply migrations      | `make migrate-up`                  |
 | Roll back             | `make migrate-down [COUNT=n]`      |
