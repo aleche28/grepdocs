@@ -261,22 +261,37 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	trackedBranch := repo.TrackedBranch
-	if reqBody.TrackedBranch != "" {
-		trackedBranch = reqBody.TrackedBranch
+	updateParams := &dal.UpdateRepositoryParams{
+		ID:            id,
+		TrackedBranch: repo.TrackedBranch,
+		SyncedCommit:  repo.SyncedCommit,
+		SyncStatus:    repo.SyncStatus,
+		AutoSync:      repo.AutoSync,
+		LastSyncAt:    repo.LastSyncAt,
+	}
+
+	if reqBody.TrackedBranch != "" && strings.ToLower(reqBody.TrackedBranch) != strings.ToLower(repo.TrackedBranch) {
+		updateParams.TrackedBranch = reqBody.TrackedBranch
+		// on branch change, reset sync
+		updateParams.SyncedCommit = pgtype.Text{String: "", Valid: false}
+		updateParams.SyncStatus = "pending"
+		updateParams.LastSyncAt = nil
+
+		// check branch existence
+		token := ""
+		prov, ok := h.providerRegistry.Lookup(repo.Provider)
+		if !ok {
+			httpx.WriteError(w, http.StatusNotImplemented, httpx.CodeNotImplemented, "Provider not supported: "+repo.Provider)
+			return
+		}
+
 		if repo.IsPrivate {
 			acc, err := resolveAccount(r.Context(), q, uid, repo.Provider, repo.AccountID.Int64)
 			if err != nil {
 				httpx.WriteInternalError(w, err)
 				return
 			}
-			prov, ok := h.providerRegistry.Lookup(repo.Provider)
-			if !ok {
-				httpx.WriteError(w, http.StatusNotImplemented, httpx.CodeNotImplemented, "Provider not supported: "+repo.Provider)
-				return
-			}
 
-			token := ""
 			if acc.AccessToken == "" || (acc.TokenExpiresAt != nil && acc.TokenExpiresAt.Before(time.Now())) {
 				// No refresh flow yet: the user must re-link the account
 				httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Empty access token or expired")
@@ -289,24 +304,24 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 				return
 			}
 			token = decrypted
+		}
 
-			branches, err := prov.ListBranches(r.Context(), token, repo.Owner, repo.Name)
-			if err != nil {
-				httpx.WriteInternalError(w, err)
-				return
-			}
+		branches, err := prov.ListBranches(r.Context(), token, repo.Owner, repo.Name)
+		if err != nil {
+			httpx.WriteInternalError(w, err)
+			return
+		}
 
-			ok = false
-			for _, b := range branches {
-				if strings.ToLower(b.Name) == strings.ToLower(trackedBranch) {
-					ok = true
-					break
-				}
+		ok = false
+		for _, b := range branches {
+			if strings.ToLower(b.Name) == strings.ToLower(reqBody.TrackedBranch) {
+				ok = true
+				break
 			}
-			if !ok {
-				httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "tracked_branch in request body not found in repository branches")
-				return
-			}
+		}
+		if !ok {
+			httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "tracked_branch in request body not found in repository branches")
+			return
 		}
 	}
 
@@ -365,7 +380,7 @@ func (h *RepositoriesHandler) deleteRepository(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusNoContent, nil)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // private helpers
