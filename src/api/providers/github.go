@@ -185,30 +185,48 @@ func (ghp *GitHubProvider) GetRepository(ctx context.Context, accessToken string
 }
 
 func (ghp *GitHubProvider) ListBranches(ctx context.Context, accessToken string, owner string, name string) ([]Branch, error) {
-	reqURL := fmt.Sprintf("%s/repos/%s/%s/branches", ghp.options.BaseURL, url.PathEscape(owner), url.PathEscape(name))
-	req, err := newGitHubRequest(ctx, reqURL, accessToken)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch repository branches: %w", err)
-	}
+	perPage := 100
+	page := 1
+	var branches []githubBranch
 
-	resp, err := ghp.options.HTTPClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch repository branches: %w", err)
-	}
+	reqURL := fmt.Sprintf("%s/repos/%s/%s/branches?per_page=%d&page=%d", ghp.options.BaseURL, url.PathEscape(owner), url.PathEscape(name), perPage, page)
 
-	if resp.StatusCode != http.StatusOK {
+	for {
+		req, err := newGitHubRequest(ctx, reqURL, accessToken)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch repository branches: %w", err)
+		}
+
+		resp, err := ghp.options.HTTPClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch repository branches: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return nil, classifyGitHubResponse(resp)
+		}
+
+		var res []githubBranch
+		err = json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseBytes)).Decode(&res)
 		resp.Body.Close()
-		return nil, classifyGitHubResponse(resp)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse repository branches: %w", err)
+		}
+
+		branches = append(branches, res...)
+
+		reqURL = nextGitHubPage(resp)
+		if reqURL == "" {
+			break
+		}
+		page++
+		if page > maxGitHubPages {
+			break
+		}
 	}
 
-	var res []githubBranch
-	err = json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseBytes)).Decode(&res)
-	resp.Body.Close()
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse repository branches: %w", err)
-	}
-
-	return toBranches(res), nil
+	return toBranches(branches), nil
 }
 
 // private helpers
