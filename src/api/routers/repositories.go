@@ -12,6 +12,7 @@ import (
 	"grepdocs/api/session"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -146,6 +147,24 @@ func (h *RepositoriesHandler) trackNewRepository(w http.ResponseWriter, r *http.
 	trackedBranch := reqBody.TrackedBranch
 	if trackedBranch == "" {
 		trackedBranch = provRepo.DefaultBranch
+	} else {
+		branches, err := prov.ListBranches(r.Context(), token, reqBody.Owner, reqBody.Name)
+		if err != nil {
+			httpx.WriteInternalError(w, err)
+			return
+		}
+
+		ok := false
+		for _, b := range branches {
+			if strings.ToLower(b.Name) == strings.ToLower(trackedBranch) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "tracked_branch in request body not found in repository branches")
+			return
+		}
 	}
 
 	repo, err := q.CreateRepository(r.Context(), dal.CreateRepositoryParams{
@@ -244,6 +263,50 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 	trackedBranch := repo.TrackedBranch
 	if reqBody.TrackedBranch != "" {
 		trackedBranch = reqBody.TrackedBranch
+		if repo.IsPrivate {
+			acc, err := resolveAccount(r.Context(), q, uid, repo.Provider, repo.AccountID.Int64)
+			if err != nil {
+				httpx.WriteInternalError(w, err)
+				return
+			}
+			prov, ok := h.providerRegistry.Lookup(repo.Provider)
+			if !ok {
+				httpx.WriteError(w, http.StatusNotImplemented, httpx.CodeNotImplemented, "Provider not supported: "+repo.Provider)
+				return
+			}
+
+			token := ""
+			if acc.AccessToken == "" || (acc.TokenExpiresAt != nil && acc.TokenExpiresAt.Before(time.Now())) {
+				// No refresh flow yet: the user must re-link the account
+				httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Empty access token or expired")
+				return
+			}
+
+			decrypted, err := h.cipher.Decrypt(acc.AccessToken)
+			if err != nil {
+				httpx.WriteInternalError(w, err)
+				return
+			}
+			token = decrypted
+
+			branches, err := prov.ListBranches(r.Context(), token, repo.Owner, repo.Name)
+			if err != nil {
+				httpx.WriteInternalError(w, err)
+				return
+			}
+
+			ok = false
+			for _, b := range branches {
+				if strings.ToLower(b.Name) == strings.ToLower(trackedBranch) {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "tracked_branch in request body not found in repository branches")
+				return
+			}
+		}
 	}
 
 	updated, err := q.UpdateRepository(r.Context(), dal.UpdateRepositoryParams{

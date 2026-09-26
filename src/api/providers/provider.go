@@ -31,6 +31,12 @@ type Repository struct {
 	DefaultBranch  string `json:"default_branch"`
 }
 
+type Branch struct {
+	Name      string `json:"name"`
+	Commit    string `json:"commit"`
+	Protected bool   `json:"protected"`
+}
+
 type Provider interface {
 	Name() string
 	AuthCodeURL(state string) string
@@ -38,6 +44,7 @@ type Provider interface {
 	FetchUser(ctx context.Context, accessToken string) (User, error)
 	ListRepositories(ctx context.Context, accessToken string) ([]Repository, error)
 	GetRepository(ctx context.Context, accessToken string, owner string, name string) (Repository, error)
+	ListBranches(ctx context.Context, accessToken string, owner string, name string) ([]Branch, error)
 }
 
 // Refresher is implemented by providers whose token can be refreshed (not GitHub)

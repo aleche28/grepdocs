@@ -184,6 +184,33 @@ func (ghp *GitHubProvider) GetRepository(ctx context.Context, accessToken string
 	return repo, nil
 }
 
+func (ghp *GitHubProvider) ListBranches(ctx context.Context, accessToken string, owner string, name string) ([]Branch, error) {
+	reqURL := fmt.Sprintf("%s/repos/%s/%s/branches", ghp.options.BaseURL, url.PathEscape(owner), url.PathEscape(name))
+	req, err := newGitHubRequest(ctx, reqURL, accessToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch repository branches: %w", err)
+	}
+
+	resp, err := ghp.options.HTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch repository branches: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, classifyGitHubResponse(resp)
+	}
+
+	var res []githubBranch
+	err = json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseBytes)).Decode(&res)
+	resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse repository branches: %w", err)
+	}
+
+	return toBranches(res), nil
+}
+
 // private helpers
 
 type githubUser struct {
@@ -203,6 +230,14 @@ type githubRepo struct {
 	Owner         struct {
 		Login string `json:"login"`
 	} `json:"owner"`
+}
+
+type githubBranch struct {
+	Name      string `json:"name"`
+	Protected bool   `json:"protected"`
+	Commit    struct {
+		Sha string `json:"sha"`
+	} `json:"commit"`
 }
 
 // newGitHubRequest creates an authenticated GET request against the GitHub API
@@ -255,6 +290,18 @@ func toRepositories(ghRepos []githubRepo) []Repository {
 		})
 	}
 	return repos
+}
+
+func toBranches(ghBranches []githubBranch) []Branch {
+	branches := make([]Branch, 0, len(ghBranches))
+	for _, b := range ghBranches {
+		branches = append(branches, Branch{
+			Name:      b.Name,
+			Protected: b.Protected,
+			Commit:    b.Commit.Sha,
+		})
+	}
+	return branches
 }
 
 func classifyGitHubResponse(res *http.Response) error {
