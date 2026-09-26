@@ -86,6 +86,12 @@ func (h *RepositoriesHandler) trackNewRepository(w http.ResponseWriter, r *http.
 		return
 	}
 
+	prov, ok := h.providerRegistry.Lookup(reqBody.Provider)
+	if !ok {
+		httpx.WriteError(w, http.StatusNotImplemented, httpx.CodeNotImplemented, "Provider not supported: "+reqBody.Provider)
+		return
+	}
+
 	var acc dal.ExternalGitAccount
 	if reqBody.AccountID > 0 {
 		var err error
@@ -101,12 +107,6 @@ func (h *RepositoriesHandler) trackNewRepository(w http.ResponseWriter, r *http.
 			httpx.WriteInternalError(w, err)
 			return
 		}
-	}
-
-	prov, ok := h.providerRegistry.Lookup(reqBody.Provider)
-	if !ok {
-		httpx.WriteError(w, http.StatusNotImplemented, httpx.CodeNotImplemented, "Provider not supported: "+reqBody.Provider)
-		return
 	}
 
 	// A repo can be tracked without an account if the repo is public
