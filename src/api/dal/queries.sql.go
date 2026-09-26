@@ -372,10 +372,10 @@ const updateRepository = `-- name: UpdateRepository :one
 UPDATE repositories
 SET
 	tracked_branch = $3,
-	synced_commit = $4,
-	sync_status = $5,
-	auto_sync = $6,
-	last_sync_at = $7,
+	auto_sync = $4,
+	synced_commit = CASE WHEN $5::boolean THEN NULL ELSE synced_commit END,
+	sync_status = CASE WHEN $5::boolean THEN 'pending' ELSE sync_status END,
+	last_sync_at = CASE WHEN $5::boolean THEN NULL ELSE last_sync_at END,
 	updated_at = NOW()
 WHERE id = $1 AND user_id = $2
 RETURNING id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at
@@ -385,21 +385,20 @@ type UpdateRepositoryParams struct {
 	ID            int64
 	UserID        int64
 	TrackedBranch string
-	SyncedCommit  pgtype.Text
-	SyncStatus    string
 	AutoSync      bool
-	LastSyncAt    *time.Time
+	ResetSync     bool
 }
 
+// Only PATCH-owned fields (tracked_branch, auto_sync) are written. The sync
+// fields are reset only when reset_sync is true (branch change), otherwise they
+// keep their current values so a concurrent sync is not clobbered by stale data.
 func (q *Queries) UpdateRepository(ctx context.Context, arg UpdateRepositoryParams) (Repository, error) {
 	row := q.db.QueryRow(ctx, updateRepository,
 		arg.ID,
 		arg.UserID,
 		arg.TrackedBranch,
-		arg.SyncedCommit,
-		arg.SyncStatus,
 		arg.AutoSync,
-		arg.LastSyncAt,
+		arg.ResetSync,
 	)
 	var i Repository
 	err := row.Scan(

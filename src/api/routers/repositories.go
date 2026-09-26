@@ -235,10 +235,7 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 		ID:            id,
 		UserID:        uid,
 		TrackedBranch: repo.TrackedBranch,
-		SyncedCommit:  repo.SyncedCommit,
-		SyncStatus:    repo.SyncStatus,
 		AutoSync:      repo.AutoSync,
-		LastSyncAt:    repo.LastSyncAt,
 	}
 
 	if reqBody.AutoSync != nil {
@@ -248,9 +245,7 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 	if reqBody.TrackedBranch != "" && !strings.EqualFold(reqBody.TrackedBranch, repo.TrackedBranch) {
 		updateParams.TrackedBranch = reqBody.TrackedBranch
 		// on branch change, reset sync
-		updateParams.SyncedCommit = pgtype.Text{}
-		updateParams.SyncStatus = "pending"
-		updateParams.LastSyncAt = nil
+		updateParams.ResetSync = true
 
 		// check branch existence
 		prov, ok := h.providerRegistry.Lookup(repo.Provider)

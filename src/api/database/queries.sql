@@ -98,13 +98,16 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING *;
 
 -- name: UpdateRepository :one
+-- Only PATCH-owned fields (tracked_branch, auto_sync) are written. The sync
+-- fields are reset only when reset_sync is true (branch change), otherwise they
+-- keep their current values so a concurrent sync is not clobbered by stale data.
 UPDATE repositories
 SET
 	tracked_branch = $3,
-	synced_commit = $4,
-	sync_status = $5,
-	auto_sync = $6,
-	last_sync_at = $7,
+	auto_sync = $4,
+	synced_commit = CASE WHEN sqlc.arg(reset_sync)::boolean THEN NULL ELSE synced_commit END,
+	sync_status = CASE WHEN sqlc.arg(reset_sync)::boolean THEN 'pending' ELSE sync_status END,
+	last_sync_at = CASE WHEN sqlc.arg(reset_sync)::boolean THEN NULL ELSE last_sync_at END,
 	updated_at = NOW()
 WHERE id = $1 AND user_id = $2
 RETURNING *;
