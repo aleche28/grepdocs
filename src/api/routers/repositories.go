@@ -127,21 +127,10 @@ func (h *RepositoriesHandler) trackNewRepository(w http.ResponseWriter, r *http.
 	}
 
 	provRepo, err := prov.GetRepository(r.Context(), token, reqBody.Owner, reqBody.Name)
-	switch {
-	case errors.Is(err, providers.ErrNotFound):
-		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "repository not found")
-		return
-	case errors.Is(err, providers.ErrInvalidToken):
-		// TODO: if provider impls Refresher, refresh token
-		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
-			"The linked account's access token is invalid or revoked, please re-link your account")
-		return
-	case errors.Is(err, providers.ErrRateLimited):
-		httpx.WriteError(w, http.StatusTooManyRequests, httpx.CodeRateLimited,
-			"Provider rate limit exceeded, try again later")
-		return
-	case err != nil:
-		httpx.WriteInternalError(w, err)
+	if err != nil {
+		if !writeProviderError(w, err) {
+			httpx.WriteInternalError(w, err)
+		}
 		return
 	}
 
@@ -149,20 +138,15 @@ func (h *RepositoriesHandler) trackNewRepository(w http.ResponseWriter, r *http.
 	if trackedBranch == "" {
 		trackedBranch = provRepo.DefaultBranch
 	} else {
-		branches, err := prov.ListBranches(r.Context(), token, reqBody.Owner, reqBody.Name)
+		branches, err := prov.ListBranches(r.Context(), token, provRepo.Owner, provRepo.Name)
 		if err != nil {
-			httpx.WriteInternalError(w, err)
+			if !writeProviderError(w, err) {
+				httpx.WriteInternalError(w, err)
+			}
 			return
 		}
 
-		ok := false
-		for _, b := range branches {
-			if strings.ToLower(b.Name) == strings.ToLower(trackedBranch) {
-				ok = true
-				break
-			}
-		}
-		if !ok {
+		if !branchExists(branches, trackedBranch) {
 			httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "tracked_branch in request body not found in repository branches")
 			return
 		}
@@ -195,15 +179,8 @@ func (h *RepositoriesHandler) trackNewRepository(w http.ResponseWriter, r *http.
 }
 
 func (h *RepositoriesHandler) getRepositoryByID(w http.ResponseWriter, r *http.Request) {
-	idParam := chi.URLParam(r, "id")
-	if len(idParam) == 0 {
-		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "empty id param")
-		return
-	}
-
-	id, err := strconv.ParseInt(idParam, 10, 64)
-	if err != nil {
-		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "invalid id param")
+	id, ok := parseIDParam(w, r)
+	if !ok {
 		return
 	}
 
@@ -227,15 +204,8 @@ func (h *RepositoriesHandler) getRepositoryByID(w http.ResponseWriter, r *http.R
 }
 
 func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Request) {
-	idParam := chi.URLParam(r, "id")
-	if len(idParam) == 0 {
-		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "empty id param")
-		return
-	}
-
-	id, err := strconv.ParseInt(idParam, 10, 64)
-	if err != nil {
-		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "invalid id param")
+	id, ok := parseIDParam(w, r)
+	if !ok {
 		return
 	}
 
@@ -271,24 +241,37 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 		LastSyncAt:    repo.LastSyncAt,
 	}
 
-	if reqBody.TrackedBranch != "" && strings.ToLower(reqBody.TrackedBranch) != strings.ToLower(repo.TrackedBranch) {
+	if reqBody.AutoSync != nil {
+		updateParams.AutoSync = *reqBody.AutoSync
+	}
+
+	if reqBody.TrackedBranch != "" && !strings.EqualFold(reqBody.TrackedBranch, repo.TrackedBranch) {
 		updateParams.TrackedBranch = reqBody.TrackedBranch
 		// on branch change, reset sync
-		updateParams.SyncedCommit = pgtype.Text{String: "", Valid: false}
+		updateParams.SyncedCommit = pgtype.Text{}
 		updateParams.SyncStatus = "pending"
 		updateParams.LastSyncAt = nil
 
 		// check branch existence
-		token := ""
 		prov, ok := h.providerRegistry.Lookup(repo.Provider)
 		if !ok {
 			httpx.WriteError(w, http.StatusNotImplemented, httpx.CodeNotImplemented, "Provider not supported: "+repo.Provider)
 			return
 		}
 
+		token := ""
 		if repo.IsPrivate {
 			acc, err := resolveAccount(r.Context(), q, uid, repo.Provider, repo.AccountID.Int64)
-			if err != nil {
+			switch {
+			case errors.Is(err, errAccountNotFound):
+				httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
+					"No linked "+repo.Provider+" account available to verify the branch, please re-link your account")
+				return
+			case errors.Is(err, errAccountAmbiguous):
+				httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest,
+					"Multiple "+repo.Provider+" accounts found, cannot verify the branch")
+				return
+			case err != nil:
 				httpx.WriteInternalError(w, err)
 				return
 			}
@@ -309,18 +292,13 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 
 		branches, err := prov.ListBranches(r.Context(), token, repo.Owner, repo.Name)
 		if err != nil {
-			httpx.WriteInternalError(w, err)
+			if !writeProviderError(w, err) {
+				httpx.WriteInternalError(w, err)
+			}
 			return
 		}
 
-		ok = false
-		for _, b := range branches {
-			if strings.ToLower(b.Name) == strings.ToLower(reqBody.TrackedBranch) {
-				ok = true
-				break
-			}
-		}
-		if !ok {
+		if !branchExists(branches, updateParams.TrackedBranch) {
 			httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "tracked_branch in request body not found in repository branches")
 			return
 		}
@@ -336,22 +314,15 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 }
 
 func (h *RepositoriesHandler) deleteRepository(w http.ResponseWriter, r *http.Request) {
-	idParam := chi.URLParam(r, "id")
-	if len(idParam) == 0 {
-		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "empty id param")
-		return
-	}
-
-	id, err := strconv.ParseInt(idParam, 10, 64)
-	if err != nil {
-		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "invalid id param")
+	id, ok := parseIDParam(w, r)
+	if !ok {
 		return
 	}
 
 	uid, _ := middleware.CurrentUserID(r)
 	q := dal.New(h.dbPool)
 
-	_, err = q.GetRepositoryByIDAndUserID(r.Context(), dal.GetRepositoryByIDAndUserIDParams{
+	_, err := q.GetRepositoryByIDAndUserID(r.Context(), dal.GetRepositoryByIDAndUserIDParams{
 		ID:     id,
 		UserID: uid,
 	})
@@ -373,6 +344,44 @@ func (h *RepositoriesHandler) deleteRepository(w http.ResponseWriter, r *http.Re
 }
 
 // private helpers
+
+// writeProviderError maps a normalized provider error to an HTTP response,
+// returning true when the error was recognized and a response was written.
+func writeProviderError(w http.ResponseWriter, err error) bool {
+	switch {
+	case errors.Is(err, providers.ErrNotFound):
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "repository not found")
+	case errors.Is(err, providers.ErrInvalidToken):
+		// TODO: if provider impls Refresher, refresh token
+		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
+			"The linked account's access token is invalid or revoked, please re-link your account")
+	case errors.Is(err, providers.ErrRateLimited):
+		httpx.WriteError(w, http.StatusTooManyRequests, httpx.CodeRateLimited,
+			"Provider rate limit exceeded, try again later")
+	default:
+		return false
+	}
+	return true
+}
+
+func branchExists(branches []providers.Branch, name string) bool {
+	for _, b := range branches {
+		if strings.EqualFold(b.Name, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseIDParam reads and parses the {id} URL param, writing a 400 on failure.
+func parseIDParam(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "invalid id param")
+		return 0, false
+	}
+	return id, true
+}
 
 func toRepositoryDTO(repo dal.Repository) models.Repository {
 	dto := models.Repository{
