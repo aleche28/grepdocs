@@ -1,0 +1,120 @@
+# GrepDocs Implementation Review Rubric
+
+Reference for the `implementation-review` skill. Each lens lists what to look for and the
+repo-specific pattern that a correct implementation follows. Findings are classified under the
+same categories as `docs/code-review-checklist.md` (Security / Bugs / Architecture / DAL /
+Testing) so a finding can be linked to an existing open checklist item.
+
+For every finding, cite `file:line`, explain **why it matters**, point at the pattern already used
+elsewhere in the repo, and describe the fix in prose. Prefer "here's the trap and how to think
+about it" over "here's the corrected file".
+
+---
+
+## 1. Security & authorization
+
+- **Auth coverage** — every route under `/api` requires auth except `GET /ping` and the
+  `/api/auth/*` routes (`docs/api.md` Conventions). New routers must be mounted behind
+  `middleware.RequireAuth`; handlers must read the caller via `middleware.CurrentUserID(r)`, never
+  from the session directly.
+- **Ownership scoping** — every read/update/delete of user-owned data must be scoped by `user_id`
+  in the SQL itself (`WHERE id = $1 AND user_id = $2`), not merely checked in Go after fetching.
+  Check `src/api/database/queries.sql`. A query that fetches by id alone then compares user IDs in
+  the handler is a red flag (TOCTOU + leaks existence).
+- **Secret handling** — `external_git_accounts.access_token`/`refresh_token` must be encrypted
+  *before every write* and decrypted *after every read* (`providerCallback`,
+  `listExternalRepositories` are the reference sites). New paths that touch these columns must not
+  skip `secrets.Cipher`. Ciphertext keeps the `v1:` prefix.
+- **Token leakage to clients** — provider tokens must be stripped at the DTO layer; see
+  `listExternalAccounts`. A new DTO that embeds the DAL row directly will leak them.
+- **Error leakage** — no `http.Error`, no `err.Error()` in responses. Internal errors go through
+  `httpx.WriteInternalError`.
+- **No secrets in logs / echoed output**; `.env` is never read, printed, or committed.
+
+## 2. Correctness / real bugs
+
+- **Errors checked before use** — e.g. `http.NewRequestWithContext` returns `(*Request, error)`;
+  check `err` before using the request (checklist B2 was exactly this).
+- **Not-found vs. real error** — use `errors.Is(err, pgx.ErrNoRows)`, never treat every error as
+  "not found" (B3). Prefer `INSERT ... ON CONFLICT ... RETURNING` over check-then-insert races.
+- **Context propagation** — request-scoped DB/HTTP work uses `r.Context()`; `context.Background()`
+  only for process-lifetime work (startup, GC goroutine) (C4, B4).
+- **Outbound HTTP hygiene** — shared timed `httpClient` (`routers/http.go`, 10s), `io.LimitReader`
+  on decodes, bounded pagination with `Link` header.
+- **Lost updates / stale writes** — a PATCH that writes fields it does not own from a previously
+  fetched row can clobber concurrent writers. The repository `UpdateRepository` query is the
+  reference pattern: only PATCH-owned columns are assigned; engine-owned columns are reset behind
+  an explicit `reset_sync` flag and otherwise assign themselves (`ELSE <column>`).
+- **Nil derefs / ignored errors / unchecked type assertions.**
+
+## 3. HTTP contract (`httpx` + `docs/api.md`)
+
+- **Envelope** — all responses via `httpx.WriteJSON` / `WriteError` / `WriteInternalError`; `code`
+  is a stable `httpx.Code*` constant.
+- **Status codes** — match the `docs/api.md` error table (`400 bad_request`, `401
+  not_authenticated`, `403 forbidden`, `404 not_found`, `409 conflict`, `500 internal`, `501
+  not_implemented`). `422 validation_failed` is Proposed and must be added to `httpx` before use.
+- **Provider errors** — `ErrInvalidToken` → 403, `ErrRateLimited` → 429, `ErrNotFound` → 404,
+  unsupported provider → 501. Use the existing `writeProviderError` helper rather than a new switch.
+- **Shape** — kebab-case paths, `snake_case` fields; DTOs match the marked-up `docs/api.md`
+  section. If a route/shape is marked **Proposed**, build to it rather than improvising.
+
+## 4. Architecture & conventions
+
+- **Provider isolation** — provider HTTP/OAuth logic belongs in `src/api/providers/` behind
+  `providers.Provider` + `Registry`; never inline GitHub-shaped code in a handler (C1).
+- **Deliberate absences** — do **not** flag as a defect: no DI container, no service/use-case layer
+  (deferred to Phase 2 sync orchestration), no token-refresh on `Provider` (modeled as optional
+  `Refresher`), hand-rolled sessions instead of `scs`.
+- **Handler shape** — receiver methods holding `*pgxpool.Pool` and `*session.SessionManager`;
+  `dal.New(h.dbPool)` per request; no closure-with-unused-pool params (C3).
+- **Config** — routers should not read `os.Getenv` for new settings; config belongs with
+  `main.go`'s `AppConfig` (C7 is an open item, so only flag new violations).
+
+## 5. DAL / migrations / generated code
+
+- **Never hand-edit `src/api/dal/*`** — it is generated by `sqlc`. Schema comes from
+  `src/api/database/migrations/`; queries from `src/api/database/queries.sql`; run
+  `make sqlc-generate` after editing either.
+- **Migrations are immutable** — schema changes are new `NNNNNN_*.up.sql` + `.down.sql` files
+  (see `000003`, which fixes `000002`). Use the `migration-generator` skill's rules.
+- **sqlc type inference** — verify generated param types match intent. Named args
+  (`sqlc.arg(name)::type`) beat bare positional params when sqlc infers the wrong type (e.g. it
+  once inferred a boolean flag as `pgtype.Text`).
+- **Query naming/placement** — `-- name: Foo :one|:many|:exec` in `queries.sql`; account-scoped
+  reads take `?account_id=` where ambiguous.
+
+## 6. Testing & quality gates
+
+- **Tests** — provider HTTP/pagination tested against `httptest` (`providers/github_test.go`);
+  session/middleware/httpx/models have unit tests. `routers` has no tests and no DB seam (handlers
+  hold a concrete `*pgxpool.Pool`) — this is a known gap (E1), so don't demand router tests as if
+  the seam existed; recommend the seam if tests are the goal.
+- **Gates** — `make test`, `make vet`, `make fmt` (and `go test -race`). Note `make fmt`/`make vet`
+  only cover the `main` package; whole-module is `cd src/api && gofmt -l . && go vet ./...`.
+- **Commit style** — conventional commits (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`,
+  `feat!:`).
+
+---
+
+## Finding format
+
+For each finding:
+
+```
+[Category] [Severity: high|medium|low] file.go:123 — short title
+Why: what goes wrong and under what conditions.
+Pattern: how the repo already does it right (file:line).
+Fix: prose description; offer a diff only if the user asks to apply.
+```
+
+End the review with:
+
+- **What went well** — specific, genuine.
+- **Priority order** — the 2–3 findings to fix first.
+- **Teaching points** — the 1–2 transferable lessons worth remembering beyond this diff.
+
+## Applying fixes
+
+Advisory by default. Do not edit files unless the user explicitly opts in (e.g. "apply", "fix it",
+"go ahead"). When applying, change only the agreed findings and re-run the quality gates.

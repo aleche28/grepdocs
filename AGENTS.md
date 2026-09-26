@@ -156,6 +156,19 @@ flow; expired tokens mean re-linking.
 - `last_refreshed_at` is spelled that way everywhere (migration + queries) — not a typo to "fix".
 - `.env` is gitignored and holds real OAuth secrets — never commit, print, or echo it.
 
+## Skills
+
+Reusable workflows live in `.agents/skills/<name>/SKILL.md`. Agents that understand skills load
+them on matching requests; if yours doesn't, read the relevant file directly before acting.
+
+- `migration-generator` — scaffold new golang-migrate up/down files from a table/column description.
+- `roadmap-next` — determine the next task in the current roadmap phase (reads `docs/roadmap.md`,
+  the checklist, and `docs/api.md`; read-only, evidence-based).
+- `implementation-review` — teaching-first review of hand-written code (rubric in
+  `REVIEW-RUBRIC.md`). Advisory by default; only applies fixes on explicit opt-in.
+- `phase-status-sync` — close out finished work across `docs/roadmap.md`,
+  `docs/code-review-checklist.md`, and `docs/roadmap-stakeholders.md`. Docs only.
+
 ## Documentation map
 
 - `docs/api.md` — the API contract. It is a **design proposal**: much of it (repositories,
