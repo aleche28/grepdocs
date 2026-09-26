@@ -72,9 +72,27 @@ WHERE id = $1;
 
 -- name: GetRepositoriesByUserID :many
 SELECT * FROM repositories
-WHERE user_id = $1;
+WHERE user_id = $1
+ORDER BY owner, name;
 
 -- name: GetRepositoryByIDAndUserID :one
 SELECT * FROM repositories
 WHERE id = $1 AND user_id = $2
 LIMIT 1;
+
+-- name: CreateRepository :one
+INSERT INTO repositories (
+	user_id,
+	account_id,
+	provider,
+	provider_repo_id,
+	owner,
+	name,
+	full_name,
+	html_url,
+	is_private,
+	default_branch,
+	tracked_branch
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING *;

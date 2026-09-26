@@ -8,7 +8,79 @@ package dal
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const createRepository = `-- name: CreateRepository :one
+INSERT INTO repositories (
+	user_id,
+	account_id,
+	provider,
+	provider_repo_id,
+	owner,
+	name,
+	full_name,
+	html_url,
+	is_private,
+	default_branch,
+	tracked_branch
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at
+`
+
+type CreateRepositoryParams struct {
+	UserID         int64
+	AccountID      pgtype.Int8
+	Provider       string
+	ProviderRepoID string
+	Owner          string
+	Name           string
+	FullName       string
+	HtmlUrl        string
+	IsPrivate      bool
+	DefaultBranch  string
+	TrackedBranch  string
+}
+
+func (q *Queries) CreateRepository(ctx context.Context, arg CreateRepositoryParams) (Repository, error) {
+	row := q.db.QueryRow(ctx, createRepository,
+		arg.UserID,
+		arg.AccountID,
+		arg.Provider,
+		arg.ProviderRepoID,
+		arg.Owner,
+		arg.Name,
+		arg.FullName,
+		arg.HtmlUrl,
+		arg.IsPrivate,
+		arg.DefaultBranch,
+		arg.TrackedBranch,
+	)
+	var i Repository
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AccountID,
+		&i.Provider,
+		&i.ProviderRepoID,
+		&i.Owner,
+		&i.Name,
+		&i.FullName,
+		&i.HtmlUrl,
+		&i.IsPrivate,
+		&i.DefaultBranch,
+		&i.TrackedBranch,
+		&i.SyncedCommit,
+		&i.SyncStatus,
+		&i.AutoSync,
+		&i.LastSyncAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
 
 const deleteExternalGitAccount = `-- name: DeleteExternalGitAccount :exec
 DELETE FROM external_git_accounts
@@ -133,6 +205,7 @@ func (q *Queries) GetExternalGitAccountsByUserIDAndProvider(ctx context.Context,
 const getRepositoriesByUserID = `-- name: GetRepositoriesByUserID :many
 SELECT id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at FROM repositories
 WHERE user_id = $1
+ORDER BY owner, name
 `
 
 func (q *Queries) GetRepositoriesByUserID(ctx context.Context, userID int64) ([]Repository, error) {

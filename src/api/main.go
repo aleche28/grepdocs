@@ -115,7 +115,7 @@ func main() {
 		r.Mount("/auth", routers.AuthRoutes(&AppConfig.GoogleLoginConfig, pool, sm))
 		r.Mount("/users", routers.UserRoutes(pool, sm))
 		r.Mount("/accounts", routers.ExternalAccountsRoutes(pool, sm, registry, tokenCipher))
-		r.Mount("/repositories", routers.RepositoriesRoutes(pool, sm))
+		r.Mount("/repositories", routers.RepositoriesRoutes(pool, sm, registry, tokenCipher))
 	})
 
 	// about timeouts: https://blog.cloudflare.com/the-complete-guide-to-golang-net-http-timeouts/#httplistenandserve-is-doing-it-wrong

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -146,6 +147,43 @@ func (ghp *GitHubProvider) ListRepositories(ctx context.Context, accessToken str
 	return toRepositories(repos), nil
 }
 
+func (ghp *GitHubProvider) GetRepository(ctx context.Context, accessToken string, owner string, name string) (Repository, error) {
+	reqURL := fmt.Sprintf("%s/repos/%s/%s", ghp.options.BaseURL, url.PathEscape(owner), url.PathEscape(name))
+	req, err := newGitHubRequest(ctx, reqURL, accessToken)
+	if err != nil {
+		return Repository{}, fmt.Errorf("failed to fetch repository: %w", err)
+	}
+
+	resp, err := ghp.options.HTTPClient.Do(req)
+	if err != nil {
+		return Repository{}, fmt.Errorf("failed to fetch repository: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return Repository{}, classifyGitHubResponse(resp)
+	}
+
+	var ghRepo githubRepo
+	err = json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseBytes)).Decode(&ghRepo)
+	resp.Body.Close()
+	if err != nil {
+		return Repository{}, fmt.Errorf("failed to parse repository data: %w", err)
+	}
+
+	repo := Repository{
+		Provider:       GitHub,
+		ProviderRepoID: strconv.FormatInt(ghRepo.ID, 10),
+		Owner:          ghRepo.Owner.Login,
+		Name:           ghRepo.Name,
+		FullName:       ghRepo.FullName,
+		IsPrivate:      ghRepo.Private,
+		HTMLURL:        ghRepo.HTMLURL,
+		DefaultBranch:  ghRepo.DefaultBranch,
+	}
+	return repo, nil
+}
+
 // private helpers
 
 type githubUser struct {
@@ -162,6 +200,9 @@ type githubRepo struct {
 	Private       bool   `json:"private"`
 	HTMLURL       string `json:"html_url"` // ex: https://github.com/octocat/Hello-World
 	DefaultBranch string `json:"default_branch"`
+	Owner         struct {
+		Login string `json:"login"`
+	} `json:"owner"`
 }
 
 // newGitHubRequest creates an authenticated GET request against the GitHub API
@@ -171,7 +212,9 @@ func newGitHubRequest(ctx context.Context, url, accessToken string) (*http.Reque
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", "token "+accessToken)
+	if len(accessToken) > 0 {
+		req.Header.Set("Authorization", "token "+accessToken)
+	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
 
@@ -203,6 +246,7 @@ func toRepositories(ghRepos []githubRepo) []Repository {
 		repos = append(repos, Repository{
 			Provider:       GitHub,
 			ProviderRepoID: strconv.FormatInt(r.ID, 10),
+			Owner:          r.Owner.Login,
 			Name:           r.Name,
 			FullName:       r.FullName,
 			IsPrivate:      r.Private,
@@ -225,6 +269,8 @@ func classifyGitHubResponse(res *http.Response) error {
 		return ErrInvalidToken
 	case http.StatusTooManyRequests:
 		return ErrRateLimited
+	case http.StatusNotFound:
+		return ErrNotFound
 	default:
 		return fmt.Errorf("github API returned status: %d", res.StatusCode)
 	}

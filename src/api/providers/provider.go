@@ -10,6 +10,7 @@ import (
 var (
 	ErrInvalidToken = errors.New("provider token invalid or revoked")
 	ErrRateLimited  = errors.New("provider rate limit exceeded")
+	ErrNotFound     = errors.New("provider resource not found")
 )
 
 type User struct {
@@ -22,6 +23,7 @@ type User struct {
 type Repository struct {
 	Provider       string `json:"provider"`
 	ProviderRepoID string `json:"provider_repo_id"`
+	Owner          string `json:"owner"`
 	Name           string `json:"name"`
 	FullName       string `json:"full_name"`
 	IsPrivate      bool   `json:"is_private"`
@@ -35,6 +37,7 @@ type Provider interface {
 	Exchange(ctx context.Context, code string) (*oauth2.Token, error)
 	FetchUser(ctx context.Context, accessToken string) (User, error)
 	ListRepositories(ctx context.Context, accessToken string) ([]Repository, error)
+	GetRepository(ctx context.Context, accessToken string, owner string, name string) (Repository, error)
 }
 
 // Refresher is implemented by providers whose token can be refreshed (not GitHub)
