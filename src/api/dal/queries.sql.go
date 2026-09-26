@@ -94,11 +94,16 @@ func (q *Queries) DeleteExternalGitAccount(ctx context.Context, id int64) error 
 
 const deleteRepository = `-- name: DeleteRepository :exec
 DELETE FROM repositories
-WHERE id = $1
+WHERE id = $1 AND user_id = $2
 `
 
-func (q *Queries) DeleteRepository(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, deleteRepository, id)
+type DeleteRepositoryParams struct {
+	ID     int64
+	UserID int64
+}
+
+func (q *Queries) DeleteRepository(ctx context.Context, arg DeleteRepositoryParams) error {
+	_, err := q.db.Exec(ctx, deleteRepository, arg.ID, arg.UserID)
 	return err
 }
 
@@ -366,18 +371,19 @@ func (q *Queries) UpdateExternalGitAccountTokens(ctx context.Context, arg Update
 const updateRepository = `-- name: UpdateRepository :one
 UPDATE repositories
 SET
-	tracked_branch = $2,
-	synced_commit = $3,
-	sync_status = $4,
-	auto_sync = $5,
-	last_sync_at = $6,
+	tracked_branch = $3,
+	synced_commit = $4,
+	sync_status = $5,
+	auto_sync = $6,
+	last_sync_at = $7,
 	updated_at = NOW()
-WHERE id = $1
+WHERE id = $1 AND user_id = $2
 RETURNING id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at
 `
 
 type UpdateRepositoryParams struct {
 	ID            int64
+	UserID        int64
 	TrackedBranch string
 	SyncedCommit  pgtype.Text
 	SyncStatus    string
@@ -388,6 +394,7 @@ type UpdateRepositoryParams struct {
 func (q *Queries) UpdateRepository(ctx context.Context, arg UpdateRepositoryParams) (Repository, error) {
 	row := q.db.QueryRow(ctx, updateRepository,
 		arg.ID,
+		arg.UserID,
 		arg.TrackedBranch,
 		arg.SyncedCommit,
 		arg.SyncStatus,

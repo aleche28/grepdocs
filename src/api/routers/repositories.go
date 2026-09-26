@@ -263,6 +263,7 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 
 	updateParams := &dal.UpdateRepositoryParams{
 		ID:            id,
+		UserID:        uid,
 		TrackedBranch: repo.TrackedBranch,
 		SyncedCommit:  repo.SyncedCommit,
 		SyncStatus:    repo.SyncStatus,
@@ -325,19 +326,7 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	autoSync := repo.AutoSync
-	if reqBody.AutoSync != nil {
-		autoSync = *reqBody.AutoSync
-	}
-
-	updated, err := q.UpdateRepository(r.Context(), dal.UpdateRepositoryParams{
-		ID:            id,
-		TrackedBranch: trackedBranch,
-		SyncedCommit:  repo.SyncedCommit,
-		SyncStatus:    repo.SyncStatus,
-		AutoSync:      autoSync,
-		LastSyncAt:    repo.LastSyncAt,
-	})
+	updated, err := q.UpdateRepository(r.Context(), *updateParams)
 	if err != nil {
 		httpx.WriteInternalError(w, err)
 		return
@@ -375,7 +364,7 @@ func (h *RepositoriesHandler) deleteRepository(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if err := q.DeleteRepository(r.Context(), id); err != nil {
+	if err := q.DeleteRepository(r.Context(), dal.DeleteRepositoryParams{ID: id, UserID: uid}); err != nil {
 		httpx.WriteInternalError(w, err)
 		return
 	}

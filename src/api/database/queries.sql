@@ -100,15 +100,15 @@ RETURNING *;
 -- name: UpdateRepository :one
 UPDATE repositories
 SET
-	tracked_branch = $2,
-	synced_commit = $3,
-	sync_status = $4,
-	auto_sync = $5,
-	last_sync_at = $6,
+	tracked_branch = $3,
+	synced_commit = $4,
+	sync_status = $5,
+	auto_sync = $6,
+	last_sync_at = $7,
 	updated_at = NOW()
-WHERE id = $1
+WHERE id = $1 AND user_id = $2
 RETURNING *;
 
 -- name: DeleteRepository :exec
 DELETE FROM repositories
-WHERE id = $1;
+WHERE id = $1 AND user_id = $2;
