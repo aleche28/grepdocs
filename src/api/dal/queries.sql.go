@@ -92,6 +92,16 @@ func (q *Queries) DeleteExternalGitAccount(ctx context.Context, id int64) error 
 	return err
 }
 
+const deleteRepository = `-- name: DeleteRepository :exec
+DELETE FROM repositories
+WHERE id = $1
+`
+
+func (q *Queries) DeleteRepository(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteRepository, id)
+	return err
+}
+
 const deleteUser = `-- name: DeleteUser :exec
 DELETE FROM users
 WHERE id = $1

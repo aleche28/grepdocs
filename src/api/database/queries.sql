@@ -108,3 +108,7 @@ SET
 	updated_at = NOW()
 WHERE id = $1
 RETURNING *;
+
+-- name: DeleteRepository :exec
+DELETE FROM repositories
+WHERE id = $1;

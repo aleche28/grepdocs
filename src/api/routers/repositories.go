@@ -262,6 +262,43 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 	httpx.WriteJSON(w, http.StatusOK, updated)
 }
 
+func (h *RepositoriesHandler) deleteRepository(w http.ResponseWriter, r *http.Request) {
+	idParam := chi.URLParam(r, "id")
+	if len(idParam) == 0 {
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "empty id param")
+		return
+	}
+
+	id, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "invalid id param")
+		return
+	}
+
+	uid, _ := middleware.CurrentUserID(r)
+	q := dal.New(h.dbPool)
+
+	_, err = q.GetRepositoryByIDAndUserID(r.Context(), dal.GetRepositoryByIDAndUserIDParams{
+		ID:     id,
+		UserID: uid,
+	})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "repository not found for current user")
+		return
+	case err != nil:
+		httpx.WriteInternalError(w, err)
+		return
+	}
+
+	if err := q.DeleteRepository(r.Context(), id); err != nil {
+		httpx.WriteInternalError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusNoContent, nil)
+}
+
 // private helpers
 
 func toRepositoryDTO(repo dal.Repository) models.Repository {
