@@ -12,7 +12,7 @@ type CreateRepositoryRequest struct {
 
 type UpdateRepositoryRequest struct {
 	TrackedBranch string `json:"tracked_branch"`
-	AutoSync      bool   `json:"auto_sync"`
+	AutoSync      *bool  `json:"auto_sync"`
 }
 
 type Repository struct {

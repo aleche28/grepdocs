@@ -47,6 +47,7 @@ func RepositoriesRoutes(pool *pgxpool.Pool, sm *session.SessionManager, reg *pro
 	r.Post("/", h.trackNewRepository)
 	r.Get("/{id}", h.getRepositoryByID)
 	r.Patch("/{id}", h.updateRepository)
+	r.Delete("/{id}", h.deleteRepository)
 
 	return r
 }
@@ -309,12 +310,17 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 		}
 	}
 
+	autoSync := repo.AutoSync
+	if reqBody.AutoSync != nil {
+		autoSync = *reqBody.AutoSync
+	}
+
 	updated, err := q.UpdateRepository(r.Context(), dal.UpdateRepositoryParams{
 		ID:            id,
 		TrackedBranch: trackedBranch,
 		SyncedCommit:  repo.SyncedCommit,
 		SyncStatus:    repo.SyncStatus,
-		AutoSync:      reqBody.AutoSync,
+		AutoSync:      autoSync,
 		LastSyncAt:    repo.LastSyncAt,
 	})
 	if err != nil {
@@ -322,7 +328,7 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, updated)
+	httpx.WriteJSON(w, http.StatusOK, toRepositoryDTO(updated))
 }
 
 func (h *RepositoriesHandler) deleteRepository(w http.ResponseWriter, r *http.Request) {
