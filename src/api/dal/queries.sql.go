@@ -130,6 +130,87 @@ func (q *Queries) GetExternalGitAccountsByUserIDAndProvider(ctx context.Context,
 	return items, nil
 }
 
+const getRepositoriesByUserID = `-- name: GetRepositoriesByUserID :many
+SELECT id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at FROM repositories
+WHERE user_id = $1
+`
+
+func (q *Queries) GetRepositoriesByUserID(ctx context.Context, userID int64) ([]Repository, error) {
+	rows, err := q.db.Query(ctx, getRepositoriesByUserID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Repository
+	for rows.Next() {
+		var i Repository
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.AccountID,
+			&i.Provider,
+			&i.ProviderRepoID,
+			&i.Owner,
+			&i.Name,
+			&i.FullName,
+			&i.HtmlUrl,
+			&i.IsPrivate,
+			&i.DefaultBranch,
+			&i.TrackedBranch,
+			&i.SyncedCommit,
+			&i.SyncStatus,
+			&i.AutoSync,
+			&i.LastSyncAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getRepositoryByIDAndUserID = `-- name: GetRepositoryByIDAndUserID :one
+SELECT id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at FROM repositories
+WHERE id = $1 AND user_id = $2
+LIMIT 1
+`
+
+type GetRepositoryByIDAndUserIDParams struct {
+	ID     int64
+	UserID int64
+}
+
+func (q *Queries) GetRepositoryByIDAndUserID(ctx context.Context, arg GetRepositoryByIDAndUserIDParams) (Repository, error) {
+	row := q.db.QueryRow(ctx, getRepositoryByIDAndUserID, arg.ID, arg.UserID)
+	var i Repository
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AccountID,
+		&i.Provider,
+		&i.ProviderRepoID,
+		&i.Owner,
+		&i.Name,
+		&i.FullName,
+		&i.HtmlUrl,
+		&i.IsPrivate,
+		&i.DefaultBranch,
+		&i.TrackedBranch,
+		&i.SyncedCommit,
+		&i.SyncStatus,
+		&i.AutoSync,
+		&i.LastSyncAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, fullname, username, email, google_id, created_at, updated_at, last_login_at FROM users
 WHERE email = $1 LIMIT 1

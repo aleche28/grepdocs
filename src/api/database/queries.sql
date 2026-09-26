@@ -69,3 +69,12 @@ WHERE id = $1;
 -- name: DeleteExternalGitAccount :exec
 DELETE FROM external_git_accounts
 WHERE id = $1;
+
+-- name: GetRepositoriesByUserID :many
+SELECT * FROM repositories
+WHERE user_id = $1;
+
+-- name: GetRepositoryByIDAndUserID :one
+SELECT * FROM repositories
+WHERE id = $1 AND user_id = $2
+LIMIT 1;

@@ -6,6 +6,8 @@ package dal
 
 import (
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type ExternalGitAccount struct {
@@ -19,6 +21,27 @@ type ExternalGitAccount struct {
 	LinkedAt        *time.Time
 	LastRefreshedAt *time.Time
 	Label           string
+}
+
+type Repository struct {
+	ID             int64
+	UserID         int64
+	AccountID      pgtype.Int8
+	Provider       string
+	ProviderRepoID string
+	Owner          string
+	Name           string
+	FullName       string
+	HtmlUrl        string
+	IsPrivate      bool
+	DefaultBranch  string
+	TrackedBranch  string
+	SyncedCommit   pgtype.Text
+	SyncStatus     string
+	AutoSync       bool
+	LastSyncAt     *time.Time
+	CreatedAt      *time.Time
+	UpdatedAt      *time.Time
 }
 
 type User struct {
