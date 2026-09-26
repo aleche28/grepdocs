@@ -45,6 +45,7 @@ func RepositoriesRoutes(pool *pgxpool.Pool, sm *session.SessionManager, reg *pro
 	r.Get("/", h.listRepositories)
 	r.Post("/", h.trackNewRepository)
 	r.Get("/{id}", h.getRepositoryByID)
+	r.Patch("/{id}", h.updateRepository)
 
 	return r
 }
@@ -204,6 +205,64 @@ func (h *RepositoriesHandler) getRepositoryByID(w http.ResponseWriter, r *http.R
 
 	httpx.WriteJSON(w, http.StatusOK, toRepositoryDTO(repo))
 }
+
+func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Request) {
+	idParam := chi.URLParam(r, "id")
+	if len(idParam) == 0 {
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "empty id param")
+		return
+	}
+
+	id, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "invalid id param")
+		return
+	}
+
+	uid, _ := middleware.CurrentUserID(r)
+	q := dal.New(h.dbPool)
+
+	repo, err := q.GetRepositoryByIDAndUserID(r.Context(), dal.GetRepositoryByIDAndUserIDParams{
+		ID:     id,
+		UserID: uid,
+	})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "repository not found for current user")
+		return
+	case err != nil:
+		httpx.WriteInternalError(w, err)
+		return
+	}
+
+	var reqBody models.UpdateRepositoryRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "invalid request body")
+		return
+	}
+
+	trackedBranch := repo.TrackedBranch
+	if reqBody.TrackedBranch != "" {
+		trackedBranch = reqBody.TrackedBranch
+	}
+
+	updated, err := q.UpdateRepository(r.Context(), dal.UpdateRepositoryParams{
+		ID:            id,
+		TrackedBranch: trackedBranch,
+		SyncedCommit:  repo.SyncedCommit,
+		SyncStatus:    repo.SyncStatus,
+		AutoSync:      reqBody.AutoSync,
+		LastSyncAt:    repo.LastSyncAt,
+	})
+	if err != nil {
+		httpx.WriteInternalError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, updated)
+}
+
+// private helpers
 
 func toRepositoryDTO(repo dal.Repository) models.Repository {
 	dto := models.Repository{

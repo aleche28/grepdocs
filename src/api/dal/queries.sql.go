@@ -353,6 +353,61 @@ func (q *Queries) UpdateExternalGitAccountTokens(ctx context.Context, arg Update
 	return err
 }
 
+const updateRepository = `-- name: UpdateRepository :one
+UPDATE repositories
+SET
+	tracked_branch = $2,
+	synced_commit = $3,
+	sync_status = $4,
+	auto_sync = $5,
+	last_sync_at = $6,
+	updated_at = NOW()
+WHERE id = $1
+RETURNING id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at
+`
+
+type UpdateRepositoryParams struct {
+	ID            int64
+	TrackedBranch string
+	SyncedCommit  pgtype.Text
+	SyncStatus    string
+	AutoSync      bool
+	LastSyncAt    *time.Time
+}
+
+func (q *Queries) UpdateRepository(ctx context.Context, arg UpdateRepositoryParams) (Repository, error) {
+	row := q.db.QueryRow(ctx, updateRepository,
+		arg.ID,
+		arg.TrackedBranch,
+		arg.SyncedCommit,
+		arg.SyncStatus,
+		arg.AutoSync,
+		arg.LastSyncAt,
+	)
+	var i Repository
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AccountID,
+		&i.Provider,
+		&i.ProviderRepoID,
+		&i.Owner,
+		&i.Name,
+		&i.FullName,
+		&i.HtmlUrl,
+		&i.IsPrivate,
+		&i.DefaultBranch,
+		&i.TrackedBranch,
+		&i.SyncedCommit,
+		&i.SyncStatus,
+		&i.AutoSync,
+		&i.LastSyncAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateUserLastLogin = `-- name: UpdateUserLastLogin :exec
 UPDATE users
 SET last_login_at = NOW()

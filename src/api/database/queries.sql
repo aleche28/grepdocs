@@ -96,3 +96,15 @@ INSERT INTO repositories (
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING *;
+
+-- name: UpdateRepository :one
+UPDATE repositories
+SET
+	tracked_branch = $2,
+	synced_commit = $3,
+	sync_status = $4,
+	auto_sync = $5,
+	last_sync_at = $6,
+	updated_at = NOW()
+WHERE id = $1
+RETURNING *;

@@ -10,6 +10,11 @@ type CreateRepositoryRequest struct {
 	TrackedBranch string `json:"tracked_branch"`
 }
 
+type UpdateRepositoryRequest struct {
+	TrackedBranch string `json:"tracked_branch"`
+	AutoSync      bool   `json:"auto_sync"`
+}
+
 type Repository struct {
 	ID             int64      `json:"id"`
 	AccountID      *int64     `json:"account_id"`
