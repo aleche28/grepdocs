@@ -179,7 +179,7 @@ them on matching requests; if yours doesn't, read the relevant file directly bef
   router constructors, session write amplification, no token refresh path, no tests). Update the
   relevant checkbox when you close one.
 - `docs/requirements.md`, `docs/user-stories.md` — product spec.
-- `docs/howto/` — Google/GitHub OAuth setup, golang-migrate workflow, sqlc usage.
+- `docs/howto/` — Google OAuth setup, GitHub App setup, golang-migrate workflow, sqlc usage.
 - `docs/roadmap.md` — phased build-out plan (not dated), interleaving new features with the open
   checklist items each phase depends on or exposes. Update it as phases complete or scope shifts.
 - `docs/roadmap-stakeholders.md` — non-technical companion to `docs/roadmap.md`: same plan grouped
@@ -187,8 +187,5 @@ them on matching requests; if yours doesn't, read the relevant file directly bef
 
 ## Known inconsistencies
 
-- `.env.example` sets `GITHUB_REDIRECT_URL` to `/api/ext-accounts/github/callback`, but the route was
-  renamed to `/api/accounts/{provider}/callback`. Use the `/api/accounts/...` path in `.env` and in
-  the GitHub OAuth app.
 - `CLAUDE.md` is only a pointer to this file (Claude Code reads it via an `@AGENTS.md` import).
   This file is the single source of truth — put new guidance here.
