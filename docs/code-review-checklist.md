@@ -92,7 +92,8 @@ Legend: `[x]` done · `[ ]` open · last updated 2026-09-25
       auto-generate). Fixed: new migration `000003` drops the id default + sequence; applied and
       verified in the live schema.
 - [ ] **D3 — `UpdateExternalGitAccountTokens` generated but never called; no token refresh path.**
-      Bitbucket (short-lived tokens) makes this mandatory.
+      Bitbucket (short-lived tokens) makes this mandatory. Planned in Phase 2 alongside the switch
+      to a GitHub App with expiring user tokens, which makes refresh mandatory for GitHub too.
 - [x] **D4 — First-login upsert race on `google_id`** handled clunkily (see B3). Prefer `ON CONFLICT`.
 - [ ] **D5 — `username` column defaults to `''` and is never populated** — dead weight unless it's a
       product feature.

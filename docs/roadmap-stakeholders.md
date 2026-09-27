@@ -13,6 +13,10 @@ use it once the interface catches up.
 - **Connect more than one account per provider.** Today you can link one GitHub account. Soon you
   can link several — for example a personal and a work account — and choose which one a
   repository comes from.
+- **Safer, finer-grained GitHub access.** GrepDocs will connect to GitHub as an installable app:
+  you choose exactly which repositories it can see (or all of them, in one click), it only asks
+  for the access it needs to read and update documentation, and its access renews automatically
+  instead of relying on a permanent key.
 - **Choose which repositories and files to track.** Pick the repositories (and the specific
   documentation files inside them) GrepDocs should keep an eye on.
 
