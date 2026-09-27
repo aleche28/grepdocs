@@ -257,7 +257,6 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 
 		token, ok := h.repoAccessToken(w, r, q, uid, repo)
 		if !ok {
-			// error written inside the prev function
 			return
 		}
 
@@ -344,7 +343,6 @@ func (h *RepositoriesHandler) listRepositoryBranches(w http.ResponseWriter, r *h
 
 	token, ok := h.repoAccessToken(w, r, q, uid, repo)
 	if !ok {
-		// error written inside the prev function
 		return
 	}
 
@@ -399,6 +397,8 @@ func parseIDParam(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	return id, true
 }
 
+// repoAccessToken get and decrypts the access token required for the passed repo
+// on error, it writes the response and returns false
 func (h *RepositoriesHandler) repoAccessToken(w http.ResponseWriter, r *http.Request, q *dal.Queries, uid int64, repo dal.Repository) (string, bool) {
 	token := ""
 	if repo.IsPrivate || repo.AccountID.Valid {
@@ -406,11 +406,11 @@ func (h *RepositoriesHandler) repoAccessToken(w http.ResponseWriter, r *http.Req
 		switch {
 		case errors.Is(err, errAccountNotFound):
 			httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
-				"No linked "+repo.Provider+" account available to verify the branch, please re-link your account")
+				"No linked "+repo.Provider+" account available, please re-link your account")
 			return token, false
 		case errors.Is(err, errAccountAmbiguous):
-			httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest,
-				"Multiple "+repo.Provider+" accounts found, cannot verify the branch")
+			httpx.WriteError(w, http.StatusConflict, httpx.CodeConflict,
+				"Multiple "+repo.Provider+" accounts found")
 			return token, false
 		case err != nil:
 			httpx.WriteInternalError(w, err)
