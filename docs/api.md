@@ -4,8 +4,8 @@ Version: v1 (proposal — expected to change during development)
 Base path: `/api`
 
 This document is the API contract for GrepDocs. Most of it is a **design proposal**: many
-resources below (repositories, documents, search, groups) have no route, handler, or database
-table yet. Every endpoint and DTO field is marked **Implemented** or **Proposed** so it's clear
+resources below (documents, search, groups, and most repository sub-resources) have no route,
+handler, or database table yet. Every endpoint and DTO field is marked **Implemented** or **Proposed** so it's clear
 what exists today versus what new work should target. Check this file before inventing a route or
 response shape — if something is marked Proposed, build it to match this shape rather than
 improvising a new one.
@@ -26,8 +26,9 @@ improvising a new one.
   whether it's a real provider name.
 - **Pagination**: list endpoints are proposed to accept `?page=1&size=50` (defaults `1`/`50`, max
   `size` `100`) and respond with `{ "items": [...], "page": 1, "size": 50, "total": 123 }`. This is
-  **Proposed** — the one list endpoint implemented today (`GET /api/accounts`) returns a bare JSON
-  array with no pagination envelope.
+  **Proposed** — the list endpoints implemented today (`GET /api/accounts`,
+  `GET /api/accounts/{provider}/repositories`, `GET /api/repositories`,
+  `GET /api/repositories/{id}/branches`) return a bare JSON array with no pagination envelope.
 - **Errors**: every error body has the shape below. HTTP status is the coarse signal; `code` is
   the stable, machine-readable discriminator, and error bodies never leak internal error strings
   (`httpx.WriteInternalError` logs the real error server-side and returns a generic message).
@@ -177,22 +178,26 @@ not an alternative implementation.
 
 ## Repositories (tracked)
 
-**Proposed** — no route, handler, or database table exists yet.
+Tracking CRUD and branch listing are implemented (`repositories` table, migration `000005`); sync,
+tree, tracking rules, and commits are not. Every route is scoped to the caller: another user's
+repository `id` returns `404 not_found`, never `403`.
 
-| Method | Path                              | Auth | Description                                                    |
-| ------ | ---------------------------------- | ---- | ---------------------------------------------------------------- |
-| GET    | `/repositories`                    | Y    | List tracked repos (filters: `provider`, `group`, `has_draft`)    |
-| POST   | `/repositories`                    | Y    | Track a repository                                                |
-| GET    | `/repositories/{id}`               | Y    | Repo detail incl. sync + branch status                            |
-| PATCH  | `/repositories/{id}`               | Y    | Change tracked branch, `auto_sync`, etc.                          |
-| DELETE | `/repositories/{id}`               | Y    | Untrack (removes resolved docs + drafts)                          |
-| GET    | `/repositories/{id}/branches`      | Y    | List branches                                                     |
-| POST   | `/repositories/{id}/sync`          | Y    | Trigger a sync now                                                |
-| GET    | `/repositories/{id}/tree`          | Y    | Browse file tree (`?path=docs/&ref=<sha>`, S3.1)                  |
-| GET    | `/repositories/{id}/tracking`      | Y    | Show include/exclude pattern rules                                |
-| PUT    | `/repositories/{id}/tracking`      | Y    | Set file tracking rules (S3.2/3.3/3.4)                            |
-| POST   | `/repositories/{id}/commits`       | Y    | Push selected drafts back to the repo                             |
-| GET    | `/repositories/{id}/commits`       | Y    | Commit history for this repo                                      |
+| Method | Path                              | Auth | Status                            | Description                                                    |
+| ------ | ---------------------------------- | ---- | --------------------------------- | ---------------------------------------------------------------- |
+| GET    | `/repositories`                    | Y    | Implemented (no filters, no pagination) | List tracked repos (filters: `provider`, `group`, `has_draft`)    |
+| POST   | `/repositories`                    | Y    | Implemented for `github`          | Track a repository                                                |
+| GET    | `/repositories/{id}`               | Y    | Implemented                       | Repo detail incl. sync + branch status                            |
+| PATCH  | `/repositories/{id}`               | Y    | Implemented                       | Change tracked branch, `auto_sync`, etc.                          |
+| DELETE | `/repositories/{id}`               | Y    | Implemented (untrack only)        | Untrack (removes resolved docs + drafts)                          |
+| GET    | `/repositories/{id}/branches`      | Y    | Implemented for `github`          | List branches                                                     |
+| POST   | `/repositories/{id}/sync`          | Y    | Proposed                          | Trigger a sync now                                                |
+| GET    | `/repositories/{id}/tree`          | Y    | Proposed                          | Browse file tree (`?path=docs/&ref=<sha>`, S3.1)                  |
+| GET    | `/repositories/{id}/tracking`      | Y    | Proposed                          | Show include/exclude pattern rules                                |
+| PUT    | `/repositories/{id}/tracking`      | Y    | Proposed                          | Set file tracking rules (S3.2/3.3/3.4)                            |
+| POST   | `/repositories/{id}/commits`       | Y    | Proposed                          | Push selected drafts back to the repo                             |
+| GET    | `/repositories/{id}/commits`       | Y    | Proposed                          | Commit history for this repo                                      |
+
+`DELETE` only removes the `repositories` row today; resolved docs and drafts do not exist yet.
 
 `POST /api/repositories` body — a repository can be tracked from a linked account **or** by public
 `owner`/`name` (public GitHub repos need no linked account, per requirements):
@@ -201,12 +206,70 @@ not an alternative implementation.
 {
   "provider": "github",
   "account_id": 3,
-  "provider_repo_id": "123456",
   "owner": "acme",
   "name": "docs",
   "tracked_branch": "main"
 }
 ```
+
+- `provider`, `owner`, `name` are required. `provider_repo_id` is not accepted; it is read from
+  the provider along with `full_name`, `html_url`, `is_private`, and `default_branch`.
+- `account_id` is optional; omit it for a public repository. When given, it must be one of the
+  caller's linked accounts for that provider (`404 not_found` otherwise).
+- `tracked_branch` defaults to the repository's default branch; when given, it must exist
+  upstream (`400 bad_request` otherwise).
+- `201` with the repository DTO below; `409 conflict` if the repository is already tracked.
+
+Repository DTO (returned by `GET`/`POST`/`PATCH`; `account_id` and `synced_commit` may be `null`):
+
+```json
+{
+  "id": 12,
+  "account_id": 3,
+  "provider": "github",
+  "provider_repo_id": "123456",
+  "owner": "acme",
+  "name": "docs",
+  "full_name": "acme/docs",
+  "html_url": "https://github.com/acme/docs",
+  "is_private": false,
+  "default_branch": "main",
+  "tracked_branch": "main",
+  "synced_commit": null,
+  "sync_status": "pending",
+  "auto_sync": true,
+  "last_sync_at": null,
+  "created_at": "2026-09-20T10:11:12Z",
+  "updated_at": "2026-09-20T10:11:12Z"
+}
+```
+
+`PATCH /api/repositories/{id}` body — both fields optional:
+
+```json
+{ "tracked_branch": "release", "auto_sync": true }
+```
+
+A new `tracked_branch` must exist upstream (`400 bad_request` otherwise), and changing it resets
+the sync state (`synced_commit` → `null`, `sync_status` → `pending`, `last_sync_at` → `null`).
+
+`GET /api/repositories/{id}/branches` returns the branches of the tracked repository; provider
+pagination is followed internally (capped, so very large repositories may be truncated):
+
+```json
+[
+  { "name": "main", "commit": "3f1c9e2…", "protected": true }
+]
+```
+
+Provider calls on an already-tracked repository (`PATCH` with a new branch, `branches`) use the
+linked account's token whenever the repository has an `account_id` or is private; public
+repositories tracked without an account are read anonymously. `POST` uses the token of the given
+`account_id`, or none. Failures: `403 forbidden` when no usable linked
+account exists or its token is empty, expired, or revoked (the user must re-link),
+`409 conflict` when a private repository has no `account_id` and the caller has several accounts
+for that provider, `404 not_found` when the provider no longer finds the repository,
+`429 rate_limited` on provider rate limits, `501 not_implemented` for an unregistered provider.
 
 `POST /api/repositories/{id}/commits` body — each file must reference a document that currently
 has a draft:
