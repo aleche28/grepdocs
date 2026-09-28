@@ -29,6 +29,8 @@ type GitHubOptions struct {
 	RedirectURL  string
 	HTTPClient   *http.Client
 	BaseURL      string
+	// TokenURL overrides GitHub's OAuth token endpoint (used by tests)
+	TokenURL string
 }
 
 type GitHubProvider struct {
@@ -47,13 +49,18 @@ func NewGitHub(opts GitHubOptions) *GitHubProvider {
 		// TODO: strip final / if present
 	}
 
+	endpoint := github.Endpoint
+	if opts.TokenURL != "" {
+		endpoint.TokenURL = opts.TokenURL
+	}
+
 	p := &GitHubProvider{options: opts}
 	p.oauth2Config = &oauth2.Config{
 		ClientID:     opts.ClientID,
 		ClientSecret: opts.ClientSecret,
 		RedirectURL:  opts.RedirectURL,
 		Scopes:       []string{"repo", "user:email"},
-		Endpoint:     github.Endpoint,
+		Endpoint:     endpoint,
 	}
 
 	return p
@@ -66,6 +73,8 @@ func (ghp *GitHubProvider) AuthCodeURL(state string) string {
 }
 
 func (ghp *GitHubProvider) Exchange(ctx context.Context, code string) (Token, error) {
+	// oauth2 reads the HTTP client from the context; without it, it falls back to http.DefaultClient (no timeout)
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, ghp.options.HTTPClient)
 	ghtok, err := ghp.oauth2Config.Exchange(ctx, code)
 	if err != nil {
 		return Token{}, err

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestClassifyGitHubResponse(t *testing.T) {
@@ -225,6 +226,130 @@ func TestListRepositories(t *testing.T) {
 			t.Fatal("ListRepositories() = nil, want decode error")
 		}
 	})
+}
+
+func TestExchange(t *testing.T) {
+	const (
+		accessTTL  = 8 * time.Hour
+		refreshTTL = 15897600 * time.Second // ~6 months
+	)
+
+	// newTokenServer fakes GitHub's OAuth token endpoint, answering every request with the given
+	// content type and body
+	newTokenServer := func(t *testing.T, contentType, body string) *httptest.Server {
+		t.Helper()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost || r.URL.Path != "/login/oauth/access_token" {
+				t.Errorf("request = %s %s, want POST /login/oauth/access_token", r.Method, r.URL.Path)
+			}
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("ParseForm: %v", err)
+			}
+			if got := r.PostForm.Get("grant_type"); got != "authorization_code" {
+				t.Errorf("grant_type = %q, want authorization_code", got)
+			}
+			if got := r.PostForm.Get("code"); got != "the-code" {
+				t.Errorf("code = %q, want the-code", got)
+			}
+			w.Header().Set("Content-Type", contentType)
+			io.WriteString(w, body)
+		}))
+		t.Cleanup(srv.Close)
+		return srv
+	}
+
+	exchange := func(t *testing.T, srv *httptest.Server) (Token, error) {
+		t.Helper()
+		gh := NewGitHub(GitHubOptions{
+			ClientID:     "client-id",
+			ClientSecret: "client-secret",
+			HTTPClient:   srv.Client(),
+			TokenURL:     srv.URL + "/login/oauth/access_token",
+		})
+		return gh.Exchange(context.Background(), "the-code")
+	}
+
+	// GitHub answers form-encoded unless the client sends Accept: application/json, which oauth2
+	// does not: expires_in is then only reflected in Expiry, and Extra returns int64 values
+	t.Run("form-encoded response with expiring tokens", func(t *testing.T) {
+		srv := newTokenServer(t, "application/x-www-form-urlencoded",
+			"access_token=ghu_access&expires_in=28800&refresh_token=ghr_refresh"+
+				"&refresh_token_expires_in=15897600&token_type=bearer&scope=")
+
+		before := time.Now()
+		tok, err := exchange(t, srv)
+		after := time.Now()
+		if err != nil {
+			t.Fatalf("Exchange: %v", err)
+		}
+
+		if tok.AccessToken != "ghu_access" || tok.RefreshToken != "ghr_refresh" {
+			t.Errorf("tokens = %q/%q, want ghu_access/ghr_refresh", tok.AccessToken, tok.RefreshToken)
+		}
+		assertExpiresIn(t, "Expiry", tok.Expiry, before, after, accessTTL)
+		assertExpiresIn(t, "RefreshExpiry", tok.RefreshExpiry, before, after, refreshTTL)
+	})
+
+	// With a JSON body, Extra returns float64 values
+	t.Run("json response with expiring tokens", func(t *testing.T) {
+		srv := newTokenServer(t, "application/json",
+			`{"access_token":"ghu_access","expires_in":28800,"refresh_token":"ghr_refresh",`+
+				`"refresh_token_expires_in":15897600,"token_type":"bearer","scope":""}`)
+
+		before := time.Now()
+		tok, err := exchange(t, srv)
+		after := time.Now()
+		if err != nil {
+			t.Fatalf("Exchange: %v", err)
+		}
+
+		assertExpiresIn(t, "Expiry", tok.Expiry, before, after, accessTTL)
+		assertExpiresIn(t, "RefreshExpiry", tok.RefreshExpiry, before, after, refreshTTL)
+	})
+
+	// Token expiration opted out in the app settings: no expires_in, no refresh token
+	t.Run("non-expiring token", func(t *testing.T) {
+		srv := newTokenServer(t, "application/x-www-form-urlencoded",
+			"access_token=ghu_access&token_type=bearer&scope=")
+
+		tok, err := exchange(t, srv)
+		if err != nil {
+			t.Fatalf("Exchange: %v", err)
+		}
+
+		if tok.Expiry != nil {
+			t.Errorf("Expiry = %v, want nil", *tok.Expiry)
+		}
+		if tok.RefreshToken != "" {
+			t.Errorf("RefreshToken = %q, want empty", tok.RefreshToken)
+		}
+		if tok.RefreshExpiry != nil {
+			t.Errorf("RefreshExpiry = %v, want nil", *tok.RefreshExpiry)
+		}
+	})
+
+	// GitHub reports a bad or reused code with a 200 status and an error in the body
+	t.Run("error in 200 response", func(t *testing.T) {
+		srv := newTokenServer(t, "application/x-www-form-urlencoded",
+			"error=bad_verification_code&error_description=The+code+passed+is+incorrect+or+expired.")
+
+		if _, err := exchange(t, srv); err == nil {
+			t.Fatal("Exchange() = nil, want error")
+		}
+	})
+}
+
+// assertExpiresIn checks that got is set and lies within ttl of the [before, after] window in
+// which the token was issued
+func assertExpiresIn(t *testing.T, name string, got *time.Time, before, after time.Time, ttl time.Duration) {
+	t.Helper()
+	if got == nil {
+		t.Errorf("%s = nil, want ~now+%s", name, ttl)
+		return
+	}
+	if got.Before(before.Add(ttl)) || got.After(after.Add(ttl)) {
+		t.Errorf("%s = %v, want between %v and %v", name, *got, before.Add(ttl), after.Add(ttl))
+	}
 }
 
 // srvURL reconstructs the base URL of the request's server from its Host header.
