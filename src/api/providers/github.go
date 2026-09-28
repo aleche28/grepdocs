@@ -65,9 +65,34 @@ func (ghp *GitHubProvider) AuthCodeURL(state string) string {
 	return ghp.oauth2Config.AuthCodeURL(state, oauth2.AccessTypeOffline)
 }
 
-func (ghp *GitHubProvider) Exchange(ctx context.Context, code string) (*oauth2.Token, error) {
-	token, err := ghp.oauth2Config.Exchange(ctx, code)
-	return token, err
+func (ghp *GitHubProvider) Exchange(ctx context.Context, code string) (Token, error) {
+	ghtok, err := ghp.oauth2Config.Exchange(ctx, code)
+	if err != nil {
+		return Token{}, err
+	}
+
+	tok := Token{
+		AccessToken:  ghtok.AccessToken,
+		RefreshToken: ghtok.RefreshToken,
+	}
+
+	if !ghtok.Expiry.IsZero() {
+		tok.Expiry = &ghtok.Expiry
+	}
+
+	var intval int64
+	switch val := ghtok.Extra("refresh_token_expires_in").(type) {
+	case int64:
+		intval = val
+	case float64:
+		intval = int64(val)
+	}
+	if intval > 0 {
+		t := time.Now().Add(time.Second * time.Duration(intval))
+		tok.RefreshExpiry = &t
+	}
+
+	return tok, nil
 }
 
 func (ghp *GitHubProvider) FetchUser(ctx context.Context, accessToken string) (User, error) {

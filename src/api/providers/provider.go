@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"errors"
+	"time"
 
 	"golang.org/x/oauth2"
 )
@@ -37,10 +38,17 @@ type Branch struct {
 	Protected bool   `json:"protected"`
 }
 
+type Token struct {
+	AccessToken   string
+	Expiry        *time.Time
+	RefreshToken  string
+	RefreshExpiry *time.Time
+}
+
 type Provider interface {
 	Name() string
 	AuthCodeURL(state string) string
-	Exchange(ctx context.Context, code string) (*oauth2.Token, error)
+	Exchange(ctx context.Context, code string) (Token, error)
 	FetchUser(ctx context.Context, accessToken string) (User, error)
 	ListRepositories(ctx context.Context, accessToken string) ([]Repository, error)
 	GetRepository(ctx context.Context, accessToken string, owner string, name string) (Repository, error)

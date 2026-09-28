@@ -11,16 +11,17 @@ import (
 )
 
 type ExternalGitAccount struct {
-	ID              int64
-	UserID          int64
-	Provider        string
-	ProviderUserID  string
-	AccessToken     string
-	RefreshToken    string
-	TokenExpiresAt  *time.Time
-	LinkedAt        *time.Time
-	LastRefreshedAt *time.Time
-	Label           string
+	ID                    int64
+	UserID                int64
+	Provider              string
+	ProviderUserID        string
+	AccessToken           string
+	RefreshToken          string
+	TokenExpiresAt        *time.Time
+	LinkedAt              *time.Time
+	LastRefreshedAt       *time.Time
+	Label                 string
+	RefreshTokenExpiresAt *time.Time
 }
 
 type Repository struct {

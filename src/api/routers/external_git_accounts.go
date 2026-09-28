@@ -75,13 +75,14 @@ func (h *ExternalAccountsHandler) listExternalAccounts(w http.ResponseWriter, r 
 	sanitizedAccounts := make([]map[string]interface{}, len(accounts))
 	for i, acc := range accounts {
 		sanitizedAccounts[i] = map[string]interface{}{
-			"id":                acc.ID,
-			"provider":          acc.Provider,
-			"provider_user_id":  acc.ProviderUserID,
-			"linked_at":         acc.LinkedAt,
-			"last_refreshed_at": acc.LastRefreshedAt,
-			"token_expires_at":  acc.TokenExpiresAt,
-			"label":             acc.Label,
+			"id":                       acc.ID,
+			"provider":                 acc.Provider,
+			"provider_user_id":         acc.ProviderUserID,
+			"linked_at":                acc.LinkedAt,
+			"last_refreshed_at":        acc.LastRefreshedAt,
+			"token_expires_at":         acc.TokenExpiresAt,
+			"refresh_token_expires_at": acc.RefreshTokenExpiresAt,
+			"label":                    acc.Label,
 		}
 	}
 
@@ -165,17 +166,6 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 	// Store external account
 	q := dal.New(h.dbPool)
 
-	// Calculate token expiration (GitHub tokens don't expire by default, set to far future)
-	expiresAt := time.Now().AddDate(1, 0, 0) // 1 year from now
-	if !token.Expiry.IsZero() {
-		expiresAt = token.Expiry
-	}
-
-	refreshToken := ""
-	if token.RefreshToken != "" {
-		refreshToken = token.RefreshToken
-	}
-
 	encAccTok, err := h.cipher.Encrypt(token.AccessToken)
 	if err != nil {
 		httpx.WriteInternalError(w, err)
@@ -183,8 +173,8 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 	}
 
 	encRefTok := ""
-	if len(refreshToken) > 0 {
-		encRefTok, err = h.cipher.Encrypt(refreshToken)
+	if len(token.RefreshToken) > 0 {
+		encRefTok, err = h.cipher.Encrypt(token.RefreshToken)
 		if err != nil {
 			httpx.WriteInternalError(w, err)
 			return
@@ -192,12 +182,13 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 	}
 
 	_, err = q.UpsertExternalGitAccount(r.Context(), dal.UpsertExternalGitAccountParams{
-		UserID:         userID,
-		Provider:       provider.Name(),
-		ProviderUserID: provUser.ProviderUserID,
-		AccessToken:    encAccTok,
-		RefreshToken:   encRefTok,
-		TokenExpiresAt: &expiresAt,
+		UserID:                userID,
+		Provider:              provider.Name(),
+		ProviderUserID:        provUser.ProviderUserID,
+		AccessToken:           encAccTok,
+		RefreshToken:          encRefTok,
+		TokenExpiresAt:        token.Expiry,
+		RefreshTokenExpiresAt: token.RefreshExpiry,
 	})
 	if err != nil {
 		httpx.WriteInternalError(w, err)

@@ -118,7 +118,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 }
 
 const getExternalGitAccountById = `-- name: GetExternalGitAccountById :one
-SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label FROM external_git_accounts
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at FROM external_git_accounts
 WHERE id = $1 LIMIT 1
 `
 
@@ -136,12 +136,13 @@ func (q *Queries) GetExternalGitAccountById(ctx context.Context, id int64) (Exte
 		&i.LinkedAt,
 		&i.LastRefreshedAt,
 		&i.Label,
+		&i.RefreshTokenExpiresAt,
 	)
 	return i, err
 }
 
 const getExternalGitAccountsByUserID = `-- name: GetExternalGitAccountsByUserID :many
-SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label FROM external_git_accounts
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at FROM external_git_accounts
 WHERE user_id = $1
 `
 
@@ -165,6 +166,7 @@ func (q *Queries) GetExternalGitAccountsByUserID(ctx context.Context, userID int
 			&i.LinkedAt,
 			&i.LastRefreshedAt,
 			&i.Label,
+			&i.RefreshTokenExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -177,7 +179,7 @@ func (q *Queries) GetExternalGitAccountsByUserID(ctx context.Context, userID int
 }
 
 const getExternalGitAccountsByUserIDAndProvider = `-- name: GetExternalGitAccountsByUserIDAndProvider :many
-SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label FROM external_git_accounts
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at FROM external_git_accounts
 WHERE user_id = $1 AND provider = $2
 `
 
@@ -206,6 +208,7 @@ func (q *Queries) GetExternalGitAccountsByUserIDAndProvider(ctx context.Context,
 			&i.LinkedAt,
 			&i.LastRefreshedAt,
 			&i.Label,
+			&i.RefreshTokenExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -345,25 +348,30 @@ const updateExternalGitAccountTokens = `-- name: UpdateExternalGitAccountTokens 
 UPDATE external_git_accounts
 SET 
 	access_token = $2,
-	refresh_token = COALESCE($3, refresh_token),
-	token_expires_at = $4,
+	refresh_token = COALESCE(NULLIF($4::text, ''), refresh_token),
+	token_expires_at = $3,
+	refresh_token_expires_at = CASE
+		WHEN $4::text <> '' THEN $5::timestamptz
+		ELSE refresh_token_expires_at END,
 	last_refreshed_at = NOW()
 WHERE id = $1
 `
 
 type UpdateExternalGitAccountTokensParams struct {
-	ID             int64
-	AccessToken    string
-	RefreshToken   string
-	TokenExpiresAt *time.Time
+	ID                    int64
+	AccessToken           string
+	TokenExpiresAt        *time.Time
+	RefreshToken          string
+	RefreshTokenExpiresAt *time.Time
 }
 
 func (q *Queries) UpdateExternalGitAccountTokens(ctx context.Context, arg UpdateExternalGitAccountTokensParams) error {
 	_, err := q.db.Exec(ctx, updateExternalGitAccountTokens,
 		arg.ID,
 		arg.AccessToken,
-		arg.RefreshToken,
 		arg.TokenExpiresAt,
+		arg.RefreshToken,
+		arg.RefreshTokenExpiresAt,
 	)
 	return err
 }
@@ -442,26 +450,31 @@ INSERT INTO external_git_accounts (
 	provider_user_id,
 	access_token,
 	refresh_token,
-	token_expires_at
+	token_expires_at,
+	refresh_token_expires_at
 ) VALUES (
-	$1, $2, $3, $4, $5, $6
+	$1, $2, $3, $4, $5, $6, $7
 )
 ON CONFLICT (user_id, provider, provider_user_id)
 	DO UPDATE SET
 		access_token = EXCLUDED.access_token,
 		refresh_token = COALESCE(NULLIF(EXCLUDED.refresh_token, ''), external_git_accounts.refresh_token),
 		token_expires_at = EXCLUDED.token_expires_at,
+		refresh_token_expires_at = CASE
+			WHEN EXCLUDED.refresh_token <> '' THEN EXCLUDED.refresh_token_expires_at
+			ELSE external_git_accounts.refresh_token_expires_at END,
 		last_refreshed_at = NOW()
-RETURNING id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label
+RETURNING id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at
 `
 
 type UpsertExternalGitAccountParams struct {
-	UserID         int64
-	Provider       string
-	ProviderUserID string
-	AccessToken    string
-	RefreshToken   string
-	TokenExpiresAt *time.Time
+	UserID                int64
+	Provider              string
+	ProviderUserID        string
+	AccessToken           string
+	RefreshToken          string
+	TokenExpiresAt        *time.Time
+	RefreshTokenExpiresAt *time.Time
 }
 
 func (q *Queries) UpsertExternalGitAccount(ctx context.Context, arg UpsertExternalGitAccountParams) (ExternalGitAccount, error) {
@@ -472,6 +485,7 @@ func (q *Queries) UpsertExternalGitAccount(ctx context.Context, arg UpsertExtern
 		arg.AccessToken,
 		arg.RefreshToken,
 		arg.TokenExpiresAt,
+		arg.RefreshTokenExpiresAt,
 	)
 	var i ExternalGitAccount
 	err := row.Scan(
@@ -485,6 +499,7 @@ func (q *Queries) UpsertExternalGitAccount(ctx context.Context, arg UpsertExtern
 		&i.LinkedAt,
 		&i.LastRefreshedAt,
 		&i.Label,
+		&i.RefreshTokenExpiresAt,
 	)
 	return i, err
 }
