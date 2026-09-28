@@ -146,9 +146,17 @@ provider-scoped routes.
   "label": "",
   "linked_at": "2026-03-02T10:11:12Z",
   "last_refreshed_at": "2026-03-02T10:11:12Z",
-  "token_expires_at": "2027-03-02T10:11:12Z"
+  "token_expires_at": "2026-03-02T18:11:12Z",
+  "refresh_token_expires_at": "2026-09-02T10:11:12Z"
 }
 ```
+
+`token_expires_at` and `refresh_token_expires_at` are the expiries reported by the provider when
+the tokens were issued (for a GitHub App: 8 hours and ~6 months). Either is `null` when the
+provider reports none, e.g. a GitHub App with token expiration opted out. `last_refreshed_at` is
+set whenever stored tokens are replaced (re-linking today, refresh later); it is `null` for an
+account that has only been linked once. There is no refresh flow yet: an expired access token
+means the account must be re-linked.
 
 `label` exists in the schema so a user can tell multiple accounts for one provider apart (e.g.
 "personal" vs "work"). It is read-only for now (always `""`); no write endpoint exists yet.
