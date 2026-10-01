@@ -22,9 +22,10 @@ about it" over "here's the corrected file".
   Check `src/api/database/queries.sql`. A query that fetches by id alone then compares user IDs in
   the handler is a red flag (TOCTOU + leaks existence).
 - **Secret handling** — `external_git_accounts.access_token`/`refresh_token` must be encrypted
-  *before every write* and decrypted *after every read* (`providerCallback`,
-  `listExternalRepositories` are the reference sites). New paths that touch these columns must not
-  skip `secrets.Cipher`. Ciphertext keeps the `v1:` prefix.
+  *before every write* and decrypted *after every read*. `providerCallback` is the reference write
+  site; reads go through `credentials.Service.ForAccount`, the only decrypt site. New write paths
+  must not skip `secrets.Cipher`; new read paths must use `credentials` rather than decrypting
+  themselves. Ciphertext keeps the `v1:` prefix.
 - **Token leakage to clients** — provider tokens must be stripped at the DTO layer; see
   `listExternalAccounts`. A new DTO that embeds the DAL row directly will leak them.
 - **Error leakage** — no `http.Error`, no `err.Error()` in responses. Internal errors go through
@@ -63,9 +64,10 @@ about it" over "here's the corrected file".
 
 - **Provider isolation** — provider HTTP/OAuth logic belongs in `src/api/providers/` behind
   `providers.Provider` + `Registry`; never inline GitHub-shaped code in a handler (C1).
-- **Deliberate absences** — do **not** flag as a defect: no DI container, no service/use-case layer
-  (deferred to Phase 2 sync orchestration), no token-refresh on `Provider` (modeled as optional
-  `Refresher`), hand-rolled sessions instead of `scs`.
+- **Deliberate absences** — do **not** flag as a defect: no DI container, no general service/use-case
+  layer (deferred to Phase 2 sync orchestration; `credentials.Service` is the one deliberate
+  service), no token-refresh on `Provider` (modeled as optional `Refresher`), hand-rolled sessions
+  instead of `scs`.
 - **Handler shape** — receiver methods holding `*pgxpool.Pool` and `*session.SessionManager`;
   `dal.New(h.dbPool)` per request; no closure-with-unused-pool params (C3).
 - **Config** — routers should not read `os.Getenv` for new settings; config belongs with

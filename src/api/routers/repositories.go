@@ -9,7 +9,6 @@ import (
 	"grepdocs/api/middleware"
 	"grepdocs/api/models"
 	"grepdocs/api/providers"
-	"grepdocs/api/secrets"
 	"grepdocs/api/session"
 	"net/http"
 	"strconv"
@@ -29,7 +28,6 @@ type RepositoriesHandler struct {
 	dbPool           *pgxpool.Pool
 	sessionMgr       *session.SessionManager
 	providerRegistry *providers.Registry
-	cipher           secrets.Cipher
 	creds            *credentials.Service
 }
 
@@ -37,14 +35,12 @@ func RepositoriesRoutes(
 	pool *pgxpool.Pool,
 	sm *session.SessionManager,
 	pr *providers.Registry,
-	cipher secrets.Cipher,
 	creds *credentials.Service,
 ) chi.Router {
 	h := &RepositoriesHandler{
 		dbPool:           pool,
 		sessionMgr:       sm,
 		providerRegistry: pr,
-		cipher:           cipher,
 		creds:            creds,
 	}
 

@@ -12,18 +12,26 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Errors returned by Service; callers map them to their own responses
+// (HTTP status in handlers, account state in the sync engine).
 var (
 	ErrAccountNotFound  = errors.New("external account not found")
 	ErrAccountAmbiguous = errors.New("multiple external accounts for provider")
-	ErrReauthRequired   = errors.New("empty access token or expired")
+	// ErrReauthRequired means the stored token cannot be used and the user
+	// must re-link the account.
+	ErrReauthRequired = errors.New("account must be re-linked")
 )
 
+// Service hands out usable provider access tokens for linked accounts. It owns
+// the decryption of stored tokens (and, later, their refresh), so callers never
+// read the token columns of external_git_accounts themselves.
 type Service struct {
 	pool     *pgxpool.Pool
 	cipher   secrets.Cipher
 	registry *providers.Registry
 }
 
+// New returns a Service backed by pool, decrypting stored tokens with cipher.
 func New(pool *pgxpool.Pool, cipher secrets.Cipher, registry *providers.Registry) *Service {
 	return &Service{
 		pool:     pool,
@@ -32,7 +40,8 @@ func New(pool *pgxpool.Pool, cipher secrets.Cipher, registry *providers.Registry
 	}
 }
 
-// ForAccount get and decrypts the access token linked to the passed account
+// ForAccount returns the decrypted access token of account. It returns
+// ErrReauthRequired when the stored token is empty or expired.
 func (s *Service) ForAccount(ctx context.Context, account dal.ExternalGitAccount) (string, error) {
 	if account.AccessToken == "" || (account.TokenExpiresAt != nil && account.TokenExpiresAt.Before(time.Now())) {
 		// No refresh flow yet: the user must re-link the account
@@ -46,7 +55,10 @@ func (s *Service) ForAccount(ctx context.Context, account dal.ExternalGitAccount
 	return decrypted, nil
 }
 
-// ForRepository get and decrypts the access token required for the passed repo
+// ForRepository returns the access token to use for provider calls on repo:
+// the token of its linked account, or of the user's single account for the
+// provider when a private repo has none. A public repo with no linked account
+// returns "", nil on purpose: providers treat an empty token as an anonymous call.
 func (s *Service) ForRepository(ctx context.Context, repo dal.Repository) (string, error) {
 	token := ""
 	if repo.IsPrivate || repo.AccountID.Valid {

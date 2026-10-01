@@ -11,8 +11,8 @@ multiple git repositories, committing edits back to source control. Only the bac
 
 There is no CI. `go test ./...`, `go vet`, and `go fmt` are the quality gates — run all three before
 committing (`make test`, `make vet`, `make fmt`). Unit tests cover sessions, auth middleware,
-providers, response envelopes, and the session model; `routers` is still untested (handlers hold a
-concrete `*pgxpool.Pool`, so there is no DB seam yet).
+providers, credentials, response envelopes, and the session model; `routers` is still untested
+(handlers hold a concrete `*pgxpool.Pool`, so there is no DB seam yet).
 
 ## Commands
 
@@ -53,7 +53,8 @@ needs both Postgres and Redis, and exits at startup if `DATABASE_URL` is unset.
 
 ### Request pipeline
 
-`main.go` wires everything; there is no DI container and no service layer yet.
+`main.go` wires everything; there is no DI container. The only service is `credentials.Service`
+(see Git providers), built once in `main.go` and injected into the routers that call providers.
 
 ```
 http.Server (explicit timeouts, graceful shutdown on SIGINT/SIGTERM)
@@ -117,9 +118,10 @@ Rules:
 
 - Never commit a key. Generate with `openssl rand -base64 32` and keep it in `.env`; the key must
   stay stable or every stored token becomes unreadable.
-- Encrypt before every write to `external_git_accounts` and decrypt after every read; the current
-  sites are `providerCallback` and `listExternalRepositories`. `secrets` is not wired into the DAL
-  automatically, so new read/write paths must not forget this.
+- Encrypt before every write to `external_git_accounts` and decrypt after every read. Writes happen
+  in `providerCallback`; reads go through `credentials.Service.ForAccount`, the only decrypt site.
+  `secrets` is not wired into the DAL automatically, so new write paths must not forget this, and
+  new read paths should get tokens from `credentials` instead of decrypting themselves.
 - Keep the `v1:` prefix on ciphertext; it is what makes format/key rotation possible.
 - Unit tests live in `secrets/aesgcm_test.go` (round-trip, tamper, wrong key, malformed input).
 
@@ -142,6 +144,12 @@ Only GitHub is implemented, behind the `providers.Provider` interface + `Registr
 go in `src/api/providers/`, not inline in handlers). Provider failures are normalized to
 `ErrInvalidToken`/`ErrRateLimited` and mapped by callers to `403`/`429`. When adding Bitbucket,
 build a `Refresher` implementation rather than adding a second inline flow.
+
+Handlers and background jobs get provider access tokens from `credentials.Service`
+(`src/api/credentials`), never from the token columns directly: `ResolveAccount` picks the account,
+`ForAccount` / `ForRepository` return a usable token. It writes no HTTP responses; it returns
+`ErrAccountNotFound`, `ErrAccountAmbiguous`, and `ErrReauthRequired`, and each caller maps them
+(the status for the same error differs per endpoint — check `docs/api.md`).
 
 GitHub specifics worth preserving: the shared `httpClient` from `routers/http.go` (10s timeout),
 `newGitHubRequest` for auth/accept headers, `io.LimitReader` bounding every decode, `Link`-header
