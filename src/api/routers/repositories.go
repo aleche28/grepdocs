@@ -265,6 +265,14 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 		case errors.Is(err, credentials.ErrReauthRequired):
 			httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Invalid or expired token, re-link your account")
 			return
+		case errors.Is(err, credentials.ErrAccountNotFound):
+			httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
+				"No linked "+repo.Provider+" account available, please re-link your account")
+			return
+		case errors.Is(err, credentials.ErrAccountAmbiguous):
+			httpx.WriteError(w, http.StatusConflict, httpx.CodeConflict,
+				"Multiple "+repo.Provider+" accounts found")
+			return
 		case err != nil:
 			httpx.WriteInternalError(w, err)
 			return
@@ -355,6 +363,14 @@ func (h *RepositoriesHandler) listRepositoryBranches(w http.ResponseWriter, r *h
 	switch {
 	case errors.Is(err, credentials.ErrReauthRequired):
 		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Invalid or expired token, re-link your account")
+		return
+	case errors.Is(err, credentials.ErrAccountNotFound):
+		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
+			"No linked "+repo.Provider+" account available, please re-link your account")
+		return
+	case errors.Is(err, credentials.ErrAccountAmbiguous):
+		httpx.WriteError(w, http.StatusConflict, httpx.CodeConflict,
+			"Multiple "+repo.Provider+" accounts found")
 		return
 	case err != nil:
 		httpx.WriteInternalError(w, err)
