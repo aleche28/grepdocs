@@ -79,6 +79,17 @@ SET
 WHERE id = $1
 RETURNING id;
 
+-- name: ClearExternalGitAccountTokens :one
+-- Called when the provider rejects the refresh token: the account can only be
+-- re-linked, so later lookups fail fast without contacting the provider.
+-- Expiries are kept: they still describe the last tokens issued.
+UPDATE external_git_accounts
+SET
+	access_token = '',
+	refresh_token = ''
+WHERE id = $1
+RETURNING id;
+
 -- name: DeleteExternalGitAccount :exec
 DELETE FROM external_git_accounts
 WHERE id = $1;

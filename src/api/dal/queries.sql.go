@@ -12,6 +12,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearExternalGitAccountTokens = `-- name: ClearExternalGitAccountTokens :one
+UPDATE external_git_accounts
+SET
+	access_token = '',
+	refresh_token = ''
+WHERE id = $1
+RETURNING id
+`
+
+// Called when the provider rejects the refresh token: the account can only be
+// re-linked, so later lookups fail fast without contacting the provider.
+// Expiries are kept: they still describe the last tokens issued.
+func (q *Queries) ClearExternalGitAccountTokens(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, clearExternalGitAccountTokens, id)
+	err := row.Scan(&id)
+	return id, err
+}
+
 const createRepository = `-- name: CreateRepository :one
 INSERT INTO repositories (
 	user_id,

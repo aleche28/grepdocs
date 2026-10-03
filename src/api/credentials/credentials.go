@@ -199,6 +199,12 @@ func (s *Service) refresh(ctx context.Context, accountID int64) (string, error) 
 	token, err := refresher.Refresh(ctx, oldRefreshToken)
 	switch {
 	case errors.Is(err, providers.ErrInvalidToken):
+		// The refresh token is dead: clear the stored tokens so later calls
+		// stop at canRefresh instead of contacting the provider again.
+		// Clearing is best effort; the user must re-link either way.
+		if clearErr := clearTokens(ctx, tx, q, account.ID); clearErr != nil {
+			return "", fmt.Errorf("%w: %w (clearing tokens: %w)", ErrReauthRequired, err, clearErr)
+		}
 		return "", fmt.Errorf("%w: %w", ErrReauthRequired, err)
 	case err != nil:
 		return "", err
@@ -235,4 +241,12 @@ func (s *Service) refresh(ctx context.Context, accountID int64) (string, error) 
 		return "", err
 	}
 	return token.AccessToken, nil
+}
+
+// clearTokens empties the stored tokens of the locked account and commits.
+func clearTokens(ctx context.Context, tx pgx.Tx, q *dal.Queries, accountID int64) error {
+	if _, err := q.ClearExternalGitAccountTokens(ctx, accountID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
