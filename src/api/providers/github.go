@@ -249,19 +249,21 @@ func (ghp *GitHubProvider) ListBranches(ctx context.Context, accessToken string,
 	return toBranches(branches), nil
 }
 
+// Refresh exchanges refreshToken for a new token pair. GitHub rotates both
+// tokens and invalidates the old refresh token. A refresh token that is expired,
+// already used, or revoked yields ErrInvalidToken; any other failure (network,
+// GitHub outage, bad client credentials) is returned as a plain error.
 func (ghp *GitHubProvider) Refresh(ctx context.Context, refreshToken string) (Token, error) {
-	// same as in Exchange()
+	// oauth2 reads the HTTP client from the context; without it, it falls back to http.DefaultClient (no timeout)
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, ghp.options.HTTPClient)
-	// send a request without access token, but with valid refresh token:
-	// github sends back new pair of access and refresh tokens
-	tokReq := &oauth2.Token{RefreshToken: refreshToken}
-	tok, err := ghp.oauth2Config.TokenSource(ctx, tokReq).Token()
-	var retrieveErr *oauth2.RetrieveError
-	if errors.As(err, &retrieveErr) && retrieveErr.ErrorCode == "bad_refresh_token" {
-		return Token{}, fmt.Errorf("%w: %w", ErrInvalidToken, err)
-	}
+	// a token with no access token is invalid, so the source refreshes it right away
+	tok, err := ghp.oauth2Config.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken}).Token()
 	if err != nil {
-		return Token{}, fmt.Errorf("Error while refreshing token: %w", err)
+		var retrieveErr *oauth2.RetrieveError
+		if errors.As(err, &retrieveErr) && retrieveErr.ErrorCode == "bad_refresh_token" {
+			return Token{}, fmt.Errorf("%w: %w", ErrInvalidToken, err)
+		}
+		return Token{}, fmt.Errorf("github token refresh: %w", err)
 	}
 	return toToken(tok), nil
 }

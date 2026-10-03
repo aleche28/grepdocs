@@ -3,6 +3,7 @@ package credentials
 import (
 	"context"
 	"errors"
+	"fmt"
 	"grepdocs/api/dal"
 	"grepdocs/api/providers"
 	"grepdocs/api/secrets"
@@ -12,7 +13,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const refreshMargin = 5 * time.Minute
+const (
+	// refreshMargin refreshes tokens shortly before they expire, so a caller
+	// never gets one that expires mid-operation.
+	refreshMargin = 5 * time.Minute
+	// refreshTimeout bounds the locked refresh, which runs detached from the
+	// request context.
+	refreshTimeout = 30 * time.Second
+)
 
 // Errors returned by Service; callers map them to their own responses
 // (HTTP status in handlers, account state in the sync engine).
@@ -25,8 +33,8 @@ var (
 )
 
 // Service hands out usable provider access tokens for linked accounts. It owns
-// the decryption of stored tokens (and, later, their refresh), so callers never
-// read the token columns of external_git_accounts themselves.
+// the decryption and refresh of stored tokens, so callers never read the token
+// columns of external_git_accounts themselves.
 type Service struct {
 	pool     *pgxpool.Pool
 	cipher   secrets.Cipher
@@ -42,13 +50,17 @@ func New(pool *pgxpool.Pool, cipher secrets.Cipher, registry *providers.Registry
 	}
 }
 
-// ForAccount returns the decrypted access token of account. It returns
-// ErrReauthRequired when the stored token is empty or expired.
+// ForAccount returns a usable access token for account, refreshing it first
+// when it is missing or about to expire. It returns ErrReauthRequired when the
+// token cannot be refreshed (no or expired refresh token, provider without
+// refresh, or the provider rejected the refresh token).
 func (s *Service) ForAccount(ctx context.Context, account dal.ExternalGitAccount) (string, error) {
-	if !needsRefresh(account, time.Now()) {
+	now := time.Now()
+	if !needsRefresh(account, now) {
 		return s.cipher.Decrypt(account.AccessToken)
 	}
-	if !canRefresh(account, time.Now()) {
+	// fail fast without touching the DB; refresh re-checks on the locked row
+	if !canRefresh(account, now) {
 		return "", ErrReauthRequired
 	}
 	return s.refresh(ctx, account.ID)
@@ -115,8 +127,8 @@ func (s *Service) ResolveAccount(ctx context.Context, userID int64, provider str
 
 // private helpers
 
-// needsRefresh returns true if access token is empty, expired
-// or expires in the next 5 minutes
+// needsRefresh returns true if the access token is empty, expired, or
+// expires within refreshMargin. A nil expiry means the token never expires.
 func needsRefresh(acc dal.ExternalGitAccount, now time.Time) bool {
 	return acc.AccessToken == "" ||
 		(acc.TokenExpiresAt != nil && acc.TokenExpiresAt.Before(now.Add(refreshMargin)))
@@ -137,11 +149,13 @@ func (s *Service) refresherFor(provider string) (providers.Refresher, bool) {
 	return nil, false
 }
 
+// refresh renews the tokens of the account under a row lock and persists them.
+// It works only from the locked row, never from a copy read before the lock.
 func (s *Service) refresh(ctx context.Context, accountID int64) (string, error) {
 	// detach context from the request, otherwise cancelling after
 	// github rotated the tokens would force a re-link
 	ctx = context.WithoutCancel(ctx)
-	ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
 	defer cancel()
 
 	// row lock: refresh tokens are single-use, so concurrent refreshes would
@@ -162,12 +176,13 @@ func (s *Service) refresh(ctx context.Context, accountID int64) (string, error) 
 		return "", err
 	}
 
-	// while waiting on the lock, maybe the row was updated by someone else
-	if !needsRefresh(account, time.Now()) {
+	// another caller may have refreshed while we waited for the lock
+	now := time.Now()
+	if !needsRefresh(account, now) {
 		return s.cipher.Decrypt(account.AccessToken)
 	}
 
-	if !canRefresh(account, time.Now()) {
+	if !canRefresh(account, now) {
 		return "", ErrReauthRequired
 	}
 
@@ -176,29 +191,30 @@ func (s *Service) refresh(ctx context.Context, accountID int64) (string, error) 
 		return "", ErrReauthRequired
 	}
 
-	refreshToken, err := s.cipher.Decrypt(account.RefreshToken)
+	oldRefreshToken, err := s.cipher.Decrypt(account.RefreshToken)
 	if err != nil {
 		return "", err
 	}
 
-	token, err := refresher.Refresh(ctx, refreshToken)
+	token, err := refresher.Refresh(ctx, oldRefreshToken)
 	switch {
 	case errors.Is(err, providers.ErrInvalidToken):
-		return "", ErrReauthRequired
+		return "", fmt.Errorf("%w: %w", ErrReauthRequired, err)
 	case err != nil:
 		return "", err
 	}
 
-	accessToken, err := s.cipher.Encrypt(token.AccessToken)
+	encAccessToken, err := s.cipher.Encrypt(token.AccessToken)
 	if err != nil {
 		return "", err
 	}
 
-	if token.RefreshToken == refreshToken {
-		refreshToken = "" // the update query coalesces with old one, without overwriting it
-	} else if token.RefreshToken != "" {
-		// if a new refreshtoken is not returned, keep the old one
-		refreshToken, err = s.cipher.Encrypt(token.RefreshToken)
+	// An empty refresh token tells the update query to keep the stored one
+	// (and its expiry). oauth2 echoes the old token when the provider did not
+	// rotate it, so treat that as "not rotated" too.
+	encRefreshToken := ""
+	if token.RefreshToken != "" && token.RefreshToken != oldRefreshToken {
+		encRefreshToken, err = s.cipher.Encrypt(token.RefreshToken)
 		if err != nil {
 			return "", err
 		}
@@ -206,9 +222,9 @@ func (s *Service) refresh(ctx context.Context, accountID int64) (string, error) 
 
 	_, err = q.UpdateExternalGitAccountTokens(ctx, dal.UpdateExternalGitAccountTokensParams{
 		ID:                    account.ID,
-		AccessToken:           accessToken,
+		AccessToken:           encAccessToken,
 		TokenExpiresAt:        token.Expiry,
-		RefreshToken:          refreshToken,
+		RefreshToken:          encRefreshToken,
 		RefreshTokenExpiresAt: token.RefreshExpiry,
 	})
 	if err != nil {
