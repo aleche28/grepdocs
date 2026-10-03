@@ -230,6 +230,94 @@ func TestListRepositories(t *testing.T) {
 	})
 }
 
+func TestListRepositoriesEmpty(t *testing.T) {
+	tests := []struct {
+		name          string
+		installStatus int
+		installBody   string
+		wantErr       error // nil means success; checked with errors.Is
+	}{
+		{name: "app not installed", installStatus: http.StatusOK, installBody: `{"total_count":0,"installations":[]}`, wantErr: ErrAppNotInstalled},
+		{name: "one installation", installStatus: http.StatusOK, installBody: `{"total_count":1,"installations":[{"id":1}]}`},
+		// per_page=1 returns one item, but total_count counts every installation
+		{name: "several installations", installStatus: http.StatusOK, installBody: `{"total_count":2,"installations":[{"id":1}]}`},
+		{name: "installations check unauthorized", installStatus: http.StatusUnauthorized, wantErr: ErrInvalidToken},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/user/repos":
+					io.WriteString(w, `[]`)
+				case "/user/installations":
+					if got := r.URL.Query().Get("per_page"); got != "1" {
+						t.Errorf("installations per_page = %q, want 1", got)
+					}
+					w.WriteHeader(tc.installStatus)
+					io.WriteString(w, tc.installBody)
+				default:
+					t.Errorf("unexpected path %q", r.URL.Path)
+				}
+			}))
+			defer srv.Close()
+
+			gh := NewGitHub(GitHubOptions{BaseURL: srv.URL, HTTPClient: srv.Client()})
+			repos, err := gh.ListRepositories(context.Background(), "tok")
+
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("ListRepositories() error = %v, want %v", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ListRepositories() unexpected error: %v", err)
+			}
+			// a non-nil empty slice encodes as [] rather than null
+			if repos == nil || len(repos) != 0 {
+				t.Errorf("ListRepositories() = %#v, want an empty non-nil slice", repos)
+			}
+		})
+	}
+
+	t.Run("non-empty list skips the installations check", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/user/repos" {
+				t.Errorf("unexpected path %q", r.URL.Path)
+			}
+			io.WriteString(w, `[{"id":1,"name":"one","full_name":"o/one","default_branch":"main"}]`)
+		}))
+		defer srv.Close()
+
+		gh := NewGitHub(GitHubOptions{BaseURL: srv.URL, HTTPClient: srv.Client()})
+		if _, err := gh.ListRepositories(context.Background(), "tok"); err != nil {
+			t.Fatalf("ListRepositories() unexpected error: %v", err)
+		}
+	})
+}
+
+func TestInstallURL(t *testing.T) {
+	tests := []struct {
+		name string
+		slug string
+		want string
+	}{
+		{name: "with slug", slug: "grepdocs", want: "https://github.com/apps/grepdocs/installations/new"},
+		{name: "without slug", slug: "", want: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gh := NewGitHub(GitHubOptions{AppSlug: tc.slug})
+			if got := gh.InstallURL(); got != tc.want {
+				t.Errorf("InstallURL() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestExchange(t *testing.T) {
 	const (
 		accessTTL  = 8 * time.Hour
