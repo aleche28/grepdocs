@@ -182,8 +182,10 @@ func (s *Service) refresh(ctx context.Context, accountID int64) (string, error) 
 	}
 
 	token, err := refresher.Refresh(ctx, refreshToken)
-	if err != nil {
-		// TODO: classify errors
+	switch {
+	case errors.Is(err, providers.ErrInvalidToken):
+		return "", ErrReauthRequired
+	case err != nil:
 		return "", err
 	}
 
