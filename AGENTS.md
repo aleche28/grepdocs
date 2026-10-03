@@ -11,8 +11,9 @@ multiple git repositories, committing edits back to source control. Only the bac
 
 There is no CI. `go test ./...`, `go vet`, and `go fmt` are the quality gates — run all three before
 committing (`make test`, `make vet`, `make fmt`). Unit tests cover sessions, auth middleware,
-providers, credentials, response envelopes, and the session model; `routers` is still untested
-(handlers hold a concrete `*pgxpool.Pool`, so there is no DB seam yet).
+providers, credentials, response envelopes, and the session model. `routers` tests cover only
+helpers that need no database (`writeProviderError`, `installDetails`); handlers stay untested
+because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
 
 ## Commands
 
@@ -133,6 +134,8 @@ Every response goes through `httpx`. Never use `http.Error` or hand-rolled JSON 
 - `WriteJSON(w, status, data)`
 - `WriteError(w, status, code, message)` — emits `{"error":{"code","message"}}`, where `code` is one
   of the stable `httpx.Code*` constants and is the machine-readable discriminator.
+- `WriteErrorWithDetails(w, status, code, message, details)` — same envelope plus an optional
+  `details` object, omitted when `details` is empty. `WriteError` calls it with `nil`.
 - `WriteInternalError(w, err)` — logs the real error server-side and returns a generic `internal`
   envelope. Internal error strings must never reach the client.
 
@@ -143,8 +146,15 @@ Handlers build response DTOs explicitly (inline `map[string]any` today). Token f
 
 Only GitHub is implemented, behind the `providers.Provider` interface + `Registry` (new providers
 go in `src/api/providers/`, not inline in handlers). Provider failures are normalized to
-`ErrInvalidToken`/`ErrRateLimited` and mapped by callers to `403`/`429`. When adding Bitbucket,
-build a `Refresher` implementation rather than adding a second inline flow.
+`ErrInvalidToken`/`ErrRateLimited`/`ErrNotFound`/`ErrAppNotInstalled` and mapped by callers to
+`403`/`429`/`404`/`403 app_not_installed`. When adding Bitbucket, build a `Refresher`
+implementation rather than adding a second inline flow.
+
+Capabilities not every provider has are optional interfaces checked with a type assertion, not
+methods on `Provider`: `Refresher` (token refresh) and `Installer` (`InstallURL()`, for providers
+whose access depends on an app installation). `routers.installDetails` turns `InstallURL()` into
+the `details.install_url` of an error, and returns `nil` when the provider is not an `Installer`
+or the URL is empty (no `GITHUB_APP_SLUG`), so the key is omitted rather than sent empty.
 
 Handlers and background jobs get provider access tokens from `credentials.Service`
 (`src/api/credentials`), never from the token columns directly: `ResolveAccount` picks the account,
@@ -175,7 +185,10 @@ Rules worth preserving:
 GitHub specifics worth preserving: the shared `httpClient` from `routers/http.go` (10s timeout),
 `newGitHubRequest` for auth/accept headers, `io.LimitReader` bounding every decode, `Link`-header
 pagination with a page cap, and returning the upstream HTTP status so callers can distinguish a
-revoked token (401/403 → "re-link your account") from a real failure. The token refresh flow is
+revoked token (401/403 → "re-link your account") from a real failure. With a GitHub App token,
+`/user/repos` lists only repositories the app is installed on, so `ListRepositories` checks
+`/user/installations` when the list is empty and returns `ErrAppNotInstalled` when there are none
+(`total_count` is the total, not the page size). The token refresh flow is
 described above, under `credentials`.
 
 ## Conventions

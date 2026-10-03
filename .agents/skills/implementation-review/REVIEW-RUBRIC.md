@@ -51,13 +51,16 @@ about it" over "here's the corrected file".
 
 ## 3. HTTP contract (`httpx` + `docs/api.md`)
 
-- **Envelope** — all responses via `httpx.WriteJSON` / `WriteError` / `WriteInternalError`; `code`
-  is a stable `httpx.Code*` constant.
+- **Envelope** — all responses via `httpx.WriteJSON` / `WriteError` / `WriteErrorWithDetails` /
+  `WriteInternalError`; `code` is a stable `httpx.Code*` constant. `details` is optional and must
+  be omitted, not sent empty, when there is nothing to add.
 - **Status codes** — match the `docs/api.md` error table (`400 bad_request`, `401
   not_authenticated`, `403 forbidden`, `404 not_found`, `409 conflict`, `500 internal`, `501
   not_implemented`). `422 validation_failed` is Proposed and must be added to `httpx` before use.
-- **Provider errors** — `ErrInvalidToken` → 403, `ErrRateLimited` → 429, `ErrNotFound` → 404,
-  unsupported provider → 501. Use the existing `writeProviderError` helper rather than a new switch.
+- **Provider errors** — `ErrInvalidToken` → 403, `ErrRateLimited` → 429, `ErrNotFound` → 404
+  (with `install_url` details on token-backed requests), `ErrAppNotInstalled` → 403
+  `app_not_installed`, unsupported provider → 501. Use the existing `writeProviderError` and
+  `installDetails` helpers rather than a new switch.
 - **Shape** — kebab-case paths, `snake_case` fields; DTOs match the marked-up `docs/api.md`
   section. If a route/shape is marked **Proposed**, build to it rather than improvising.
 
@@ -67,8 +70,8 @@ about it" over "here's the corrected file".
   `providers.Provider` + `Registry`; never inline GitHub-shaped code in a handler (C1).
 - **Deliberate absences** — do **not** flag as a defect: no DI container, no general service/use-case
   layer (deferred to Phase 2 sync orchestration; `credentials.Service` is the one deliberate
-  service), no token-refresh on `Provider` (modeled as optional `Refresher`), hand-rolled sessions
-  instead of `scs`.
+  service), no token refresh or install URL on `Provider` (optional `Refresher` / `Installer`),
+  hand-rolled sessions instead of `scs`.
 - **Handler shape** — receiver methods holding `*pgxpool.Pool` and `*session.SessionManager`;
   `dal.New(h.dbPool)` per request; no closure-with-unused-pool params (C3).
 - **Config** — routers should not read `os.Getenv` for new settings; config belongs with
@@ -90,9 +93,9 @@ about it" over "here's the corrected file".
 ## 6. Testing & quality gates
 
 - **Tests** — provider HTTP/pagination tested against `httptest` (`providers/github_test.go`);
-  session/middleware/httpx/models have unit tests. `routers` has no tests and no DB seam (handlers
-  hold a concrete `*pgxpool.Pool`) — this is a known gap (E1), so don't demand router tests as if
-  the seam existed; recommend the seam if tests are the goal.
+  session/middleware/httpx/models have unit tests. `routers` tests cover only DB-free helpers;
+  handlers have no DB seam (they hold a concrete `*pgxpool.Pool`) — this is a known gap (E1), so
+  don't demand handler tests as if the seam existed; recommend the seam if tests are the goal.
 - **Gates** — `make test`, `make vet`, `make fmt` (and `go test -race`). Note `make fmt`/`make vet`
   only cover the `main` package; whole-module is `cd src/api && gofmt -l . && go vet ./...`.
 - **Commit style** — conventional commits (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`,

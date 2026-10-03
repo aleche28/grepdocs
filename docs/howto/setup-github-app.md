@@ -106,8 +106,10 @@ so every linked GitHub account must be re-linked through the new app.
 | Symptom | Cause |
 | --- | --- |
 | `redirect_uri` mismatch error on GitHub | `GITHUB_REDIRECT_URL` differs from the app's Callback URL (scheme, port, and path must match exactly) |
-| Account links but its repository list is empty | The app is authorized but not installed on that account, or installed with *Only select repositories* and none selected |
-| A private repository returns `404` | The repository is not included in the installation — add it under *Configure* |
+| Repository list fails with `403 app_not_installed` | The app is authorized but not installed on any account or organization; open `details.install_url` |
+| Repository list is an empty `[]` | The app is installed with *Only select repositories* and none selected; add some under *Configure* |
+| A private repository returns `404` | The repository is not included in the installation — add it under *Configure* (the `404` carries `details.install_url`) |
+| Errors never include `details.install_url` | `GITHUB_APP_SLUG` is unset in `.env` |
 | An organization's repositories are missing | The app is not installed on the organization; an owner must install or approve it |
 | Requests fail with "re-link your account" after ~6 months unused | Each refresh issues a new refresh token, but one left unused for 6 months expires; re-link the account |
 | Requests on expired tokens fail with `500` for every account, but nobody is asked to re-link | Refresh is failing on our side, not the user's: usually `GITHUB_CLIENT_SECRET` no longer matches a secret listed on the app (deleted or regenerated). Check the server log for `incorrect_client_credentials` and update `.env` |

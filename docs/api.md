@@ -42,13 +42,19 @@ improvising a new one.
   }
   ```
 
+  Some errors add an optional `details` object with data the client can act on (e.g.
+  `install_url`, see External accounts). It is omitted when there is nothing to add, so clients
+  must not rely on it being present.
+
   | Status | `code`             | Meaning                                            |
   | ------ | ------------------ | --------------------------------------------------- |
   | 400    | `bad_request`       | Malformed input (bad body, invalid enum value, ...) |
   | 401    | `not_authenticated` | No valid session                                    |
   | 403    | `forbidden`         | Authenticated, but not the resource owner           |
+  | 403    | `app_not_installed` | Provider app not installed for the linked account   |
   | 404    | `not_found`         | Resource does not exist                             |
   | 409    | `conflict`          | Upstream state changed under the request            |
+  | 429    | `rate_limited`      | Provider rate limit hit                             |
   | 500    | `internal`          | Server error                                        |
   | 501    | `not_implemented`   | Provider or feature not implemented yet             |
 
@@ -185,9 +191,28 @@ provider-neutral shape; GitHub pagination is followed internally. **Not yet impl
   pagination params.
 - `tracked: true` will be added to each item once repositories can be tracked (Phase 2).
 
-Failures: `403 forbidden` when the stored token cannot be used or refreshed, or the provider
-rejects it as revoked (the user must re-link the account), `429 rate_limited` when the provider's
-rate limit is hit, `501 not_implemented` for a provider that has no registered implementation.
+For GitHub the list contains only repositories the GitHub App is installed on. When the list is
+empty, the API checks the account's installations: with none, the request fails with
+`403 app_not_installed` instead of returning `[]`, so the client can send the user to install the
+app. An empty `[]` therefore means the app is installed but no repository is selected.
+
+```json
+{
+  "error": {
+    "code": "app_not_installed",
+    "message": "The app is not installed on any of your accounts, install it to grant repository access",
+    "details": { "install_url": "https://github.com/apps/<slug>/installations/new" }
+  }
+}
+```
+
+`details.install_url` opens GitHub's install page, which also lets the user add repositories to an
+existing installation. It is omitted when the server has no `GITHUB_APP_SLUG` configured.
+
+Failures: `403 app_not_installed` as above, `403 forbidden` when the stored token cannot be used or
+refreshed, or the provider rejects it as revoked (the user must re-link the account),
+`429 rate_limited` when the provider's rate limit is hit, `501 not_implemented` for a provider that
+has no registered implementation.
 
 Both provider OAuth routes verify a single-use, session-bound `state` value the same way as
 Google login — a linking flow using a state cookie instead of the session would be a regression,
@@ -285,9 +310,11 @@ repositories tracked without an account are read anonymously. `POST` uses the to
 `account_id`, or none. Expiring tokens are refreshed first (see External accounts). Failures:
 `403 forbidden` when no usable linked account exists or its token cannot be refreshed or is
 revoked (the user must re-link), `409 conflict` when a private repository has no `account_id`
-and the caller has several accounts for that provider, `404 not_found` when the provider no
-longer finds the repository, `429 rate_limited` on provider rate limits, `501 not_implemented`
-for an unregistered provider.
+and the caller has several accounts for that provider, `404 not_found` when the provider does not
+find the repository, `429 rate_limited` on provider rate limits, `501 not_implemented` for an
+unregistered provider. A `404` on a request made with a token cannot tell a missing repository from
+a private one the app is not installed on, so it carries `details.install_url` (when configured);
+anonymous requests get a plain `404`.
 
 `POST /api/repositories/{id}/commits` body — each file must reference a document that currently
 has a draft:
