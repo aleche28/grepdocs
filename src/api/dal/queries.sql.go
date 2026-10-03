@@ -141,6 +141,31 @@ func (q *Queries) GetExternalGitAccountById(ctx context.Context, id int64) (Exte
 	return i, err
 }
 
+const getExternalGitAccountByIdForUpdate = `-- name: GetExternalGitAccountByIdForUpdate :one
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at FROM external_git_accounts
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) GetExternalGitAccountByIdForUpdate(ctx context.Context, id int64) (ExternalGitAccount, error) {
+	row := q.db.QueryRow(ctx, getExternalGitAccountByIdForUpdate, id)
+	var i ExternalGitAccount
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.ProviderUserID,
+		&i.AccessToken,
+		&i.RefreshToken,
+		&i.TokenExpiresAt,
+		&i.LinkedAt,
+		&i.LastRefreshedAt,
+		&i.Label,
+		&i.RefreshTokenExpiresAt,
+	)
+	return i, err
+}
+
 const getExternalGitAccountsByUserID = `-- name: GetExternalGitAccountsByUserID :many
 SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at FROM external_git_accounts
 WHERE user_id = $1
@@ -344,7 +369,7 @@ func (q *Queries) GetUserById(ctx context.Context, id int64) (User, error) {
 	return i, err
 }
 
-const updateExternalGitAccountTokens = `-- name: UpdateExternalGitAccountTokens :exec
+const updateExternalGitAccountTokens = `-- name: UpdateExternalGitAccountTokens :one
 UPDATE external_git_accounts
 SET 
 	access_token = $2,
@@ -355,6 +380,7 @@ SET
 		ELSE refresh_token_expires_at END,
 	last_refreshed_at = NOW()
 WHERE id = $1
+RETURNING id
 `
 
 type UpdateExternalGitAccountTokensParams struct {
@@ -365,15 +391,17 @@ type UpdateExternalGitAccountTokensParams struct {
 	RefreshTokenExpiresAt *time.Time
 }
 
-func (q *Queries) UpdateExternalGitAccountTokens(ctx context.Context, arg UpdateExternalGitAccountTokensParams) error {
-	_, err := q.db.Exec(ctx, updateExternalGitAccountTokens,
+func (q *Queries) UpdateExternalGitAccountTokens(ctx context.Context, arg UpdateExternalGitAccountTokensParams) (int64, error) {
+	row := q.db.QueryRow(ctx, updateExternalGitAccountTokens,
 		arg.ID,
 		arg.AccessToken,
 		arg.TokenExpiresAt,
 		arg.RefreshToken,
 		arg.RefreshTokenExpiresAt,
 	)
-	return err
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const updateRepository = `-- name: UpdateRepository :one

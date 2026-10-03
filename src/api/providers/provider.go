@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"time"
-
-	"golang.org/x/oauth2"
 )
 
 var (
@@ -55,7 +53,7 @@ type Provider interface {
 	ListBranches(ctx context.Context, accessToken string, owner string, name string) ([]Branch, error)
 }
 
-// Refresher is implemented by providers whose token can be refreshed (not GitHub)
+// Refresher is implemented by providers whose token can be refreshed
 type Refresher interface {
-	Refresh(ctx context.Context, refreshToken string) (*oauth2.Token, error)
+	Refresh(ctx context.Context, refreshToken string) (Token, error)
 }

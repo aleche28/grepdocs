@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,6 +38,12 @@ type GitHubProvider struct {
 	options      GitHubOptions
 	oauth2Config *oauth2.Config
 }
+
+// compile-check interface implementations
+var (
+	_ Provider  = (*GitHubProvider)(nil)
+	_ Refresher = (*GitHubProvider)(nil)
+)
 
 func NewGitHub(opts GitHubOptions) *GitHubProvider {
 	if opts.HTTPClient == nil {
@@ -80,28 +87,7 @@ func (ghp *GitHubProvider) Exchange(ctx context.Context, code string) (Token, er
 		return Token{}, err
 	}
 
-	tok := Token{
-		AccessToken:  ghtok.AccessToken,
-		RefreshToken: ghtok.RefreshToken,
-	}
-
-	if !ghtok.Expiry.IsZero() {
-		tok.Expiry = &ghtok.Expiry
-	}
-
-	var intval int64
-	switch val := ghtok.Extra("refresh_token_expires_in").(type) {
-	case int64:
-		intval = val
-	case float64:
-		intval = int64(val)
-	}
-	if intval > 0 {
-		t := time.Now().Add(time.Second * time.Duration(intval))
-		tok.RefreshExpiry = &t
-	}
-
-	return tok, nil
+	return toToken(ghtok), nil
 }
 
 func (ghp *GitHubProvider) FetchUser(ctx context.Context, accessToken string) (User, error) {
@@ -263,6 +249,23 @@ func (ghp *GitHubProvider) ListBranches(ctx context.Context, accessToken string,
 	return toBranches(branches), nil
 }
 
+func (ghp *GitHubProvider) Refresh(ctx context.Context, refreshToken string) (Token, error) {
+	// same as in Exchange()
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, ghp.options.HTTPClient)
+	// send a request without access token, but with valid refresh token:
+	// github sends back new pair of access and refresh tokens
+	tokReq := &oauth2.Token{RefreshToken: refreshToken}
+	tok, err := ghp.oauth2Config.TokenSource(ctx, tokReq).Token()
+	var retrieveErr *oauth2.RetrieveError
+	if errors.As(err, &retrieveErr) && retrieveErr.ErrorCode == "bad_refresh_token" {
+		return Token{}, fmt.Errorf("%w: %w", ErrInvalidToken, err)
+	}
+	if err != nil {
+		return Token{}, fmt.Errorf("Error while refreshing token: %w", err)
+	}
+	return toToken(tok), nil
+}
+
 // private helpers
 
 type githubUser struct {
@@ -373,4 +376,29 @@ func classifyGitHubResponse(res *http.Response) error {
 	default:
 		return fmt.Errorf("github API returned status: %d", res.StatusCode)
 	}
+}
+
+func toToken(oauthTok *oauth2.Token) Token {
+	tok := Token{
+		AccessToken:  oauthTok.AccessToken,
+		RefreshToken: oauthTok.RefreshToken,
+	}
+
+	if !oauthTok.Expiry.IsZero() {
+		tok.Expiry = &oauthTok.Expiry
+	}
+
+	var intval int64
+	switch val := oauthTok.Extra("refresh_token_expires_in").(type) {
+	case int64:
+		intval = val
+	case float64:
+		intval = int64(val)
+	}
+	if intval > 0 {
+		t := time.Now().Add(time.Second * time.Duration(intval))
+		tok.RefreshExpiry = &t
+	}
+
+	return tok
 }

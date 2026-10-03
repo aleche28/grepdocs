@@ -34,6 +34,11 @@ WHERE user_id = $1;
 SELECT * FROM external_git_accounts
 WHERE id = $1 LIMIT 1;
 
+-- name: GetExternalGitAccountByIdForUpdate :one
+SELECT * FROM external_git_accounts
+WHERE id = $1
+FOR UPDATE;
+
 -- name: GetExternalGitAccountsByUserIDAndProvider :many
 SELECT * FROM external_git_accounts
 WHERE user_id = $1 AND provider = $2;
@@ -61,7 +66,7 @@ ON CONFLICT (user_id, provider, provider_user_id)
 		last_refreshed_at = NOW()
 RETURNING *;
 
--- name: UpdateExternalGitAccountTokens :exec
+-- name: UpdateExternalGitAccountTokens :one
 UPDATE external_git_accounts
 SET 
 	access_token = $2,
@@ -71,7 +76,8 @@ SET
 		WHEN sqlc.arg(refresh_token)::text <> '' THEN sqlc.narg(refresh_token_expires_at)::timestamptz
 		ELSE refresh_token_expires_at END,
 	last_refreshed_at = NOW()
-WHERE id = $1;
+WHERE id = $1
+RETURNING id;
 
 -- name: DeleteExternalGitAccount :exec
 DELETE FROM external_git_accounts

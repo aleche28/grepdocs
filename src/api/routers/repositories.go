@@ -393,7 +393,6 @@ func writeProviderError(w http.ResponseWriter, err error) bool {
 	case errors.Is(err, providers.ErrNotFound):
 		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "repository not found")
 	case errors.Is(err, providers.ErrInvalidToken):
-		// TODO: if provider impls Refresher, refresh token
 		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
 			"The linked account's access token is invalid or revoked, please re-link your account")
 	case errors.Is(err, providers.ErrRateLimited):

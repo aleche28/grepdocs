@@ -288,7 +288,6 @@ func (h *ExternalAccountsHandler) listExternalRepositories(w http.ResponseWriter
 	repos, err := provider.ListRepositories(r.Context(), tok)
 	switch {
 	case errors.Is(err, providers.ErrInvalidToken):
-		// TODO: if provider impls Refresher, refresh token
 		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
 			"The linked account's access token is invalid or revoked, please re-link your account")
 		return

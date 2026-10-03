@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const refreshMargin = 5 * time.Minute
+
 // Errors returned by Service; callers map them to their own responses
 // (HTTP status in handlers, account state in the sync engine).
 var (
@@ -43,16 +45,13 @@ func New(pool *pgxpool.Pool, cipher secrets.Cipher, registry *providers.Registry
 // ForAccount returns the decrypted access token of account. It returns
 // ErrReauthRequired when the stored token is empty or expired.
 func (s *Service) ForAccount(ctx context.Context, account dal.ExternalGitAccount) (string, error) {
-	if account.AccessToken == "" || (account.TokenExpiresAt != nil && account.TokenExpiresAt.Before(time.Now())) {
-		// No refresh flow yet: the user must re-link the account
+	if !needsRefresh(account, time.Now()) {
+		return s.cipher.Decrypt(account.AccessToken)
+	}
+	if !canRefresh(account, time.Now()) {
 		return "", ErrReauthRequired
 	}
-
-	decrypted, err := s.cipher.Decrypt(account.AccessToken)
-	if err != nil {
-		return "", err
-	}
-	return decrypted, nil
+	return s.refresh(ctx, account.ID)
 }
 
 // ForRepository returns the access token to use for provider calls on repo:
@@ -112,4 +111,110 @@ func (s *Service) ResolveAccount(ctx context.Context, userID int64, provider str
 	default:
 		return dal.ExternalGitAccount{}, ErrAccountAmbiguous
 	}
+}
+
+// private helpers
+
+// needsRefresh returns true if access token is empty, expired
+// or expires in the next 5 minutes
+func needsRefresh(acc dal.ExternalGitAccount, now time.Time) bool {
+	return acc.AccessToken == "" ||
+		(acc.TokenExpiresAt != nil && acc.TokenExpiresAt.Before(now.Add(refreshMargin)))
+}
+
+// canRefresh returns true if a refresh token is set and not expired yet
+func canRefresh(acc dal.ExternalGitAccount, now time.Time) bool {
+	return acc.RefreshToken != "" &&
+		// NOTE: nil expiration date means no expiration
+		(acc.RefreshTokenExpiresAt == nil || acc.RefreshTokenExpiresAt.After(now))
+}
+
+func (s *Service) refresherFor(provider string) (providers.Refresher, bool) {
+	if p, ok := s.registry.Lookup(provider); ok {
+		r, ok := p.(providers.Refresher)
+		return r, ok
+	}
+	return nil, false
+}
+
+func (s *Service) refresh(ctx context.Context, accountID int64) (string, error) {
+	// detach context from the request, otherwise cancelling after
+	// github rotated the tokens would force a re-link
+	ctx = context.WithoutCancel(ctx)
+	ctx, cancel := context.WithTimeout(ctx, time.Second*30)
+	defer cancel()
+
+	// row lock: refresh tokens are single-use, so concurrent refreshes would
+	// invalidate each other
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+
+	q := dal.New(tx)
+
+	account, err := q.GetExternalGitAccountByIdForUpdate(ctx, accountID)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return "", ErrAccountNotFound
+	case err != nil:
+		return "", err
+	}
+
+	// while waiting on the lock, maybe the row was updated by someone else
+	if !needsRefresh(account, time.Now()) {
+		return s.cipher.Decrypt(account.AccessToken)
+	}
+
+	if !canRefresh(account, time.Now()) {
+		return "", ErrReauthRequired
+	}
+
+	refresher, ok := s.refresherFor(account.Provider)
+	if !ok {
+		return "", ErrReauthRequired
+	}
+
+	refreshToken, err := s.cipher.Decrypt(account.RefreshToken)
+	if err != nil {
+		return "", err
+	}
+
+	token, err := refresher.Refresh(ctx, refreshToken)
+	if err != nil {
+		// TODO: classify errors
+		return "", err
+	}
+
+	accessToken, err := s.cipher.Encrypt(token.AccessToken)
+	if err != nil {
+		return "", err
+	}
+
+	if token.RefreshToken == refreshToken {
+		refreshToken = "" // the update query coalesces with old one, without overwriting it
+	} else if token.RefreshToken != "" {
+		// if a new refreshtoken is not returned, keep the old one
+		refreshToken, err = s.cipher.Encrypt(token.RefreshToken)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	_, err = q.UpdateExternalGitAccountTokens(ctx, dal.UpdateExternalGitAccountTokensParams{
+		ID:                    account.ID,
+		AccessToken:           accessToken,
+		TokenExpiresAt:        token.Expiry,
+		RefreshToken:          refreshToken,
+		RefreshTokenExpiresAt: token.RefreshExpiry,
+	})
+	if err != nil {
+		return "", err
+	}
+	err = tx.Commit(ctx)
+	if err != nil {
+		return "", err
+	}
+	return token.AccessToken, nil
 }
