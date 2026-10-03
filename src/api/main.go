@@ -101,6 +101,7 @@ func main() {
 		ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
 		ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
 		RedirectURL:  os.Getenv("GITHUB_REDIRECT_URL"),
+		AppSlug:      os.Getenv("GITHUB_APP_SLUG"),
 	}))
 
 	credSvc := credentials.New(pool, tokenCipher, registry)

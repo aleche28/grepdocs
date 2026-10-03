@@ -7,9 +7,10 @@ import (
 )
 
 var (
-	ErrInvalidToken = errors.New("provider token invalid or revoked")
-	ErrRateLimited  = errors.New("provider rate limit exceeded")
-	ErrNotFound     = errors.New("provider resource not found")
+	ErrInvalidToken    = errors.New("provider token invalid or revoked")
+	ErrRateLimited     = errors.New("provider rate limit exceeded")
+	ErrNotFound        = errors.New("provider resource not found")
+	ErrAppNotInstalled = errors.New("provider app not installed")
 )
 
 type User struct {
@@ -56,4 +57,9 @@ type Provider interface {
 // Refresher is implemented by providers whose token can be refreshed
 type Refresher interface {
 	Refresh(ctx context.Context, refreshToken string) (Token, error)
+}
+
+// Installer is implemented by providers whose access depends on an app installation
+type Installer interface {
+	InstallURL() string
 }

@@ -130,7 +130,7 @@ func (h *RepositoriesHandler) trackNewRepository(w http.ResponseWriter, r *http.
 
 	provRepo, err := prov.GetRepository(r.Context(), token, reqBody.Owner, reqBody.Name)
 	if err != nil {
-		if !writeProviderError(w, err) {
+		if !writeProviderError(w, err, prov, token != "") {
 			httpx.WriteInternalError(w, err)
 		}
 		return
@@ -142,7 +142,7 @@ func (h *RepositoriesHandler) trackNewRepository(w http.ResponseWriter, r *http.
 	} else {
 		branches, err := prov.ListBranches(r.Context(), token, provRepo.Owner, provRepo.Name)
 		if err != nil {
-			if !writeProviderError(w, err) {
+			if !writeProviderError(w, err, prov, token != "") {
 				httpx.WriteInternalError(w, err)
 			}
 			return
@@ -276,7 +276,7 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 
 		branches, err := prov.ListBranches(r.Context(), token, repo.Owner, repo.Name)
 		if err != nil {
-			if !writeProviderError(w, err) {
+			if !writeProviderError(w, err, prov, token != "") {
 				httpx.WriteInternalError(w, err)
 			}
 			return
@@ -375,7 +375,7 @@ func (h *RepositoriesHandler) listRepositoryBranches(w http.ResponseWriter, r *h
 
 	branches, err := prov.ListBranches(r.Context(), token, repo.Owner, repo.Name)
 	if err != nil {
-		if !writeProviderError(w, err) {
+		if !writeProviderError(w, err, prov, token != "") {
 			httpx.WriteInternalError(w, err)
 		}
 		return
@@ -388,10 +388,17 @@ func (h *RepositoriesHandler) listRepositoryBranches(w http.ResponseWriter, r *h
 
 // writeProviderError maps a normalized provider error to an HTTP response,
 // returning true when the error was recognized and a response was written.
-func writeProviderError(w http.ResponseWriter, err error) bool {
+func writeProviderError(w http.ResponseWriter, err error, prov providers.Provider, authenticated bool) bool {
 	switch {
 	case errors.Is(err, providers.ErrNotFound):
-		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "repository not found")
+		// with a token, a private repository the app is not installed on is also a 404
+		details := installDetails(prov)
+		if !authenticated || details == nil {
+			httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "Repository not found")
+			break
+		}
+		httpx.WriteErrorWithDetails(w, http.StatusNotFound, httpx.CodeNotFound,
+			"Repository not found, or the app is not installed on it", details)
 	case errors.Is(err, providers.ErrInvalidToken):
 		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
 			"The linked account's access token is invalid or revoked, please re-link your account")
@@ -402,6 +409,15 @@ func writeProviderError(w http.ResponseWriter, err error) bool {
 		return false
 	}
 	return true
+}
+
+// installDetails returns the error details with prov's app install link, or nil when it has none
+func installDetails(prov providers.Provider) map[string]any {
+	inst, ok := prov.(providers.Installer)
+	if !ok || inst.InstallURL() == "" {
+		return nil
+	}
+	return map[string]any{"install_url": inst.InstallURL()}
 }
 
 func branchExists(branches []providers.Branch, name string) bool {

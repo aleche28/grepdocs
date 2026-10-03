@@ -287,6 +287,11 @@ func (h *ExternalAccountsHandler) listExternalRepositories(w http.ResponseWriter
 
 	repos, err := provider.ListRepositories(r.Context(), tok)
 	switch {
+	case errors.Is(err, providers.ErrAppNotInstalled):
+		httpx.WriteErrorWithDetails(w, http.StatusForbidden, httpx.CodeAppNotInstalled,
+			"The app is not installed on any of your accounts, install it to grant repository access",
+			installDetails(provider))
+		return
 	case errors.Is(err, providers.ErrInvalidToken):
 		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
 			"The linked account's access token is invalid or revoked, please re-link your account")

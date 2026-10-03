@@ -32,6 +32,7 @@ type GitHubOptions struct {
 	BaseURL      string
 	// TokenURL overrides GitHub's OAuth token endpoint (used by tests)
 	TokenURL string
+	AppSlug  string
 }
 
 type GitHubProvider struct {
@@ -43,6 +44,7 @@ type GitHubProvider struct {
 var (
 	_ Provider  = (*GitHubProvider)(nil)
 	_ Refresher = (*GitHubProvider)(nil)
+	_ Installer = (*GitHubProvider)(nil)
 )
 
 func NewGitHub(opts GitHubOptions) *GitHubProvider {
@@ -164,6 +166,16 @@ func (ghp *GitHubProvider) ListRepositories(ctx context.Context, accessToken str
 		}
 	}
 
+	if len(repos) == 0 {
+		installed, err := ghp.hasInstalledApp(ctx, accessToken)
+		if err != nil {
+			return nil, err
+		}
+		if !installed {
+			return nil, ErrAppNotInstalled
+		}
+	}
+
 	return toRepositories(repos), nil
 }
 
@@ -268,6 +280,13 @@ func (ghp *GitHubProvider) Refresh(ctx context.Context, refreshToken string) (To
 	return toToken(tok), nil
 }
 
+func (ghp *GitHubProvider) InstallURL() string {
+	if ghp.options.AppSlug == "" {
+		return ""
+	}
+	return "https://github.com/apps/" + ghp.options.AppSlug + "/installations/new"
+}
+
 // private helpers
 
 type githubUser struct {
@@ -295,6 +314,10 @@ type githubBranch struct {
 	Commit    struct {
 		Sha string `json:"sha"`
 	} `json:"commit"`
+}
+
+type githubInstallationResponse struct {
+	TotalCount int `json:"total_count"`
 }
 
 // newGitHubRequest creates an authenticated GET request against the GitHub API
@@ -330,6 +353,34 @@ func nextGitHubPage(resp *http.Response) string {
 	}
 
 	return ""
+}
+
+func (ghp *GitHubProvider) hasInstalledApp(ctx context.Context, accessToken string) (bool, error) {
+	reqURL := fmt.Sprintf("%s/user/installations?per_page=1", ghp.options.BaseURL)
+
+	req, err := newGitHubRequest(ctx, reqURL, accessToken)
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch app installations: %w", err)
+	}
+
+	resp, err := ghp.options.HTTPClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch app installations: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return false, classifyGitHubResponse(resp)
+	}
+
+	var res githubInstallationResponse
+	err = json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseBytes)).Decode(&res)
+	resp.Body.Close()
+	if err != nil {
+		return false, fmt.Errorf("failed to parse app installation response: %w", err)
+	}
+
+	return res.TotalCount > 0, nil
 }
 
 func toRepositories(ghRepos []githubRepo) []Repository {
