@@ -110,3 +110,4 @@ so every linked GitHub account must be re-linked through the new app.
 | A private repository returns `404` | The repository is not included in the installation — add it under *Configure* |
 | An organization's repositories are missing | The app is not installed on the organization; an owner must install or approve it |
 | Requests fail with "re-link your account" after ~6 months unused | Each refresh issues a new refresh token, but one left unused for 6 months expires; re-link the account |
+| Requests on expired tokens fail with `500` for every account, but nobody is asked to re-link | Refresh is failing on our side, not the user's: usually `GITHUB_CLIENT_SECRET` no longer matches a secret listed on the app (deleted or regenerated). Check the server log for `incorrect_client_credentials` and update `.env` |

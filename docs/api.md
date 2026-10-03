@@ -154,9 +154,18 @@ provider-scoped routes.
 `token_expires_at` and `refresh_token_expires_at` are the expiries reported by the provider when
 the tokens were issued (for a GitHub App: 8 hours and ~6 months). Either is `null` when the
 provider reports none, e.g. a GitHub App with token expiration opted out. `last_refreshed_at` is
-set whenever stored tokens are replaced (re-linking today, refresh later); it is `null` for an
-account that has only been linked once. There is no refresh flow yet: an expired access token
-means the account must be re-linked.
+set whenever stored tokens are replaced, by a refresh or a re-link; it is `null` for an account
+that has never been refreshed or re-linked.
+
+Access tokens are refreshed automatically: any request that calls the provider with an account's
+token refreshes it first when it expires within 5 minutes, so the expiries above move forward on
+their own. There is no refresh endpoint. The account must be re-linked only when the token cannot
+be refreshed: the refresh token is missing or past `refresh_token_expires_at`, or the provider
+rejects it (e.g. the user revoked the app). A rejected refresh clears the stored tokens, so later
+requests fail immediately with `403` instead of contacting the provider again. A refresh that fails
+for any other reason (provider outage, network error) returns `500 internal` and the account stays
+usable; retrying later is enough. `GET /api/accounts` does not yet flag accounts that need
+re-linking.
 
 `label` exists in the schema so a user can tell multiple accounts for one provider apart (e.g.
 "personal" vs "work"). It is read-only for now (always `""`); no write endpoint exists yet.
@@ -176,9 +185,9 @@ provider-neutral shape; GitHub pagination is followed internally. **Not yet impl
   pagination params.
 - `tracked: true` will be added to each item once repositories can be tracked (Phase 2).
 
-Failures: `403 forbidden` when the stored token is invalid or revoked (the user must re-link the
-account), `429 rate_limited` when the provider's rate limit is hit, `501 not_implemented` for a
-provider that has no registered implementation.
+Failures: `403 forbidden` when the stored token cannot be used or refreshed, or the provider
+rejects it as revoked (the user must re-link the account), `429 rate_limited` when the provider's
+rate limit is hit, `501 not_implemented` for a provider that has no registered implementation.
 
 Both provider OAuth routes verify a single-use, session-bound `state` value the same way as
 Google login — a linking flow using a state cookie instead of the session would be a regression,
@@ -273,11 +282,12 @@ pagination is followed internally (capped, so very large repositories may be tru
 Provider calls on an already-tracked repository (`PATCH` with a new branch, `branches`) use the
 linked account's token whenever the repository has an `account_id` or is private; public
 repositories tracked without an account are read anonymously. `POST` uses the token of the given
-`account_id`, or none. Failures: `403 forbidden` when no usable linked
-account exists or its token is empty, expired, or revoked (the user must re-link),
-`409 conflict` when a private repository has no `account_id` and the caller has several accounts
-for that provider, `404 not_found` when the provider no longer finds the repository,
-`429 rate_limited` on provider rate limits, `501 not_implemented` for an unregistered provider.
+`account_id`, or none. Expiring tokens are refreshed first (see External accounts). Failures:
+`403 forbidden` when no usable linked account exists or its token cannot be refreshed or is
+revoked (the user must re-link), `409 conflict` when a private repository has no `account_id`
+and the caller has several accounts for that provider, `404 not_found` when the provider no
+longer finds the repository, `429 rate_limited` on provider rate limits, `501 not_implemented`
+for an unregistered provider.
 
 `POST /api/repositories/{id}/commits` body — each file must reference a document that currently
 has a draft:

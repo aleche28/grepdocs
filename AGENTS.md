@@ -119,9 +119,10 @@ Rules:
 - Never commit a key. Generate with `openssl rand -base64 32` and keep it in `.env`; the key must
   stay stable or every stored token becomes unreadable.
 - Encrypt before every write to `external_git_accounts` and decrypt after every read. Writes happen
-  in `providerCallback`; reads go through `credentials.Service.ForAccount`, the only decrypt site.
-  `secrets` is not wired into the DAL automatically, so new write paths must not forget this, and
-  new read paths should get tokens from `credentials` instead of decrypting themselves.
+  in `providerCallback` (link/re-link) and `credentials.Service` (refresh); reads go through
+  `credentials.Service`, the only decrypt site. `secrets` is not wired into the DAL automatically,
+  so new write paths must not forget this, and new read paths should get tokens from `credentials`
+  instead of decrypting themselves.
 - Keep the `v1:` prefix on ciphertext; it is what makes format/key rotation possible.
 - Unit tests live in `secrets/aesgcm_test.go` (round-trip, tamper, wrong key, malformed input).
 
@@ -151,11 +152,31 @@ Handlers and background jobs get provider access tokens from `credentials.Servic
 `ErrAccountNotFound`, `ErrAccountAmbiguous`, and `ErrReauthRequired`, and each caller maps them
 (the status for the same error differs per endpoint — check `docs/api.md`).
 
+Token refresh lives in `credentials` and is invisible to callers. `ForAccount` refreshes a token
+that expires within `refreshMargin` (5 min) when the provider implements `providers.Refresher`.
+Rules worth preserving:
+
+- Refresh tokens are single-use, so refreshes are serialized per account with
+  `GetExternalGitAccountByIdForUpdate` (`SELECT … FOR UPDATE`) inside a transaction. After taking
+  the lock, every decision uses the locked row — another caller may already have refreshed.
+- The locked section runs on `context.WithoutCancel` plus its own timeout: a client disconnect
+  after the provider rotated the tokens but before the commit would otherwise lose them.
+- Only a dead refresh token is `ErrReauthRequired` (the provider maps it to
+  `providers.ErrInvalidToken`; for GitHub, `bad_refresh_token`). Network errors, provider outages,
+  and bad client credentials stay plain errors (`500`), never "re-link".
+- On a rejected refresh, `ClearExternalGitAccountTokens` empties both tokens in the same
+  transaction, so later calls fail fast without contacting the provider.
+- An empty refresh token passed to `UpdateExternalGitAccountTokens` means "keep the stored one and
+  its expiry". oauth2 echoes the sent refresh token when the provider did not rotate it; that case
+  is treated as empty. Never encrypt an empty value — the ciphertext would not be empty.
+- No retry on `401` from provider calls: with an unexpired token it means revoked access, which a
+  refresh cannot fix.
+
 GitHub specifics worth preserving: the shared `httpClient` from `routers/http.go` (10s timeout),
 `newGitHubRequest` for auth/accept headers, `io.LimitReader` bounding every decode, `Link`-header
 pagination with a page cap, and returning the upstream HTTP status so callers can distinguish a
-revoked token (401/403 → "re-link your account") from a real failure. There is no token refresh
-flow; expired tokens mean re-linking.
+revoked token (401/403 → "re-link your account") from a real failure. The token refresh flow is
+described above, under `credentials`.
 
 ## Conventions
 

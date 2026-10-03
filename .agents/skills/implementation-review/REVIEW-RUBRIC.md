@@ -22,8 +22,9 @@ about it" over "here's the corrected file".
   Check `src/api/database/queries.sql`. A query that fetches by id alone then compares user IDs in
   the handler is a red flag (TOCTOU + leaks existence).
 - **Secret handling** — `external_git_accounts.access_token`/`refresh_token` must be encrypted
-  *before every write* and decrypted *after every read*. `providerCallback` is the reference write
-  site; reads go through `credentials.Service.ForAccount`, the only decrypt site. New write paths
+  *before every write* and decrypted *after every read*. `providerCallback` (link) and
+  `credentials.Service` (refresh) are the write sites; reads go through `credentials.Service`, the
+  only decrypt site. New write paths
   must not skip `secrets.Cipher`; new read paths must use `credentials` rather than decrypting
   themselves. Ciphertext keeps the `v1:` prefix.
 - **Token leakage to clients** — provider tokens must be stripped at the DTO layer; see
