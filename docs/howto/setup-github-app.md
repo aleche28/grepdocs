@@ -98,6 +98,8 @@ so every linked GitHub account must be re-linked through the new app.
   `external_git_accounts` rows, then link again. Tracked repositories keep their rows;
   `repositories.account_id` is set to `NULL` when an account is deleted, so re-attach them after
   re-linking.
+  Unlinking tries to revoke the old token with the new app's credentials; GitHub does not know it
+  and answers `404`, which is treated as already revoked, so the old token stays valid.
 - Once nothing uses it, delete the old OAuth App from <https://github.com/settings/developers>.
   Deleting it revokes every token it issued.
 
@@ -112,4 +114,5 @@ so every linked GitHub account must be re-linked through the new app.
 | Errors never include `details.install_url` | `GITHUB_APP_SLUG` is unset in `.env` |
 | An organization's repositories are missing | The app is not installed on the organization; an owner must install or approve it |
 | Requests fail with "re-link your account" after ~6 months unused | Each refresh issues a new refresh token, but one left unused for 6 months expires; re-link the account |
+| Server log shows `error with token revocation` on unlink or re-link | The request still succeeded, but GitHub kept the old token. A `401` status usually means `GITHUB_CLIENT_SECRET` no longer matches the app; the token stays valid until it expires (8 hours for the access token) |
 | Requests on expired tokens fail with `500` for every account, but nobody is asked to re-link | Refresh is failing on our side, not the user's: usually `GITHUB_CLIENT_SECRET` no longer matches a secret listed on the app (deleted or regenerated). Check the server log for `incorrect_client_credentials` and update `.env` |

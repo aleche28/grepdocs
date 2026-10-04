@@ -70,8 +70,9 @@ about it" over "here's the corrected file".
   `providers.Provider` + `Registry`; never inline GitHub-shaped code in a handler (C1).
 - **Deliberate absences** — do **not** flag as a defect: no DI container, no general service/use-case
   layer (deferred to Phase 2 sync orchestration; `credentials.Service` is the one deliberate
-  service), no token refresh or install URL on `Provider` (optional `Refresher` / `Installer`),
-  hand-rolled sessions instead of `scs`.
+  service), no token refresh, install URL or revocation on `Provider` (optional `Refresher` /
+  `Installer` / `Revoker`), hand-rolled sessions instead of `scs`. A revoke failure that is only
+  logged is deliberate too (best-effort, after the database change).
 - **Handler shape** — receiver methods holding `*pgxpool.Pool` and `*session.SessionManager`;
   `dal.New(h.dbPool)` per request; no closure-with-unused-pool params (C3).
 - **Config** — routers should not read `os.Getenv` for new settings; config belongs with

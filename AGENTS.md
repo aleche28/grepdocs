@@ -151,10 +151,11 @@ go in `src/api/providers/`, not inline in handlers). Provider failures are norma
 implementation rather than adding a second inline flow.
 
 Capabilities not every provider has are optional interfaces checked with a type assertion, not
-methods on `Provider`: `Refresher` (token refresh) and `Installer` (`InstallURL()`, for providers
-whose access depends on an app installation). `routers.installDetails` turns `InstallURL()` into
-the `details.install_url` of an error, and returns `nil` when the provider is not an `Installer`
-or the URL is empty (no `GITHUB_APP_SLUG`), so the key is omitted rather than sent empty.
+methods on `Provider`: `Refresher` (token refresh), `Installer` (`InstallURL()`, for providers
+whose access depends on an app installation), and `Revoker` (token revocation).
+`routers.installDetails` turns `InstallURL()` into the `details.install_url` of an error, and
+returns `nil` when the provider is not an `Installer` or the URL is empty (no `GITHUB_APP_SLUG`),
+so the key is omitted rather than sent empty.
 
 Handlers and background jobs get provider access tokens from `credentials.Service`
 (`src/api/credentials`), never from the token columns directly: `ResolveAccount` picks the account,
@@ -182,14 +183,35 @@ Rules worth preserving:
 - No retry on `401` from provider calls: with an unexpired token it means revoked access, which a
   refresh cannot fix.
 
+Token revocation also lives in `credentials` (`Service.Revoke`, called on unlink and on a re-link
+that replaces a stored token). Rules worth preserving:
+
+- Change the database first, then revoke. Revoking first and then failing the write would leave a
+  stored token that no longer works.
+- Revocation is best-effort: callers log the error and never fail the request. It runs on
+  `context.WithoutCancel` plus `revokeTimeout`, so a client disconnect does not skip it.
+- `Revoke` does not refresh first (that would only issue a new pair) and skips accounts whose access
+  token is empty (cleared after a rejected refresh).
+- Unlink deletes with `DeleteExternalGitAccountByIdAndUserId` (`DELETE … RETURNING *`): ownership
+  is in the `WHERE`, so another user's account is a `404`, and the delete waits for a refresh
+  holding the row lock, so it returns the post-refresh tokens. Do not go back to read-then-delete.
+- Re-link reads the old row with `GetExternalGitAccountByIdentity` before the upsert. It is a plain
+  read: a refresh in between can rotate the token, and the new one is not revoked. Accepted as rare.
+- GitHub revokes with `DELETE /applications/{client_id}/token` (Basic auth with the client
+  credentials); `204`, `404` (unknown token, e.g. from the old OAuth App) and `422` are success.
+  Revoking a live access token also revokes its refresh token (verified manually). Whether this
+  holds for an already expired access token is **unverified**: if not, its refresh token survives
+  until it expires. Never use `/applications/{client_id}/grant` instead: it revokes the GitHub
+  identity's authorization for every GrepDocs user who linked it.
+
 GitHub specifics worth preserving: the shared `httpClient` from `routers/http.go` (10s timeout),
-`newGitHubRequest` for auth/accept headers, `io.LimitReader` bounding every decode, `Link`-header
-pagination with a page cap, and returning the upstream HTTP status so callers can distinguish a
-revoked token (401/403 → "re-link your account") from a real failure. With a GitHub App token,
-`/user/repos` lists only repositories the app is installed on, so `ListRepositories` checks
-`/user/installations` when the list is empty and returns `ErrAppNotInstalled` when there are none
-(`total_count` is the total, not the page size). The token refresh flow is
-described above, under `credentials`.
+`newGitHubGetRequest` / `newGitHubDeleteRequest` for auth, accept, and content-type headers,
+`io.LimitReader` bounding every decode, `Link`-header pagination with a page cap, and returning the
+upstream HTTP status so callers can distinguish a revoked token (401/403 → "re-link your account")
+from a real failure. With a GitHub App token, `/user/repos` lists only repositories the app is
+installed on, so `ListRepositories` checks `/user/installations` when the list is empty and returns
+`ErrAppNotInstalled` when there are none (`total_count` is the total, not the page size). The token
+refresh and revocation flows are described above, under `credentials`.
 
 ## Conventions
 

@@ -137,7 +137,7 @@ is planned, so only self endpoints exist.
 | GET    | `/accounts/{provider}/login`      | Y    | Implemented for `github`       | Redirect: start linking a provider account                       |
 | GET    | `/accounts/{provider}/callback`   | Y    | Implemented for `github`       | Provider OAuth callback (verify state, store tokens, redirect)   |
 | GET    | `/accounts/{provider}/repositories` | Y  | Implemented for `github` (no filtering yet) | Discover repos from a linked account (`?account_id=` disambiguates) |
-| DELETE | `/accounts/{id}`                  | Y    | Implemented                    | Unlink account (must own it)                                      |
+| DELETE | `/accounts/{id}`                  | Y    | Implemented                    | Unlink account (must own it) and revoke its token                 |
 
 `bitbucket` (and any other non-`github` value) currently returns `501 not_implemented` on all four
 provider-scoped routes.
@@ -172,6 +172,18 @@ requests fail immediately with `403` instead of contacting the provider again. A
 for any other reason (provider outage, network error) returns `500 internal` and the account stays
 usable; retrying later is enough. `GET /api/accounts` does not yet flag accounts that need
 re-linking.
+
+`DELETE /api/accounts/{id}` unlinks an account and returns `200` with
+`{"message": "External account unlinked successfully"}`. An unknown `id` and another user's account
+both return `404 not_found`, never `403`, so the response does not reveal that the account exists;
+a non-numeric `id` returns `400 bad_request`. Tracked repositories that used the account keep their
+rows, with `account_id` set to `null`.
+
+Tokens GrepDocs stops using are revoked at the provider: on unlink, and on a re-link that replaces
+the stored token (`GET /accounts/{provider}/callback` for an identity already linked). For GitHub,
+revoking the access token also revokes its refresh token. Revocation runs after the database
+change and is best-effort: a failure is logged server-side and never fails the request, since the
+account is already unlinked or re-linked.
 
 `label` exists in the schema so a user can tell multiple accounts for one provider apart (e.g.
 "personal" vs "work"). It is read-only for now (always `""`); no write endpoint exists yet.
