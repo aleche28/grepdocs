@@ -299,10 +299,10 @@ func (ghp *GitHubProvider) Revoke(ctx context.Context, accessToken string) error
 	req.SetBasicAuth(ghp.options.ClientID, ghp.options.ClientSecret)
 
 	res, err := ghp.options.HTTPClient.Do(req)
-	defer res.Body.Close()
 	if err != nil {
 		return fmt.Errorf("failed to revoke token: %w", err)
 	}
+	defer res.Body.Close()
 
 	// returns 204 or 422 as per docs here:
 	// https://docs.github.com/en/rest/apps/oauth-applications?apiVersion=2026-03-10#delete-an-app-token
@@ -368,7 +368,6 @@ func newGitHubRequest(ctx context.Context, method, url, accessToken string, body
 			return nil, err
 		}
 		reader = bytes.NewReader(out)
-
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, reader)
