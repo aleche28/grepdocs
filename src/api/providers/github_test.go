@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -591,3 +592,63 @@ func TestRefresh(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestRevoke(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		wantErr bool
+	}{
+		{name: "revoked", status: http.StatusNoContent},
+		{name: "already invalid", status: http.StatusUnprocessableEntity},
+		// a token issued to the old OAuth App, or already deleted
+		{name: "unknown token", status: http.StatusNotFound},
+		{name: "bad client credentials", status: http.StatusUnauthorized, wantErr: true},
+		{name: "server error", status: http.StatusInternalServerError, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodDelete {
+					t.Errorf("method = %s, want DELETE", r.Method)
+				}
+				if r.URL.Path != "/applications/cid/token" {
+					t.Errorf("path = %q, want /applications/cid/token", r.URL.Path)
+				}
+				// Basic auth with the client credentials, never the user token
+				if user, pass, ok := r.BasicAuth(); !ok || user != "cid" || pass != "secret" {
+					t.Errorf("basic auth = %q/%q (ok=%v), want cid/secret", user, pass, ok)
+				}
+				if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+					t.Errorf("Content-Type = %q, want application/json", ct)
+				}
+				var body map[string]string
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decode body: %v", err)
+				}
+				if body["access_token"] != "ghu_old" {
+					t.Errorf("body = %v, want access_token ghu_old", body)
+				}
+				w.WriteHeader(tc.status)
+			}))
+			defer srv.Close()
+
+			gh := NewGitHub(GitHubOptions{ClientID: "cid", ClientSecret: "secret", BaseURL: srv.URL, HTTPClient: srv.Client()})
+			err := gh.Revoke(context.Background(), "ghu_old")
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Fatalf("Revoke() error = %v, want error = %v", err, tc.wantErr)
+			}
+		})
+	}
+
+	t.Run("network error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		srv.Close() // every request now fails before a response exists
+
+		gh := NewGitHub(GitHubOptions{ClientID: "cid", BaseURL: srv.URL, HTTPClient: srv.Client()})
+		if err := gh.Revoke(context.Background(), "ghu_old"); err == nil {
+			t.Fatal("Revoke() = nil, want a network error")
+		}
+	})
+}

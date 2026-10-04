@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"grepdocs/api/dal"
+	"grepdocs/api/providers"
 	"grepdocs/api/secrets"
 	"testing"
 	"time"
@@ -168,6 +169,97 @@ func TestCanRefresh(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := canRefresh(tt.account, now); got != tt.want {
 				t.Errorf("canRefresh() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// fakeRevoker is a registered provider that records Revoke calls; the embedded
+// interface is nil, so calling any other Provider method panics
+type fakeRevoker struct {
+	providers.Provider
+	err   error
+	calls []string
+	// context state captured during the call; Revoke cancels it on return
+	ctxErr      error
+	hasDeadline bool
+}
+
+func (f *fakeRevoker) Name() string { return "fake" }
+
+func (f *fakeRevoker) Revoke(ctx context.Context, accessToken string) error {
+	f.calls = append(f.calls, accessToken)
+	f.ctxErr = ctx.Err()
+	_, f.hasDeadline = ctx.Deadline()
+	return f.err
+}
+
+// plainProvider is registered but cannot revoke
+type plainProvider struct{ providers.Provider }
+
+func (plainProvider) Name() string { return "plain" }
+
+func TestRevoke(t *testing.T) {
+	cipher := newTestCipher(t, 1)
+
+	t.Run("revokes the decrypted access token", func(t *testing.T) {
+		rev := &fakeRevoker{}
+		svc := New(nil, cipher, providers.NewRegistry(rev))
+
+		// the revoke must survive the request being canceled
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := svc.Revoke(ctx, dal.ExternalGitAccount{Provider: "fake", AccessToken: encrypt(t, cipher, "ghu_old")})
+		if err != nil {
+			t.Fatalf("Revoke() unexpected error: %v", err)
+		}
+		if len(rev.calls) != 1 || rev.calls[0] != "ghu_old" {
+			t.Fatalf("Revoke calls = %v, want [ghu_old]", rev.calls)
+		}
+		if rev.ctxErr != nil {
+			t.Errorf("revoke context error = %v, want a live context", rev.ctxErr)
+		}
+		if !rev.hasDeadline {
+			t.Error("revoke context has no deadline, want revokeTimeout")
+		}
+	})
+
+	t.Run("returns the provider error", func(t *testing.T) {
+		wantErr := errors.New("boom")
+		rev := &fakeRevoker{err: wantErr}
+		svc := New(nil, cipher, providers.NewRegistry(rev))
+
+		err := svc.Revoke(context.Background(), dal.ExternalGitAccount{Provider: "fake", AccessToken: encrypt(t, cipher, "ghu_old")})
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("Revoke() error = %v, want %v", err, wantErr)
+		}
+	})
+
+	tests := []struct {
+		name      string
+		account   dal.ExternalGitAccount
+		wantErr   bool
+		wantCalls int
+	}{
+		// cleared after a rejected refresh: nothing left to revoke
+		{name: "empty access token", account: dal.ExternalGitAccount{Provider: "fake"}},
+		{name: "provider cannot revoke", account: dal.ExternalGitAccount{Provider: "plain", AccessToken: encrypt(t, cipher, "ghu_old")}},
+		{name: "unregistered provider", account: dal.ExternalGitAccount{Provider: "nope", AccessToken: encrypt(t, cipher, "ghu_old")}, wantErr: true},
+		{name: "token encrypted with another key", account: dal.ExternalGitAccount{Provider: "fake", AccessToken: encrypt(t, newTestCipher(t, 2), "ghu_old")}, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rev := &fakeRevoker{}
+			svc := New(nil, cipher, providers.NewRegistry(rev, plainProvider{}))
+
+			err := svc.Revoke(context.Background(), tc.account)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Fatalf("Revoke() error = %v, want error = %v", err, tc.wantErr)
+			}
+			if len(rev.calls) != tc.wantCalls {
+				t.Errorf("Revoke calls = %v, want %d", rev.calls, tc.wantCalls)
 			}
 		})
 	}
