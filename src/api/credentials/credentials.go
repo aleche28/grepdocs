@@ -20,6 +20,7 @@ const (
 	// refreshTimeout bounds the locked refresh, which runs detached from the
 	// request context.
 	refreshTimeout = 30 * time.Second
+	revokeTimeout  = 10 * time.Second
 )
 
 // Errors returned by Service; callers map them to their own responses
@@ -123,6 +124,29 @@ func (s *Service) ResolveAccount(ctx context.Context, userID int64, provider str
 	default:
 		return dal.ExternalGitAccount{}, ErrAccountAmbiguous
 	}
+}
+
+func (s *Service) Revoke(ctx context.Context, account dal.ExternalGitAccount) error {
+	prov, ok := s.registry.Lookup(account.Provider)
+	if !ok {
+		return fmt.Errorf("provider %s not registered", account.Provider)
+	}
+
+	revoker, ok := prov.(providers.Revoker)
+	if !ok || account.AccessToken == "" {
+		return nil
+	}
+
+	accessToken, err := s.cipher.Decrypt(account.AccessToken)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), revokeTimeout)
+	defer cancel()
+
+	// revoking the accessToken revokes the refresh token too: tested manually
+	return revoker.Revoke(ctx, accessToken)
 }
 
 // private helpers

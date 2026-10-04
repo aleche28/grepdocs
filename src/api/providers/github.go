@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -45,6 +46,7 @@ var (
 	_ Provider  = (*GitHubProvider)(nil)
 	_ Refresher = (*GitHubProvider)(nil)
 	_ Installer = (*GitHubProvider)(nil)
+	_ Revoker   = (*GitHubProvider)(nil)
 )
 
 func NewGitHub(opts GitHubOptions) *GitHubProvider {
@@ -93,7 +95,7 @@ func (ghp *GitHubProvider) Exchange(ctx context.Context, code string) (Token, er
 }
 
 func (ghp *GitHubProvider) FetchUser(ctx context.Context, accessToken string) (User, error) {
-	req, err := newGitHubRequest(ctx, ghp.options.BaseURL+"/user", accessToken)
+	req, err := newGitHubGetRequest(ctx, ghp.options.BaseURL+"/user", accessToken)
 	if err != nil {
 		return User{}, fmt.Errorf("failed to fetch user data: %w", err)
 	}
@@ -132,7 +134,7 @@ func (ghp *GitHubProvider) ListRepositories(ctx context.Context, accessToken str
 	reqURL := fmt.Sprintf("%s/user/repos?per_page=%d&page=%d", ghp.options.BaseURL, perPage, page)
 
 	for {
-		req, err := newGitHubRequest(ctx, reqURL, accessToken)
+		req, err := newGitHubGetRequest(ctx, reqURL, accessToken)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch user github repos: %w", err)
 		}
@@ -181,7 +183,7 @@ func (ghp *GitHubProvider) ListRepositories(ctx context.Context, accessToken str
 
 func (ghp *GitHubProvider) GetRepository(ctx context.Context, accessToken string, owner string, name string) (Repository, error) {
 	reqURL := fmt.Sprintf("%s/repos/%s/%s", ghp.options.BaseURL, url.PathEscape(owner), url.PathEscape(name))
-	req, err := newGitHubRequest(ctx, reqURL, accessToken)
+	req, err := newGitHubGetRequest(ctx, reqURL, accessToken)
 	if err != nil {
 		return Repository{}, fmt.Errorf("failed to fetch repository: %w", err)
 	}
@@ -224,7 +226,7 @@ func (ghp *GitHubProvider) ListBranches(ctx context.Context, accessToken string,
 	reqURL := fmt.Sprintf("%s/repos/%s/%s/branches?per_page=%d&page=%d", ghp.options.BaseURL, url.PathEscape(owner), url.PathEscape(name), perPage, page)
 
 	for {
-		req, err := newGitHubRequest(ctx, reqURL, accessToken)
+		req, err := newGitHubGetRequest(ctx, reqURL, accessToken)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch repository branches: %w", err)
 		}
@@ -287,6 +289,33 @@ func (ghp *GitHubProvider) InstallURL() string {
 	return "https://github.com/apps/" + ghp.options.AppSlug + "/installations/new"
 }
 
+func (ghp *GitHubProvider) Revoke(ctx context.Context, accessToken string) error {
+	reqURL := fmt.Sprintf("%s/applications/%s/token", ghp.options.BaseURL, ghp.options.ClientID)
+	// pass empty token so authorization header is not set (will be overwritten with basic auth next)
+	req, err := newGitHubDeleteRequest(ctx, reqURL, "", map[string]string{"access_token": accessToken})
+	if err != nil {
+		return fmt.Errorf("failed to revoke token: %w", err)
+	}
+	req.SetBasicAuth(ghp.options.ClientID, ghp.options.ClientSecret)
+
+	res, err := ghp.options.HTTPClient.Do(req)
+	defer res.Body.Close()
+	if err != nil {
+		return fmt.Errorf("failed to revoke token: %w", err)
+	}
+
+	// returns 204 or 422 as per docs here:
+	// https://docs.github.com/en/rest/apps/oauth-applications?apiVersion=2026-03-10#delete-an-app-token
+	// accept 404 in case token was from old OAuth app or token is already gone
+	if res.StatusCode != http.StatusNoContent &&
+		res.StatusCode != http.StatusNotFound &&
+		res.StatusCode != http.StatusUnprocessableEntity {
+		return fmt.Errorf("failed to revoke token, github api returned with status code: %d", res.StatusCode)
+	}
+
+	return nil
+}
+
 // private helpers
 
 type githubUser struct {
@@ -320,20 +349,46 @@ type githubInstallationResponse struct {
 	TotalCount int `json:"total_count"`
 }
 
-// newGitHubRequest creates an authenticated GET request against the GitHub API
-func newGitHubRequest(ctx context.Context, url, accessToken string) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+// newGitHubGetRequest creates an authenticated GET request against the GitHub API
+func newGitHubGetRequest(ctx context.Context, url, accessToken string) (*http.Request, error) {
+	return newGitHubRequest(ctx, http.MethodGet, url, accessToken, nil)
+}
+
+// newGitHubDeleteRequest creates an authenticated DELETE request against the GitHub API
+func newGitHubDeleteRequest(ctx context.Context, url, accessToken string, body any) (*http.Request, error) {
+	return newGitHubRequest(ctx, http.MethodDelete, url, accessToken, body)
+}
+
+func newGitHubRequest(ctx context.Context, method, url, accessToken string, body any) (*http.Request, error) {
+	var reader io.Reader
+
+	if body != nil {
+		out, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		reader = bytes.NewReader(out)
+
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, reader)
 	if err != nil {
 		return nil, err
 	}
 
+	setGitHubRequestHeaders(req, accessToken, body != nil)
+	return req, nil
+}
+
+func setGitHubRequestHeaders(req *http.Request, accessToken string, hasBody bool) {
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
 	if len(accessToken) > 0 {
 		req.Header.Set("Authorization", "token "+accessToken)
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
-
-	return req, nil
+	if hasBody {
+		req.Header.Set("Content-Type", "application/json")
+	}
 }
 
 // nextGitHubPage returns the URL of the next page from the response Link header,
@@ -358,7 +413,7 @@ func nextGitHubPage(resp *http.Response) string {
 func (ghp *GitHubProvider) hasInstalledApp(ctx context.Context, accessToken string) (bool, error) {
 	reqURL := fmt.Sprintf("%s/user/installations?per_page=1", ghp.options.BaseURL)
 
-	req, err := newGitHubRequest(ctx, reqURL, accessToken)
+	req, err := newGitHubGetRequest(ctx, reqURL, accessToken)
 	if err != nil {
 		return false, fmt.Errorf("failed to fetch app installations: %w", err)
 	}

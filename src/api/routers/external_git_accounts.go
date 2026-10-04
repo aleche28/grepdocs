@@ -9,11 +9,13 @@ import (
 	"grepdocs/api/providers"
 	"grepdocs/api/secrets"
 	"grepdocs/api/session"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -181,6 +183,19 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 		}
 	}
 
+	existing, err := q.GetExternalGitAccountByIdentity(
+		r.Context(),
+		dal.GetExternalGitAccountByIdentityParams{
+			UserID:         userID,
+			Provider:       provider.Name(),
+			ProviderUserID: provUser.ProviderUserID,
+		},
+	)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		httpx.WriteInternalError(w, err)
+		return
+	}
+
 	_, err = q.UpsertExternalGitAccount(r.Context(), dal.UpsertExternalGitAccountParams{
 		UserID:                userID,
 		Provider:              provider.Name(),
@@ -193,6 +208,13 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 	if err != nil {
 		httpx.WriteInternalError(w, err)
 		return
+	}
+
+	if existing.ID > 0 {
+		if err = h.creds.Revoke(r.Context(), existing); err != nil {
+			// just log, account has been successfully re-linked anyway
+			log.Printf("error with token revocation: %v", err)
+		}
 	}
 
 	// Redirect to frontend success page
@@ -216,23 +238,26 @@ func (h *ExternalAccountsHandler) deleteExternalAccount(w http.ResponseWriter, r
 
 	q := dal.New(h.dbPool)
 
-	// Verify the account belongs to the user
-	account, err := q.GetExternalGitAccountById(r.Context(), accountID)
-	if err != nil {
+	// Delete the account
+	account, err := q.DeleteExternalGitAccountByIdAndUserId(r.Context(), dal.DeleteExternalGitAccountByIdAndUserIdParams{
+		ID:     accountID,
+		UserID: userID,
+	})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// 404 doesn't leak existence of another user's account
 		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "Account not found")
 		return
-	}
-
-	if account.UserID != userID {
-		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Forbidden")
-		return
-	}
-
-	// Delete the account
-	err = q.DeleteExternalGitAccount(r.Context(), accountID)
-	if err != nil {
+	case err != nil:
 		httpx.WriteInternalError(w, err)
 		return
+	}
+
+	// Revoke tokens
+	err = h.creds.Revoke(r.Context(), account)
+	if err != nil {
+		// just log, account has been successfully unlinked anyway
+		log.Printf("error with token revocation: %v", err)
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{

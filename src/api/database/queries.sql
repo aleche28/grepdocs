@@ -43,6 +43,10 @@ FOR UPDATE;
 SELECT * FROM external_git_accounts
 WHERE user_id = $1 AND provider = $2;
 
+-- name: GetExternalGitAccountByIdentity :one
+SELECT * FROM external_git_accounts
+WHERE user_id = $1 AND provider = $2 AND provider_user_id = $3;
+
 -- name: UpsertExternalGitAccount :one
 INSERT INTO external_git_accounts (
 	user_id,
@@ -90,9 +94,11 @@ SET
 WHERE id = $1
 RETURNING id;
 
--- name: DeleteExternalGitAccount :exec
+-- name: DeleteExternalGitAccountByIdAndUserId :one
 DELETE FROM external_git_accounts
-WHERE id = $1;
+WHERE id = $1
+AND user_id = $2
+RETURNING *;
 
 -- name: GetRepositoriesByUserID :many
 SELECT * FROM repositories

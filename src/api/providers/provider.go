@@ -63,3 +63,8 @@ type Refresher interface {
 type Installer interface {
 	InstallURL() string
 }
+
+// Revoker is implemented by providers who can revoke tokens
+type Revoker interface {
+	Revoke(ctx context.Context, accessToken string) error
+}

@@ -100,14 +100,35 @@ func (q *Queries) CreateRepository(ctx context.Context, arg CreateRepositoryPara
 	return i, err
 }
 
-const deleteExternalGitAccount = `-- name: DeleteExternalGitAccount :exec
+const deleteExternalGitAccountByIdAndUserId = `-- name: DeleteExternalGitAccountByIdAndUserId :one
 DELETE FROM external_git_accounts
 WHERE id = $1
+AND user_id = $2
+RETURNING id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at
 `
 
-func (q *Queries) DeleteExternalGitAccount(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, deleteExternalGitAccount, id)
-	return err
+type DeleteExternalGitAccountByIdAndUserIdParams struct {
+	ID     int64
+	UserID int64
+}
+
+func (q *Queries) DeleteExternalGitAccountByIdAndUserId(ctx context.Context, arg DeleteExternalGitAccountByIdAndUserIdParams) (ExternalGitAccount, error) {
+	row := q.db.QueryRow(ctx, deleteExternalGitAccountByIdAndUserId, arg.ID, arg.UserID)
+	var i ExternalGitAccount
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.ProviderUserID,
+		&i.AccessToken,
+		&i.RefreshToken,
+		&i.TokenExpiresAt,
+		&i.LinkedAt,
+		&i.LastRefreshedAt,
+		&i.Label,
+		&i.RefreshTokenExpiresAt,
+	)
+	return i, err
 }
 
 const deleteRepository = `-- name: DeleteRepository :exec
@@ -167,6 +188,36 @@ FOR UPDATE
 
 func (q *Queries) GetExternalGitAccountByIdForUpdate(ctx context.Context, id int64) (ExternalGitAccount, error) {
 	row := q.db.QueryRow(ctx, getExternalGitAccountByIdForUpdate, id)
+	var i ExternalGitAccount
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.ProviderUserID,
+		&i.AccessToken,
+		&i.RefreshToken,
+		&i.TokenExpiresAt,
+		&i.LinkedAt,
+		&i.LastRefreshedAt,
+		&i.Label,
+		&i.RefreshTokenExpiresAt,
+	)
+	return i, err
+}
+
+const getExternalGitAccountByIdentity = `-- name: GetExternalGitAccountByIdentity :one
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at FROM external_git_accounts
+WHERE user_id = $1 AND provider = $2 AND provider_user_id = $3
+`
+
+type GetExternalGitAccountByIdentityParams struct {
+	UserID         int64
+	Provider       string
+	ProviderUserID string
+}
+
+func (q *Queries) GetExternalGitAccountByIdentity(ctx context.Context, arg GetExternalGitAccountByIdentityParams) (ExternalGitAccount, error) {
+	row := q.db.QueryRow(ctx, getExternalGitAccountByIdentity, arg.UserID, arg.Provider, arg.ProviderUserID)
 	var i ExternalGitAccount
 	err := row.Scan(
 		&i.ID,
