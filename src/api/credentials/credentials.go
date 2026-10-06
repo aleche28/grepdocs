@@ -7,6 +7,7 @@ import (
 	"grepdocs/api/dal"
 	"grepdocs/api/providers"
 	"grepdocs/api/secrets"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -226,6 +227,9 @@ func (s *Service) refresh(ctx context.Context, accountID int64) (string, error) 
 		// The refresh token is dead: clear the stored tokens so later calls
 		// stop at canRefresh instead of contacting the provider again.
 		// Clearing is best effort; the user must re-link either way.
+		// Logged here because callers map ErrReauthRequired to a 403 without logging;
+		// err carries the provider's error code, never a token.
+		log.Printf("credentials: provider rejected refresh for account %d, clearing tokens: %v", account.ID, err)
 		if clearErr := clearTokens(ctx, tx, q, account.ID); clearErr != nil {
 			return "", fmt.Errorf("%w: %w (clearing tokens: %w)", ErrReauthRequired, err, clearErr)
 		}
