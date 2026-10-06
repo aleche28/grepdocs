@@ -70,7 +70,6 @@ func NewGitHub(opts GitHubOptions) *GitHubProvider {
 		ClientID:     opts.ClientID,
 		ClientSecret: opts.ClientSecret,
 		RedirectURL:  opts.RedirectURL,
-		Scopes:       []string{"repo", "user:email"},
 		Endpoint:     endpoint,
 	}
 
@@ -80,7 +79,7 @@ func NewGitHub(opts GitHubOptions) *GitHubProvider {
 func (ghp *GitHubProvider) Name() string { return GitHub }
 
 func (ghp *GitHubProvider) AuthCodeURL(state string) string {
-	return ghp.oauth2Config.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	return ghp.oauth2Config.AuthCodeURL(state)
 }
 
 func (ghp *GitHubProvider) Exchange(ctx context.Context, code string) (Token, error) {
