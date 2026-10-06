@@ -9,10 +9,12 @@ open), `docs/requirements.md` / `docs/user-stories.md` (product spec).
 ## Baseline (today)
 
 Implemented: Google OAuth login, session management (Redis-backed), GitHub account linking
-(OAuth, **one account per provider per user**), GitHub repository discovery for a linked account,
-self-service user endpoints. No tracked repositories, documents, search, groups, commit-back, or
-UI yet. Unit tests cover sessions, auth middleware, providers, response envelopes, and the session
-model; no CI.
+through a GitHub App (several accounts per provider per user; tokens encrypted at rest, refreshed
+automatically, and revoked on unlink/re-link), GitHub repository discovery for a linked account,
+repository tracking (CRUD + branch listing), self-service user endpoints. No sync, tracked-file
+selection, documents, search, groups, commit-back, or UI yet. Unit tests cover sessions, auth
+middleware, providers, credentials, response envelopes, the session model, and DB-free router
+helpers; no CI.
 
 ## Phase 1 — Multi-account & provider foundation
 
@@ -49,6 +51,7 @@ tests landed, but the OAuth callback integration test (needs a DB seam) and CI a
   provider later. **Done** — `providers` package with a `Registry`; GitHub lives behind it. Token
   refresh is modeled as an optional `Refresher` capability rather than a method on every provider,
   since GitHub OAuth App tokens don't refresh (this changes with the Phase 2 GitHub App migration).
+  GitHub implements it since that migration (Phase 2).
 - **Token encryption (checklist A2/D1)**: `access_token`/`refresh_token` are plaintext today. Add
   at-rest encryption (app-level AEAD or KMS envelope) before the number of stored tokens grows
   with multi-account. **Done** — app-level AES-256-GCM in the `secrets` package, keyed by a
@@ -63,34 +66,50 @@ tests landed, but the OAuth callback integration test (needs a DB seam) and CI a
 
 ## Phase 2 — Repository tracking
 
-- `POST/GET/PATCH/DELETE /api/repositories`, `GET /repositories/{id}/branches`.
+Status: **tracking CRUD + branch listing + GitHub App migration + token refresh done** — the
+`repositories` table (migration `000005`) backs `POST/GET/PATCH/DELETE /api/repositories` and
+`GET /repositories/{id}/branches`; GitHub accounts link through a GitHub App with expiring tokens
+that `credentials.Service` refreshes and revokes (checklist D3 closed). Still open in this phase:
+the sync engine. Known gaps carried forward: handler and locked-refresh tests need a DB seam
+(checklist E1); revoking an already expired access token may leave its refresh token alive
+(manual test in progress); a re-link racing a refresh can leave the rotated token unrevoked;
+`GET /api/accounts` does not flag accounts that need re-linking.
+
+- `POST/GET/PATCH/DELETE /api/repositories`, `GET /repositories/{id}/branches`. **Done.**
 - Track a repo from a linked account **or** by public `owner`/`name` (no account needed for public
-  GitHub repos, per `docs/api.md`).
-- **GitHub App migration + token refresh (checklist D3) — before the sync engine.** Replace the
-  GitHub OAuth App with a GitHub App using expiring user tokens (8h access, 6-month single-use
-  refresh token), so stored tokens stop being non-expiring, full-`repo`-scope credentials. The
-  sync engine design depends on this (who owns the token, that it expires mid-job, that refresh
-  rotates it), so it lands first:
+  GitHub repos, per `docs/api.md`). **Done.**
+- **GitHub App migration + token refresh (checklist D3) — before the sync engine.** **Done** — see
+  the per-item notes below. Replace the GitHub OAuth App with a GitHub App using expiring user
+  tokens (8h access, 6-month single-use refresh token), so stored tokens stop being non-expiring,
+  full-`repo`-scope credentials. The sync engine design depends on this (who owns the token, that
+  it expires mid-job, that refresh rotates it), so it lands first:
   - Register a GitHub App (token expiration on; *Contents: read & write*, *Metadata: read*;
     authorization requested during installation so link + install is one flow; webhooks off for
     now). Add `docs/howto/setup-github-app.md` and a `GITHUB_APP_SLUG` for the install link.
+    **Done** — the OAuth App scopes and `AccessTypeOffline` were dropped from the provider.
   - Store the provider's real `token_expires_at` (NULL when none) instead of the synthetic
     1-year expiry in `providerCallback`. Any max-age/re-consent policy, if wanted, is explicit and
-    separate from the provider expiry.
+    separate from the provider expiry. **Done.**
   - Move token resolution out of the HTTP handlers (`repoAccessToken` and the inline check in
     `external_git_accounts.go`) into a transport-agnostic function returning typed errors, so the
-    sync engine can reuse it.
+    sync engine can reuse it. **Done** — `credentials.Service` (`ResolveAccount`, `ForAccount`,
+    `ForRepository`).
   - GitHub implements `providers.Refresher`. Refresh on (near-)expiry and persist via
     `UpdateExternalGitAccountTokens` (currently generated but never called; check its
     `COALESCE` refresh-token param isn't a non-nullable `string`). Serialize refreshes per
     account (`SELECT … FOR UPDATE`) — refresh tokens are single-use, so concurrent refreshes
-    lock the account out. A failed refresh means "needs re-link".
-  - `ListRepositories` moves to `GET /user/installations` + `/user/installations/{id}/repositories`.
-    Surface "app not installed" distinctly from "not found" (empty repo list, private-repo `404`)
-    so the UI can link to the install page.
+    lock the account out. A failed refresh means "needs re-link". **Done** — only a rejected
+    refresh token means re-link (and clears the stored tokens); other failures are `500`s.
+  - Surface "app not installed" distinctly from "not found" (empty repo list, private-repo `404`)
+    so the UI can link to the install page. **Done differently** — `ListRepositories` keeps
+    `/user/repos` (a GitHub App user token already lists only installed repositories) and checks
+    `/user/installations` only when the list is empty: no installation is `403 app_not_installed`
+    with `details.install_url`; a token-backed private-repo `404` carries the same link.
   - Revoke tokens at GitHub (`DELETE /applications/{client_id}/token`) on unlink and when a
-    re-link replaces a stored token.
-  - Existing OAuth-App-linked accounts must re-link (different client id).
+    re-link replaces a stored token. **Done** — best-effort, after the database change; revoking
+    a live access token also revokes its refresh token.
+  - Existing OAuth-App-linked accounts must re-link (different client id). **Done** — documented in
+    `docs/howto/setup-github-app.md`.
 - Sync engine: clone/pull the tracked branch, record `tracked_commit`/`last_sync_at`/
   `sync_status`, `POST /repositories/{id}/sync` to trigger on demand. Uses the user's (refreshed)
   token; GitHub push webhooks are a natural follow-up trigger for `auto_sync`.
