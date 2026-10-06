@@ -3,7 +3,7 @@
 Source: senior review of `src/api` (first critique). One item per checkbox, update with
 the file/commit that closed it.
 
-Legend: `[x]` done · `[ ]` open · last updated 2026-09-25
+Legend: `[x]` done · `[ ]` open · last updated 2026-10-06
 
 ## A. Security
 
@@ -91,9 +91,13 @@ Legend: `[x]` done · `[ ]` open · last updated 2026-09-25
 - [x] **D2 — `user_id BIGSERIAL` FK in migration `000002`** should be `BIGINT` (BIGSERIAL implies
       auto-generate). Fixed: new migration `000003` drops the id default + sequence; applied and
       verified in the live schema.
-- [ ] **D3 — `UpdateExternalGitAccountTokens` generated but never called; no token refresh path.**
-      Bitbucket (short-lived tokens) makes this mandatory. Planned in Phase 2 alongside the switch
-      to a GitHub App with expiring user tokens, which makes refresh mandatory for GitHub too.
+- [x] **D3 — `UpdateExternalGitAccountTokens` generated but never called; no token refresh path.**
+      Fixed with the Phase 2 GitHub App migration: GitHub implements `providers.Refresher`, and
+      `credentials.Service.ForAccount` refreshes tokens expiring within 5 minutes and persists them
+      via `UpdateExternalGitAccountTokens`. Refreshes are serialized per account with
+      `SELECT … FOR UPDATE` (verified manually with 5 concurrent requests); a rejected refresh
+      token clears the stored tokens and means "re-link". Real provider expiries are stored
+      (`b058740`), refresh landed in `8ddd4f1`..`3688e0b`. Bitbucket only needs its own `Refresher`.
 - [x] **D4 — First-login upsert race on `google_id`** handled clunkily (see B3). Prefer `ON CONFLICT`.
 - [ ] **D5 — `username` column defaults to `''` and is never populated** — dead weight unless it's a
       product feature.
@@ -103,10 +107,14 @@ Legend: `[x]` done · `[ ]` open · last updated 2026-09-25
 - [ ] **E1 — Tests exist; the OAuth callback integration test and CI are still missing.** Done:
       unit tests for session lifecycle (`session/manager_test.go`), `RequireAuth`/`CurrentUserID`
       (`middleware/middleware_test.go`), provider HTTP + pagination against `httptest`
-      (`providers/github_test.go`), response envelopes (`httpx/httpx_test.go`), and the session
-      model (`models/session_test.go`); runnable via `make test` / `make test-race`. Still open:
+      (`providers/github_test.go`), response envelopes (`httpx/httpx_test.go`), the session
+      model (`models/session_test.go`), `credentials` token checks and revocation
+      (`credentials/credentials_test.go`), and DB-free router helpers
+      (`routers/repositories_test.go`); runnable via `make test` / `make test-race`. Still open:
       the OAuth callback integration test with a fake provider — blocked because handlers hold a
-      concrete `*pgxpool.Pool` and there is no DB seam to inject a fake (or a test Postgres) — plus
+      concrete `*pgxpool.Pool` and there is no DB seam to inject a fake (or a test Postgres); the
+      same gap leaves `credentials`' locked refresh path and the unlink/re-link handlers untested —
+      plus
       a `ping` smoke test (`/ping` is an inline closure in `main.go`, not a testable router) and CI.
       `go vet`/`go fmt` won't catch the bugs in B.
 

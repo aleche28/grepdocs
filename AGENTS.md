@@ -176,7 +176,9 @@ Rules worth preserving:
   `providers.ErrInvalidToken`; for GitHub, `bad_refresh_token`). Network errors, provider outages,
   and bad client credentials stay plain errors (`500`), never "re-link".
 - On a rejected refresh, `ClearExternalGitAccountTokens` empties both tokens in the same
-  transaction, so later calls fail fast without contacting the provider.
+  transaction, so later calls fail fast without contacting the provider. `credentials` logs the
+  rejection (account id and provider error code, never a token), since callers turn
+  `ErrReauthRequired` into a `403` without logging.
 - An empty refresh token passed to `UpdateExternalGitAccountTokens` means "keep the stored one and
   its expiry". oauth2 echoes the sent refresh token when the provider did not rotate it; that case
   is treated as empty. Never encrypt an empty value — the ciphertext would not be empty.
@@ -240,7 +242,7 @@ them on matching requests; if yours doesn't, read the relevant file directly bef
   endpoints, and check it before inventing a route or response body.
 - `docs/code-review-checklist.md` — tracked findings from a senior review, with `[ ]` items marking
   known open problems (no CORS/rate limiting, config split between `main.go` and `os.Getenv` in
-  router constructors, session write amplification, no token refresh path, no tests). Update the
+  router constructors, session write amplification, incomplete test coverage). Update the
   relevant checkbox when you close one.
 - `docs/requirements.md`, `docs/user-stories.md` — product spec.
 - `docs/howto/` — Google OAuth setup, GitHub App setup, golang-migrate workflow, sqlc usage.
