@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"grepdocs/api/dal"
 	"grepdocs/api/providers"
 	"grepdocs/api/secrets"
+	"slices"
 	"testing"
 	"time"
 )
@@ -263,4 +265,147 @@ func TestRevoke(t *testing.T) {
 			}
 		})
 	}
+}
+
+// fakeRefreshRevoker can refresh too, so Revoke can trade an expired token's
+// refresh token for a live pair before revoking
+type fakeRefreshRevoker struct {
+	*fakeRevoker
+	token        providers.Token
+	refreshErr   error
+	refreshCalls []string
+}
+
+func (f *fakeRefreshRevoker) Name() string { return "refreshing" }
+
+func (f *fakeRefreshRevoker) Refresh(ctx context.Context, refreshToken string) (providers.Token, error) {
+	f.refreshCalls = append(f.refreshCalls, refreshToken)
+	return f.token, f.refreshErr
+}
+
+func TestRevokeExpiredToken(t *testing.T) {
+	cipher := newTestCipher(t, 1)
+	past := time.Now().Add(-time.Minute)
+	future := time.Now().Add(time.Hour)
+	soon := time.Now().Add(time.Minute) // inside refreshMargin
+	boom := errors.New("boom")
+
+	account := func(expiry *time.Time, refreshToken string, refreshExpiry *time.Time) dal.ExternalGitAccount {
+		acc := dal.ExternalGitAccount{
+			Provider:              "refreshing",
+			AccessToken:           encrypt(t, cipher, "ghu_old"),
+			TokenExpiresAt:        expiry,
+			RefreshTokenExpiresAt: refreshExpiry,
+		}
+		if refreshToken != "" {
+			acc.RefreshToken = encrypt(t, cipher, refreshToken)
+		}
+		return acc
+	}
+
+	tests := []struct {
+		name             string
+		account          dal.ExternalGitAccount
+		refreshErr       error
+		wantErr          error // checked with errors.Is
+		wantAnyErr       bool  // any error
+		wantRefreshCalls []string
+		wantRevokeCalls  []string
+	}{
+		{
+			name:             "expired: refreshes, then revokes the new access token",
+			account:          account(&past, "ghr_old", &future),
+			wantRefreshCalls: []string{"ghr_old"},
+			wantRevokeCalls:  []string{"ghu_new"},
+		},
+		{
+			name:             "expiring within the margin is refreshed first too",
+			account:          account(&soon, "ghr_old", &future),
+			wantRefreshCalls: []string{"ghr_old"},
+			wantRevokeCalls:  []string{"ghu_new"},
+		},
+		{
+			name:            "valid token is revoked directly",
+			account:         account(&future, "ghr_old", &future),
+			wantRevokeCalls: []string{"ghu_old"},
+		},
+		{
+			name:             "refresh token already dead",
+			account:          account(&past, "ghr_old", &future),
+			refreshErr:       fmt.Errorf("github token refresh: %w", providers.ErrInvalidToken),
+			wantRefreshCalls: []string{"ghr_old"},
+		},
+		{
+			name:             "refresh fails for another reason",
+			account:          account(&past, "ghr_old", &future),
+			refreshErr:       boom,
+			wantErr:          boom,
+			wantRefreshCalls: []string{"ghr_old"},
+		},
+		{
+			name:    "expired without a refresh token",
+			account: account(&past, "", nil),
+		},
+		{
+			name:    "expired with an expired refresh token",
+			account: account(&past, "ghr_old", &past),
+		},
+		{
+			name: "refresh token encrypted with another key",
+			account: dal.ExternalGitAccount{
+				Provider:       "refreshing",
+				AccessToken:    encrypt(t, cipher, "ghu_old"),
+				TokenExpiresAt: &past,
+				RefreshToken:   encrypt(t, newTestCipher(t, 2), "ghr_old"),
+			},
+			wantAnyErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			prov := &fakeRefreshRevoker{
+				fakeRevoker: &fakeRevoker{},
+				token:       providers.Token{AccessToken: "ghu_new", RefreshToken: "ghr_new"},
+				refreshErr:  tc.refreshErr,
+			}
+			svc := New(nil, cipher, providers.NewRegistry(prov))
+
+			err := svc.Revoke(context.Background(), tc.account)
+			switch {
+			case tc.wantErr != nil:
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("Revoke() error = %v, want %v", err, tc.wantErr)
+				}
+			case tc.wantAnyErr:
+				if err == nil {
+					t.Fatal("Revoke() = nil, want an error")
+				}
+			case err != nil:
+				t.Fatalf("Revoke() unexpected error: %v", err)
+			}
+
+			if !slices.Equal(prov.refreshCalls, tc.wantRefreshCalls) {
+				t.Errorf("Refresh calls = %v, want %v", prov.refreshCalls, tc.wantRefreshCalls)
+			}
+			if !slices.Equal(prov.calls, tc.wantRevokeCalls) {
+				t.Errorf("Revoke calls = %v, want %v", prov.calls, tc.wantRevokeCalls)
+			}
+		})
+	}
+
+	t.Run("expired, provider cannot refresh", func(t *testing.T) {
+		rev := &fakeRevoker{}
+		svc := New(nil, cipher, providers.NewRegistry(rev))
+
+		acc := account(&past, "ghr_old", &future)
+		acc.Provider = "fake"
+		if err := svc.Revoke(context.Background(), acc); err != nil {
+			t.Fatalf("Revoke() unexpected error: %v", err)
+		}
+		// revoking the expired token would leave its refresh token alive, so nothing is sent
+		if len(rev.calls) != 0 {
+			t.Errorf("Revoke calls = %v, want none", rev.calls)
+		}
+	})
 }
