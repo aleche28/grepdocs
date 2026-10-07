@@ -181,9 +181,11 @@ rows, with `account_id` set to `null`.
 
 Tokens GrepDocs stops using are revoked at the provider: on unlink, and on a re-link that replaces
 the stored token (`GET /accounts/{provider}/callback` for an identity already linked). For GitHub,
-revoking the access token also revokes its refresh token. Revocation runs after the database
-change and is best-effort: a failure is logged server-side and never fails the request, since the
-account is already unlinked or re-linked.
+revoking a live access token also revokes its refresh token; when the stored access token has
+already expired, the server first spends the refresh token on a new pair and revokes that, so no
+refresh token outlives the account. Revocation runs after the database change and is best-effort: a
+failure is logged server-side and never fails the request, since the account is already unlinked or
+re-linked.
 
 `label` exists in the schema so a user can tell multiple accounts for one provider apart (e.g.
 "personal" vs "work"). It is read-only for now (always `""`); no write endpoint exists yet.

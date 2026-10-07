@@ -192,8 +192,13 @@ that replaces a stored token). Rules worth preserving:
   stored token that no longer works.
 - Revocation is best-effort: callers log the error and never fail the request. It runs on
   `context.WithoutCancel` plus `revokeTimeout`, so a client disconnect does not skip it.
-- `Revoke` does not refresh first (that would only issue a new pair) and skips accounts whose access
-  token is empty (cleared after a rejected refresh).
+- A live access token is revoked directly. One that `needsRefresh` (expired or within the margin)
+  is not: revoking it would leave its refresh token alive. `Revoke` instead spends the refresh
+  token on a new pair (refresh tokens are single-use, so the old one dies) and revokes the new
+  access token, which also kills the new refresh token. The new pair is never stored. Nothing is
+  sent when the provider is not a `Refresher` or `canRefresh` is false (no refresh token, expired,
+  or cleared after a rejected refresh), and a refresh rejected with `ErrInvalidToken` means the
+  token was already dead, so it returns `nil`. `revokeTimeout` covers both calls.
 - Unlink deletes with `DeleteExternalGitAccountByIdAndUserId` (`DELETE … RETURNING *`): ownership
   is in the `WHERE`, so another user's account is a `404`, and the delete waits for a refresh
   holding the row lock, so it returns the post-refresh tokens. Do not go back to read-then-delete.
@@ -201,10 +206,10 @@ that replaces a stored token). Rules worth preserving:
   read: a refresh in between can rotate the token, and the new one is not revoked. Accepted as rare.
 - GitHub revokes with `DELETE /applications/{client_id}/token` (Basic auth with the client
   credentials); `204`, `404` (unknown token, e.g. from the old OAuth App) and `422` are success.
-  Revoking a live access token also revokes its refresh token (verified manually). Whether this
-  holds for an already expired access token is **unverified**: if not, its refresh token survives
-  until it expires. Never use `/applications/{client_id}/grant` instead: it revokes the GitHub
-  identity's authorization for every GrepDocs user who linked it.
+  Revoking a live access token also revokes its refresh token; revoking an expired one does not
+  (both verified manually), hence the refresh-then-revoke above. GitHub has no endpoint that revokes
+  a refresh token directly. Never use `/applications/{client_id}/grant` instead: it revokes the
+  GitHub identity's authorization for every GrepDocs user who linked it.
 
 GitHub specifics worth preserving: the shared `httpClient` from `routers/http.go` (10s timeout),
 `newGitHubGetRequest` / `newGitHubDeleteRequest` for auth, accept, and content-type headers,

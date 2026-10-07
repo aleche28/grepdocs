@@ -71,8 +71,7 @@ Status: **tracking CRUD + branch listing + GitHub App migration + token refresh 
 `GET /repositories/{id}/branches`; GitHub accounts link through a GitHub App with expiring tokens
 that `credentials.Service` refreshes and revokes (checklist D3 closed). Still open in this phase:
 the sync engine. Known gaps carried forward: handler and locked-refresh tests need a DB seam
-(checklist E1); revoking an already expired access token may leave its refresh token alive
-(manual test in progress); a re-link racing a refresh can leave the rotated token unrevoked;
+(checklist E1); a re-link racing a refresh can leave the rotated token unrevoked;
 `GET /api/accounts` does not flag accounts that need re-linking.
 
 - `POST/GET/PATCH/DELETE /api/repositories`, `GET /repositories/{id}/branches`. **Done.**
@@ -107,7 +106,8 @@ the sync engine. Known gaps carried forward: handler and locked-refresh tests ne
     with `details.install_url`; a token-backed private-repo `404` carries the same link.
   - Revoke tokens at GitHub (`DELETE /applications/{client_id}/token`) on unlink and when a
     re-link replaces a stored token. **Done** — best-effort, after the database change; revoking
-    a live access token also revokes its refresh token.
+    a live access token also revokes its refresh token, and an expired one is first refreshed so
+    its refresh token cannot survive.
   - Existing OAuth-App-linked accounts must re-link (different client id). **Done** — documented in
     `docs/howto/setup-github-app.md`.
 - Sync engine: clone/pull the tracked branch, record `tracked_commit`/`last_sync_at`/
