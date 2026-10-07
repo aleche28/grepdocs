@@ -134,17 +134,43 @@ func (s *Service) Revoke(ctx context.Context, account dal.ExternalGitAccount) er
 	}
 
 	revoker, ok := prov.(providers.Revoker)
-	if !ok || account.AccessToken == "" {
+	if !ok {
 		return nil
-	}
-
-	accessToken, err := s.cipher.Decrypt(account.AccessToken)
-	if err != nil {
-		return err
 	}
 
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), revokeTimeout)
 	defer cancel()
+
+	now := time.Now()
+	var accessToken string
+	if needsRefresh(account, now) {
+		// Revoking an expired access token leaves its refresh token alive (verified
+		// manually). Spend the refresh token on a fresh pair and revoke that instead.
+		// The new pair is never stored: the account is gone or already replaced.
+		refresher, ok := prov.(providers.Refresher)
+		if !ok || !canRefresh(account, now) {
+			return nil
+		}
+
+		refreshToken, err := s.cipher.Decrypt(account.RefreshToken)
+		if err != nil {
+			return err
+		}
+
+		tok, err := refresher.Refresh(ctx, refreshToken)
+		switch {
+		case errors.Is(err, providers.ErrInvalidToken):
+			return nil // refresh token already dead
+		case err != nil:
+			return fmt.Errorf("refresh before revoke: %w", err)
+		}
+		accessToken = tok.AccessToken
+	} else {
+		var err error
+		if accessToken, err = s.cipher.Decrypt(account.AccessToken); err != nil {
+			return err
+		}
+	}
 
 	// revoking the accessToken revokes the refresh token too: tested manually
 	return revoker.Revoke(ctx, accessToken)
