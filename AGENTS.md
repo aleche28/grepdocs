@@ -11,8 +11,9 @@ multiple git repositories, committing edits back to source control. Only the bac
 
 There is no CI. `go test ./...`, `go vet`, and `go fmt` are the quality gates — run all three before
 committing (`make test`, `make vet`, `make fmt`). Unit tests cover sessions, auth middleware,
-providers, response envelopes, and the session model; `routers` is still untested (handlers hold a
-concrete `*pgxpool.Pool`, so there is no DB seam yet).
+providers, credentials, response envelopes, and the session model. `routers` tests cover only
+helpers that need no database (`writeProviderError`, `installDetails`); handlers stay untested
+because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
 
 ## Commands
 
@@ -53,7 +54,8 @@ needs both Postgres and Redis, and exits at startup if `DATABASE_URL` is unset.
 
 ### Request pipeline
 
-`main.go` wires everything; there is no DI container and no service layer yet.
+`main.go` wires everything; there is no DI container. The only service is `credentials.Service`
+(see Git providers), built once in `main.go` and injected into the routers that call providers.
 
 ```
 http.Server (explicit timeouts, graceful shutdown on SIGINT/SIGTERM)
@@ -117,9 +119,11 @@ Rules:
 
 - Never commit a key. Generate with `openssl rand -base64 32` and keep it in `.env`; the key must
   stay stable or every stored token becomes unreadable.
-- Encrypt before every write to `external_git_accounts` and decrypt after every read; the current
-  sites are `providerCallback` and `listExternalRepositories`. `secrets` is not wired into the DAL
-  automatically, so new read/write paths must not forget this.
+- Encrypt before every write to `external_git_accounts` and decrypt after every read. Writes happen
+  in `providerCallback` (link/re-link) and `credentials.Service` (refresh); reads go through
+  `credentials.Service`, the only decrypt site. `secrets` is not wired into the DAL automatically,
+  so new write paths must not forget this, and new read paths should get tokens from `credentials`
+  instead of decrypting themselves.
 - Keep the `v1:` prefix on ciphertext; it is what makes format/key rotation possible.
 - Unit tests live in `secrets/aesgcm_test.go` (round-trip, tamper, wrong key, malformed input).
 
@@ -130,6 +134,8 @@ Every response goes through `httpx`. Never use `http.Error` or hand-rolled JSON 
 - `WriteJSON(w, status, data)`
 - `WriteError(w, status, code, message)` — emits `{"error":{"code","message"}}`, where `code` is one
   of the stable `httpx.Code*` constants and is the machine-readable discriminator.
+- `WriteErrorWithDetails(w, status, code, message, details)` — same envelope plus an optional
+  `details` object, omitted when `details` is empty. `WriteError` calls it with `nil`.
 - `WriteInternalError(w, err)` — logs the real error server-side and returns a generic `internal`
   envelope. Internal error strings must never reach the client.
 
@@ -140,14 +146,79 @@ Handlers build response DTOs explicitly (inline `map[string]any` today). Token f
 
 Only GitHub is implemented, behind the `providers.Provider` interface + `Registry` (new providers
 go in `src/api/providers/`, not inline in handlers). Provider failures are normalized to
-`ErrInvalidToken`/`ErrRateLimited` and mapped by callers to `403`/`429`. When adding Bitbucket,
-build a `Refresher` implementation rather than adding a second inline flow.
+`ErrInvalidToken`/`ErrRateLimited`/`ErrNotFound`/`ErrAppNotInstalled` and mapped by callers to
+`403`/`429`/`404`/`403 app_not_installed`. When adding Bitbucket, build a `Refresher`
+implementation rather than adding a second inline flow.
+
+Capabilities not every provider has are optional interfaces checked with a type assertion, not
+methods on `Provider`: `Refresher` (token refresh), `Installer` (`InstallURL()`, for providers
+whose access depends on an app installation), and `Revoker` (token revocation).
+`routers.installDetails` turns `InstallURL()` into the `details.install_url` of an error, and
+returns `nil` when the provider is not an `Installer` or the URL is empty (no `GITHUB_APP_SLUG`),
+so the key is omitted rather than sent empty.
+
+Handlers and background jobs get provider access tokens from `credentials.Service`
+(`src/api/credentials`), never from the token columns directly: `ResolveAccount` picks the account,
+`ForAccount` / `ForRepository` return a usable token. It writes no HTTP responses; it returns
+`ErrAccountNotFound`, `ErrAccountAmbiguous`, and `ErrReauthRequired`, and each caller maps them
+(the status for the same error differs per endpoint — check `docs/api.md`).
+
+Token refresh lives in `credentials` and is invisible to callers. `ForAccount` refreshes a token
+that expires within `refreshMargin` (5 min) when the provider implements `providers.Refresher`.
+Rules worth preserving:
+
+- Refresh tokens are single-use, so refreshes are serialized per account with
+  `GetExternalGitAccountByIdForUpdate` (`SELECT … FOR UPDATE`) inside a transaction. After taking
+  the lock, every decision uses the locked row — another caller may already have refreshed.
+- The locked section runs on `context.WithoutCancel` plus its own timeout: a client disconnect
+  after the provider rotated the tokens but before the commit would otherwise lose them.
+- Only a dead refresh token is `ErrReauthRequired` (the provider maps it to
+  `providers.ErrInvalidToken`; for GitHub, `bad_refresh_token`). Network errors, provider outages,
+  and bad client credentials stay plain errors (`500`), never "re-link".
+- On a rejected refresh, `ClearExternalGitAccountTokens` empties both tokens in the same
+  transaction, so later calls fail fast without contacting the provider. `credentials` logs the
+  rejection (account id and provider error code, never a token), since callers turn
+  `ErrReauthRequired` into a `403` without logging.
+- An empty refresh token passed to `UpdateExternalGitAccountTokens` means "keep the stored one and
+  its expiry". oauth2 echoes the sent refresh token when the provider did not rotate it; that case
+  is treated as empty. Never encrypt an empty value — the ciphertext would not be empty.
+- No retry on `401` from provider calls: with an unexpired token it means revoked access, which a
+  refresh cannot fix.
+
+Token revocation also lives in `credentials` (`Service.Revoke`, called on unlink and on a re-link
+that replaces a stored token). Rules worth preserving:
+
+- Change the database first, then revoke. Revoking first and then failing the write would leave a
+  stored token that no longer works.
+- Revocation is best-effort: callers log the error and never fail the request. It runs on
+  `context.WithoutCancel` plus `revokeTimeout`, so a client disconnect does not skip it.
+- A live access token is revoked directly. One that `needsRefresh` (expired or within the margin)
+  is not: revoking it would leave its refresh token alive. `Revoke` instead spends the refresh
+  token on a new pair (refresh tokens are single-use, so the old one dies) and revokes the new
+  access token, which also kills the new refresh token. The new pair is never stored. Nothing is
+  sent when the provider is not a `Refresher` or `canRefresh` is false (no refresh token, expired,
+  or cleared after a rejected refresh), and a refresh rejected with `ErrInvalidToken` means the
+  token was already dead, so it returns `nil`. `revokeTimeout` covers both calls.
+- Unlink deletes with `DeleteExternalGitAccountByIdAndUserId` (`DELETE … RETURNING *`): ownership
+  is in the `WHERE`, so another user's account is a `404`, and the delete waits for a refresh
+  holding the row lock, so it returns the post-refresh tokens. Do not go back to read-then-delete.
+- Re-link reads the old row with `GetExternalGitAccountByIdentity` before the upsert. It is a plain
+  read: a refresh in between can rotate the token, and the new one is not revoked. Accepted as rare.
+- GitHub revokes with `DELETE /applications/{client_id}/token` (Basic auth with the client
+  credentials); `204`, `404` (unknown token, e.g. from the old OAuth App) and `422` are success.
+  Revoking a live access token also revokes its refresh token; revoking an expired one does not
+  (both verified manually), hence the refresh-then-revoke above. GitHub has no endpoint that revokes
+  a refresh token directly. Never use `/applications/{client_id}/grant` instead: it revokes the
+  GitHub identity's authorization for every GrepDocs user who linked it.
 
 GitHub specifics worth preserving: the shared `httpClient` from `routers/http.go` (10s timeout),
-`newGitHubRequest` for auth/accept headers, `io.LimitReader` bounding every decode, `Link`-header
-pagination with a page cap, and returning the upstream HTTP status so callers can distinguish a
-revoked token (401/403 → "re-link your account") from a real failure. There is no token refresh
-flow; expired tokens mean re-linking.
+`newGitHubGetRequest` / `newGitHubDeleteRequest` for auth, accept, and content-type headers,
+`io.LimitReader` bounding every decode, `Link`-header pagination with a page cap, and returning the
+upstream HTTP status so callers can distinguish a revoked token (401/403 → "re-link your account")
+from a real failure. With a GitHub App token, `/user/repos` lists only repositories the app is
+installed on, so `ListRepositories` checks `/user/installations` when the list is empty and returns
+`ErrAppNotInstalled` when there are none (`total_count` is the total, not the page size). The token
+refresh and revocation flows are described above, under `credentials`.
 
 ## Conventions
 
@@ -176,10 +247,10 @@ them on matching requests; if yours doesn't, read the relevant file directly bef
   endpoints, and check it before inventing a route or response body.
 - `docs/code-review-checklist.md` — tracked findings from a senior review, with `[ ]` items marking
   known open problems (no CORS/rate limiting, config split between `main.go` and `os.Getenv` in
-  router constructors, session write amplification, no token refresh path, no tests). Update the
+  router constructors, session write amplification, incomplete test coverage). Update the
   relevant checkbox when you close one.
 - `docs/requirements.md`, `docs/user-stories.md` — product spec.
-- `docs/howto/` — Google/GitHub OAuth setup, golang-migrate workflow, sqlc usage.
+- `docs/howto/` — Google OAuth setup, GitHub App setup, golang-migrate workflow, sqlc usage.
 - `docs/roadmap.md` — phased build-out plan (not dated), interleaving new features with the open
   checklist items each phase depends on or exposes. Update it as phases complete or scope shifts.
 - `docs/roadmap-stakeholders.md` — non-technical companion to `docs/roadmap.md`: same plan grouped
@@ -187,8 +258,5 @@ them on matching requests; if yours doesn't, read the relevant file directly bef
 
 ## Known inconsistencies
 
-- `.env.example` sets `GITHUB_REDIRECT_URL` to `/api/ext-accounts/github/callback`, but the route was
-  renamed to `/api/accounts/{provider}/callback`. Use the `/api/accounts/...` path in `.env` and in
-  the GitHub OAuth app.
 - `CLAUDE.md` is only a pointer to this file (Claude Code reads it via an `@AGENTS.md` import).
   This file is the single source of truth — put new guidance here.

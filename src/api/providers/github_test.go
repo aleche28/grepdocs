@@ -2,11 +2,15 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"golang.org/x/oauth2"
 )
 
 func TestClassifyGitHubResponse(t *testing.T) {
@@ -227,7 +231,424 @@ func TestListRepositories(t *testing.T) {
 	})
 }
 
+func TestListRepositoriesEmpty(t *testing.T) {
+	tests := []struct {
+		name          string
+		installStatus int
+		installBody   string
+		wantErr       error // nil means success; checked with errors.Is
+	}{
+		{name: "app not installed", installStatus: http.StatusOK, installBody: `{"total_count":0,"installations":[]}`, wantErr: ErrAppNotInstalled},
+		{name: "one installation", installStatus: http.StatusOK, installBody: `{"total_count":1,"installations":[{"id":1}]}`},
+		// per_page=1 returns one item, but total_count counts every installation
+		{name: "several installations", installStatus: http.StatusOK, installBody: `{"total_count":2,"installations":[{"id":1}]}`},
+		{name: "installations check unauthorized", installStatus: http.StatusUnauthorized, wantErr: ErrInvalidToken},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/user/repos":
+					io.WriteString(w, `[]`)
+				case "/user/installations":
+					if got := r.URL.Query().Get("per_page"); got != "1" {
+						t.Errorf("installations per_page = %q, want 1", got)
+					}
+					w.WriteHeader(tc.installStatus)
+					io.WriteString(w, tc.installBody)
+				default:
+					t.Errorf("unexpected path %q", r.URL.Path)
+				}
+			}))
+			defer srv.Close()
+
+			gh := NewGitHub(GitHubOptions{BaseURL: srv.URL, HTTPClient: srv.Client()})
+			repos, err := gh.ListRepositories(context.Background(), "tok")
+
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("ListRepositories() error = %v, want %v", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ListRepositories() unexpected error: %v", err)
+			}
+			// a non-nil empty slice encodes as [] rather than null
+			if repos == nil || len(repos) != 0 {
+				t.Errorf("ListRepositories() = %#v, want an empty non-nil slice", repos)
+			}
+		})
+	}
+
+	t.Run("non-empty list skips the installations check", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/user/repos" {
+				t.Errorf("unexpected path %q", r.URL.Path)
+			}
+			io.WriteString(w, `[{"id":1,"name":"one","full_name":"o/one","default_branch":"main"}]`)
+		}))
+		defer srv.Close()
+
+		gh := NewGitHub(GitHubOptions{BaseURL: srv.URL, HTTPClient: srv.Client()})
+		if _, err := gh.ListRepositories(context.Background(), "tok"); err != nil {
+			t.Fatalf("ListRepositories() unexpected error: %v", err)
+		}
+	})
+}
+
+func TestInstallURL(t *testing.T) {
+	tests := []struct {
+		name string
+		slug string
+		want string
+	}{
+		{name: "with slug", slug: "grepdocs", want: "https://github.com/apps/grepdocs/installations/new"},
+		{name: "without slug", slug: "", want: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gh := NewGitHub(GitHubOptions{AppSlug: tc.slug})
+			if got := gh.InstallURL(); got != tc.want {
+				t.Errorf("InstallURL() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExchange(t *testing.T) {
+	const (
+		accessTTL  = 8 * time.Hour
+		refreshTTL = 15897600 * time.Second // ~6 months
+	)
+
+	// newTokenServer fakes GitHub's OAuth token endpoint, answering every request with the given
+	// content type and body
+	newTokenServer := func(t *testing.T, contentType, body string) *httptest.Server {
+		t.Helper()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost || r.URL.Path != "/login/oauth/access_token" {
+				t.Errorf("request = %s %s, want POST /login/oauth/access_token", r.Method, r.URL.Path)
+			}
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("ParseForm: %v", err)
+			}
+			if got := r.PostForm.Get("grant_type"); got != "authorization_code" {
+				t.Errorf("grant_type = %q, want authorization_code", got)
+			}
+			if got := r.PostForm.Get("code"); got != "the-code" {
+				t.Errorf("code = %q, want the-code", got)
+			}
+			w.Header().Set("Content-Type", contentType)
+			io.WriteString(w, body)
+		}))
+		t.Cleanup(srv.Close)
+		return srv
+	}
+
+	exchange := func(t *testing.T, srv *httptest.Server) (Token, error) {
+		t.Helper()
+		gh := NewGitHub(GitHubOptions{
+			ClientID:     "client-id",
+			ClientSecret: "client-secret",
+			HTTPClient:   srv.Client(),
+			TokenURL:     srv.URL + "/login/oauth/access_token",
+		})
+		return gh.Exchange(context.Background(), "the-code")
+	}
+
+	// GitHub answers form-encoded unless the client sends Accept: application/json, which oauth2
+	// does not: expires_in is then only reflected in Expiry, and Extra returns int64 values
+	t.Run("form-encoded response with expiring tokens", func(t *testing.T) {
+		srv := newTokenServer(t, "application/x-www-form-urlencoded",
+			"access_token=ghu_access&expires_in=28800&refresh_token=ghr_refresh"+
+				"&refresh_token_expires_in=15897600&token_type=bearer&scope=")
+
+		before := time.Now()
+		tok, err := exchange(t, srv)
+		after := time.Now()
+		if err != nil {
+			t.Fatalf("Exchange: %v", err)
+		}
+
+		if tok.AccessToken != "ghu_access" || tok.RefreshToken != "ghr_refresh" {
+			t.Errorf("tokens = %q/%q, want ghu_access/ghr_refresh", tok.AccessToken, tok.RefreshToken)
+		}
+		assertExpiresIn(t, "Expiry", tok.Expiry, before, after, accessTTL)
+		assertExpiresIn(t, "RefreshExpiry", tok.RefreshExpiry, before, after, refreshTTL)
+	})
+
+	// With a JSON body, Extra returns float64 values
+	t.Run("json response with expiring tokens", func(t *testing.T) {
+		srv := newTokenServer(t, "application/json",
+			`{"access_token":"ghu_access","expires_in":28800,"refresh_token":"ghr_refresh",`+
+				`"refresh_token_expires_in":15897600,"token_type":"bearer","scope":""}`)
+
+		before := time.Now()
+		tok, err := exchange(t, srv)
+		after := time.Now()
+		if err != nil {
+			t.Fatalf("Exchange: %v", err)
+		}
+
+		assertExpiresIn(t, "Expiry", tok.Expiry, before, after, accessTTL)
+		assertExpiresIn(t, "RefreshExpiry", tok.RefreshExpiry, before, after, refreshTTL)
+	})
+
+	// Token expiration opted out in the app settings: no expires_in, no refresh token
+	t.Run("non-expiring token", func(t *testing.T) {
+		srv := newTokenServer(t, "application/x-www-form-urlencoded",
+			"access_token=ghu_access&token_type=bearer&scope=")
+
+		tok, err := exchange(t, srv)
+		if err != nil {
+			t.Fatalf("Exchange: %v", err)
+		}
+
+		if tok.Expiry != nil {
+			t.Errorf("Expiry = %v, want nil", *tok.Expiry)
+		}
+		if tok.RefreshToken != "" {
+			t.Errorf("RefreshToken = %q, want empty", tok.RefreshToken)
+		}
+		if tok.RefreshExpiry != nil {
+			t.Errorf("RefreshExpiry = %v, want nil", *tok.RefreshExpiry)
+		}
+	})
+
+	// GitHub reports a bad or reused code with a 200 status and an error in the body
+	t.Run("error in 200 response", func(t *testing.T) {
+		srv := newTokenServer(t, "application/x-www-form-urlencoded",
+			"error=bad_verification_code&error_description=The+code+passed+is+incorrect+or+expired.")
+
+		if _, err := exchange(t, srv); err == nil {
+			t.Fatal("Exchange() = nil, want error")
+		}
+	})
+}
+
+// assertExpiresIn checks that got is set and lies within ttl of the [before, after] window in
+// which the token was issued
+func assertExpiresIn(t *testing.T, name string, got *time.Time, before, after time.Time, ttl time.Duration) {
+	t.Helper()
+	if got == nil {
+		t.Errorf("%s = nil, want ~now+%s", name, ttl)
+		return
+	}
+	if got.Before(before.Add(ttl)) || got.After(after.Add(ttl)) {
+		t.Errorf("%s = %v, want between %v and %v", name, *got, before.Add(ttl), after.Add(ttl))
+	}
+}
+
 // srvURL reconstructs the base URL of the request's server from its Host header.
 func srvURL(r *http.Request) string {
 	return "http://" + r.Host
+}
+
+func TestRefresh(t *testing.T) {
+	const (
+		accessTTL  = 8 * time.Hour
+		refreshTTL = 15897600 * time.Second // ~6 months
+	)
+
+	// newRefreshServer fakes GitHub's OAuth token endpoint for a refresh grant, answering every
+	// request with the given status, content type and body. On an error, oauth2 retries once with
+	// the client credentials in the body instead of the header, so it may be called twice.
+	newRefreshServer := func(t *testing.T, status int, contentType, body string) *httptest.Server {
+		t.Helper()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost || r.URL.Path != "/login/oauth/access_token" {
+				t.Errorf("request = %s %s, want POST /login/oauth/access_token", r.Method, r.URL.Path)
+			}
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("ParseForm: %v", err)
+			}
+			if got := r.PostForm.Get("grant_type"); got != "refresh_token" {
+				t.Errorf("grant_type = %q, want refresh_token", got)
+			}
+			if got := r.PostForm.Get("refresh_token"); got != "ghr_old" {
+				t.Errorf("refresh_token = %q, want ghr_old", got)
+			}
+			w.Header().Set("Content-Type", contentType)
+			w.WriteHeader(status)
+			io.WriteString(w, body)
+		}))
+		t.Cleanup(srv.Close)
+		return srv
+	}
+
+	refresh := func(t *testing.T, srv *httptest.Server, client *http.Client) (Token, error) {
+		t.Helper()
+		gh := NewGitHub(GitHubOptions{
+			ClientID:     "client-id",
+			ClientSecret: "client-secret",
+			HTTPClient:   client,
+			TokenURL:     srv.URL + "/login/oauth/access_token",
+		})
+		return gh.Refresh(context.Background(), "ghr_old")
+	}
+
+	t.Run("rotates both tokens", func(t *testing.T) {
+		srv := newRefreshServer(t, http.StatusOK, "application/x-www-form-urlencoded",
+			"access_token=ghu_new&expires_in=28800&refresh_token=ghr_new"+
+				"&refresh_token_expires_in=15897600&token_type=bearer&scope=")
+
+		before := time.Now()
+		tok, err := refresh(t, srv, srv.Client())
+		after := time.Now()
+		if err != nil {
+			t.Fatalf("Refresh: %v", err)
+		}
+
+		if tok.AccessToken != "ghu_new" || tok.RefreshToken != "ghr_new" {
+			t.Errorf("tokens = %q/%q, want ghu_new/ghr_new", tok.AccessToken, tok.RefreshToken)
+		}
+		assertExpiresIn(t, "Expiry", tok.Expiry, before, after, accessTTL)
+		assertExpiresIn(t, "RefreshExpiry", tok.RefreshExpiry, before, after, refreshTTL)
+	})
+
+	// oauth2 copies the sent refresh token into the result when the response has none;
+	// credentials relies on this to detect "not rotated" and keep the stored token and expiry
+	t.Run("response without refresh token echoes the old one", func(t *testing.T) {
+		srv := newRefreshServer(t, http.StatusOK, "application/x-www-form-urlencoded",
+			"access_token=ghu_new&expires_in=28800&token_type=bearer&scope=")
+
+		tok, err := refresh(t, srv, srv.Client())
+		if err != nil {
+			t.Fatalf("Refresh: %v", err)
+		}
+
+		if tok.RefreshToken != "ghr_old" {
+			t.Errorf("RefreshToken = %q, want the echoed ghr_old", tok.RefreshToken)
+		}
+		if tok.RefreshExpiry != nil {
+			t.Errorf("RefreshExpiry = %v, want nil", *tok.RefreshExpiry)
+		}
+	})
+
+	// Only a dead refresh token means the user must re-link; GitHub reports it in a 200 response
+	t.Run("bad_refresh_token is ErrInvalidToken", func(t *testing.T) {
+		srv := newRefreshServer(t, http.StatusOK, "application/x-www-form-urlencoded",
+			"error=bad_refresh_token&error_description=The+refresh+token+passed+is+incorrect+or+expired.")
+
+		_, err := refresh(t, srv, srv.Client())
+		if !errors.Is(err, ErrInvalidToken) {
+			t.Fatalf("Refresh() error = %v, want ErrInvalidToken", err)
+		}
+		var retrieveErr *oauth2.RetrieveError
+		if !errors.As(err, &retrieveErr) {
+			t.Errorf("Refresh() error = %v, want the oauth2.RetrieveError kept in the chain", err)
+		}
+	})
+
+	// Any other failure must not force a re-link: it is ours or GitHub's, not the user's
+	notInvalidToken := []struct {
+		name, contentType, body string
+		status                  int
+	}{
+		{"other error code", "application/x-www-form-urlencoded",
+			"error=incorrect_client_credentials&error_description=The+client_id+and%2For+client_secret+passed+are+incorrect.",
+			http.StatusOK},
+		{"server error", "text/plain", "boom", http.StatusInternalServerError},
+	}
+	for _, tc := range notInvalidToken {
+		t.Run(tc.name+" is not ErrInvalidToken", func(t *testing.T) {
+			srv := newRefreshServer(t, tc.status, tc.contentType, tc.body)
+
+			_, err := refresh(t, srv, srv.Client())
+			if err == nil {
+				t.Fatal("Refresh() = nil, want error")
+			}
+			if errors.Is(err, ErrInvalidToken) {
+				t.Errorf("Refresh() error = %v, want a plain error, not ErrInvalidToken", err)
+			}
+		})
+	}
+
+	// oauth2 takes its HTTP client from the context; without it, it would use http.DefaultClient
+	t.Run("uses the configured HTTP client", func(t *testing.T) {
+		srv := newRefreshServer(t, http.StatusOK, "application/x-www-form-urlencoded",
+			"access_token=ghu_new&expires_in=28800&refresh_token=ghr_new&token_type=bearer&scope=")
+
+		var calls int
+		base := srv.Client().Transport
+		client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			calls++
+			return base.RoundTrip(r)
+		})}
+
+		if _, err := refresh(t, srv, client); err != nil {
+			t.Fatalf("Refresh: %v", err)
+		}
+		if calls == 0 {
+			t.Error("configured HTTP client was not used")
+		}
+	})
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestRevoke(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		wantErr bool
+	}{
+		{name: "revoked", status: http.StatusNoContent},
+		{name: "already invalid", status: http.StatusUnprocessableEntity},
+		// a token issued to the old OAuth App, or already deleted
+		{name: "unknown token", status: http.StatusNotFound},
+		{name: "bad client credentials", status: http.StatusUnauthorized, wantErr: true},
+		{name: "server error", status: http.StatusInternalServerError, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodDelete {
+					t.Errorf("method = %s, want DELETE", r.Method)
+				}
+				if r.URL.Path != "/applications/cid/token" {
+					t.Errorf("path = %q, want /applications/cid/token", r.URL.Path)
+				}
+				// Basic auth with the client credentials, never the user token
+				if user, pass, ok := r.BasicAuth(); !ok || user != "cid" || pass != "secret" {
+					t.Errorf("basic auth = %q/%q (ok=%v), want cid/secret", user, pass, ok)
+				}
+				if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+					t.Errorf("Content-Type = %q, want application/json", ct)
+				}
+				var body map[string]string
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decode body: %v", err)
+				}
+				if body["access_token"] != "ghu_old" {
+					t.Errorf("body = %v, want access_token ghu_old", body)
+				}
+				w.WriteHeader(tc.status)
+			}))
+			defer srv.Close()
+
+			gh := NewGitHub(GitHubOptions{ClientID: "cid", ClientSecret: "secret", BaseURL: srv.URL, HTTPClient: srv.Client()})
+			err := gh.Revoke(context.Background(), "ghu_old")
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Fatalf("Revoke() error = %v, want error = %v", err, tc.wantErr)
+			}
+		})
+	}
+
+	t.Run("network error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		srv.Close() // every request now fails before a response exists
+
+		gh := NewGitHub(GitHubOptions{ClientID: "cid", BaseURL: srv.URL, HTTPClient: srv.Client()})
+		if err := gh.Revoke(context.Background(), "ghu_old"); err == nil {
+			t.Fatal("Revoke() = nil, want a network error")
+		}
+	})
 }

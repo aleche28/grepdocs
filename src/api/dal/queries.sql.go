@@ -12,6 +12,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearExternalGitAccountTokens = `-- name: ClearExternalGitAccountTokens :one
+UPDATE external_git_accounts
+SET
+	access_token = '',
+	refresh_token = ''
+WHERE id = $1
+RETURNING id
+`
+
+// Called when the provider rejects the refresh token: the account can only be
+// re-linked, so later lookups fail fast without contacting the provider.
+// Expiries are kept: they still describe the last tokens issued.
+func (q *Queries) ClearExternalGitAccountTokens(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, clearExternalGitAccountTokens, id)
+	err := row.Scan(&id)
+	return id, err
+}
+
 const createRepository = `-- name: CreateRepository :one
 INSERT INTO repositories (
 	user_id,
@@ -82,14 +100,35 @@ func (q *Queries) CreateRepository(ctx context.Context, arg CreateRepositoryPara
 	return i, err
 }
 
-const deleteExternalGitAccount = `-- name: DeleteExternalGitAccount :exec
+const deleteExternalGitAccountByIdAndUserId = `-- name: DeleteExternalGitAccountByIdAndUserId :one
 DELETE FROM external_git_accounts
 WHERE id = $1
+AND user_id = $2
+RETURNING id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at
 `
 
-func (q *Queries) DeleteExternalGitAccount(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, deleteExternalGitAccount, id)
-	return err
+type DeleteExternalGitAccountByIdAndUserIdParams struct {
+	ID     int64
+	UserID int64
+}
+
+func (q *Queries) DeleteExternalGitAccountByIdAndUserId(ctx context.Context, arg DeleteExternalGitAccountByIdAndUserIdParams) (ExternalGitAccount, error) {
+	row := q.db.QueryRow(ctx, deleteExternalGitAccountByIdAndUserId, arg.ID, arg.UserID)
+	var i ExternalGitAccount
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.ProviderUserID,
+		&i.AccessToken,
+		&i.RefreshToken,
+		&i.TokenExpiresAt,
+		&i.LinkedAt,
+		&i.LastRefreshedAt,
+		&i.Label,
+		&i.RefreshTokenExpiresAt,
+	)
+	return i, err
 }
 
 const deleteRepository = `-- name: DeleteRepository :exec
@@ -118,7 +157,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 }
 
 const getExternalGitAccountById = `-- name: GetExternalGitAccountById :one
-SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label FROM external_git_accounts
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at FROM external_git_accounts
 WHERE id = $1 LIMIT 1
 `
 
@@ -136,12 +175,68 @@ func (q *Queries) GetExternalGitAccountById(ctx context.Context, id int64) (Exte
 		&i.LinkedAt,
 		&i.LastRefreshedAt,
 		&i.Label,
+		&i.RefreshTokenExpiresAt,
+	)
+	return i, err
+}
+
+const getExternalGitAccountByIdForUpdate = `-- name: GetExternalGitAccountByIdForUpdate :one
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at FROM external_git_accounts
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) GetExternalGitAccountByIdForUpdate(ctx context.Context, id int64) (ExternalGitAccount, error) {
+	row := q.db.QueryRow(ctx, getExternalGitAccountByIdForUpdate, id)
+	var i ExternalGitAccount
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.ProviderUserID,
+		&i.AccessToken,
+		&i.RefreshToken,
+		&i.TokenExpiresAt,
+		&i.LinkedAt,
+		&i.LastRefreshedAt,
+		&i.Label,
+		&i.RefreshTokenExpiresAt,
+	)
+	return i, err
+}
+
+const getExternalGitAccountByIdentity = `-- name: GetExternalGitAccountByIdentity :one
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at FROM external_git_accounts
+WHERE user_id = $1 AND provider = $2 AND provider_user_id = $3
+`
+
+type GetExternalGitAccountByIdentityParams struct {
+	UserID         int64
+	Provider       string
+	ProviderUserID string
+}
+
+func (q *Queries) GetExternalGitAccountByIdentity(ctx context.Context, arg GetExternalGitAccountByIdentityParams) (ExternalGitAccount, error) {
+	row := q.db.QueryRow(ctx, getExternalGitAccountByIdentity, arg.UserID, arg.Provider, arg.ProviderUserID)
+	var i ExternalGitAccount
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.ProviderUserID,
+		&i.AccessToken,
+		&i.RefreshToken,
+		&i.TokenExpiresAt,
+		&i.LinkedAt,
+		&i.LastRefreshedAt,
+		&i.Label,
+		&i.RefreshTokenExpiresAt,
 	)
 	return i, err
 }
 
 const getExternalGitAccountsByUserID = `-- name: GetExternalGitAccountsByUserID :many
-SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label FROM external_git_accounts
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at FROM external_git_accounts
 WHERE user_id = $1
 `
 
@@ -165,6 +260,7 @@ func (q *Queries) GetExternalGitAccountsByUserID(ctx context.Context, userID int
 			&i.LinkedAt,
 			&i.LastRefreshedAt,
 			&i.Label,
+			&i.RefreshTokenExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -177,7 +273,7 @@ func (q *Queries) GetExternalGitAccountsByUserID(ctx context.Context, userID int
 }
 
 const getExternalGitAccountsByUserIDAndProvider = `-- name: GetExternalGitAccountsByUserIDAndProvider :many
-SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label FROM external_git_accounts
+SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at FROM external_git_accounts
 WHERE user_id = $1 AND provider = $2
 `
 
@@ -206,6 +302,7 @@ func (q *Queries) GetExternalGitAccountsByUserIDAndProvider(ctx context.Context,
 			&i.LinkedAt,
 			&i.LastRefreshedAt,
 			&i.Label,
+			&i.RefreshTokenExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -341,31 +438,39 @@ func (q *Queries) GetUserById(ctx context.Context, id int64) (User, error) {
 	return i, err
 }
 
-const updateExternalGitAccountTokens = `-- name: UpdateExternalGitAccountTokens :exec
+const updateExternalGitAccountTokens = `-- name: UpdateExternalGitAccountTokens :one
 UPDATE external_git_accounts
 SET 
 	access_token = $2,
-	refresh_token = COALESCE($3, refresh_token),
-	token_expires_at = $4,
+	refresh_token = COALESCE(NULLIF($4::text, ''), refresh_token),
+	token_expires_at = $3,
+	refresh_token_expires_at = CASE
+		WHEN $4::text <> '' THEN $5::timestamptz
+		ELSE refresh_token_expires_at END,
 	last_refreshed_at = NOW()
 WHERE id = $1
+RETURNING id
 `
 
 type UpdateExternalGitAccountTokensParams struct {
-	ID             int64
-	AccessToken    string
-	RefreshToken   string
-	TokenExpiresAt *time.Time
+	ID                    int64
+	AccessToken           string
+	TokenExpiresAt        *time.Time
+	RefreshToken          string
+	RefreshTokenExpiresAt *time.Time
 }
 
-func (q *Queries) UpdateExternalGitAccountTokens(ctx context.Context, arg UpdateExternalGitAccountTokensParams) error {
-	_, err := q.db.Exec(ctx, updateExternalGitAccountTokens,
+func (q *Queries) UpdateExternalGitAccountTokens(ctx context.Context, arg UpdateExternalGitAccountTokensParams) (int64, error) {
+	row := q.db.QueryRow(ctx, updateExternalGitAccountTokens,
 		arg.ID,
 		arg.AccessToken,
-		arg.RefreshToken,
 		arg.TokenExpiresAt,
+		arg.RefreshToken,
+		arg.RefreshTokenExpiresAt,
 	)
-	return err
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const updateRepository = `-- name: UpdateRepository :one
@@ -442,26 +547,31 @@ INSERT INTO external_git_accounts (
 	provider_user_id,
 	access_token,
 	refresh_token,
-	token_expires_at
+	token_expires_at,
+	refresh_token_expires_at
 ) VALUES (
-	$1, $2, $3, $4, $5, $6
+	$1, $2, $3, $4, $5, $6, $7
 )
 ON CONFLICT (user_id, provider, provider_user_id)
 	DO UPDATE SET
 		access_token = EXCLUDED.access_token,
 		refresh_token = COALESCE(NULLIF(EXCLUDED.refresh_token, ''), external_git_accounts.refresh_token),
 		token_expires_at = EXCLUDED.token_expires_at,
+		refresh_token_expires_at = CASE
+			WHEN EXCLUDED.refresh_token <> '' THEN EXCLUDED.refresh_token_expires_at
+			ELSE external_git_accounts.refresh_token_expires_at END,
 		last_refreshed_at = NOW()
-RETURNING id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label
+RETURNING id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at
 `
 
 type UpsertExternalGitAccountParams struct {
-	UserID         int64
-	Provider       string
-	ProviderUserID string
-	AccessToken    string
-	RefreshToken   string
-	TokenExpiresAt *time.Time
+	UserID                int64
+	Provider              string
+	ProviderUserID        string
+	AccessToken           string
+	RefreshToken          string
+	TokenExpiresAt        *time.Time
+	RefreshTokenExpiresAt *time.Time
 }
 
 func (q *Queries) UpsertExternalGitAccount(ctx context.Context, arg UpsertExternalGitAccountParams) (ExternalGitAccount, error) {
@@ -472,6 +582,7 @@ func (q *Queries) UpsertExternalGitAccount(ctx context.Context, arg UpsertExtern
 		arg.AccessToken,
 		arg.RefreshToken,
 		arg.TokenExpiresAt,
+		arg.RefreshTokenExpiresAt,
 	)
 	var i ExternalGitAccount
 	err := row.Scan(
@@ -485,6 +596,7 @@ func (q *Queries) UpsertExternalGitAccount(ctx context.Context, arg UpsertExtern
 		&i.LinkedAt,
 		&i.LastRefreshedAt,
 		&i.Label,
+		&i.RefreshTokenExpiresAt,
 	)
 	return i, err
 }
