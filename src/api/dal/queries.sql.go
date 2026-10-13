@@ -45,7 +45,7 @@ INSERT INTO repositories (
 	tracked_branch
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at
+RETURNING id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at, sync_error, sync_started_at
 `
 
 type CreateRepositoryParams struct {
@@ -96,6 +96,8 @@ func (q *Queries) CreateRepository(ctx context.Context, arg CreateRepositoryPara
 		&i.LastSyncAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SyncError,
+		&i.SyncStartedAt,
 	)
 	return i, err
 }
@@ -315,7 +317,7 @@ func (q *Queries) GetExternalGitAccountsByUserIDAndProvider(ctx context.Context,
 }
 
 const getRepositoriesByUserID = `-- name: GetRepositoriesByUserID :many
-SELECT id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at FROM repositories
+SELECT id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at, sync_error, sync_started_at FROM repositories
 WHERE user_id = $1
 ORDER BY owner, name
 `
@@ -348,6 +350,8 @@ func (q *Queries) GetRepositoriesByUserID(ctx context.Context, userID int64) ([]
 			&i.LastSyncAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SyncError,
+			&i.SyncStartedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -360,7 +364,7 @@ func (q *Queries) GetRepositoriesByUserID(ctx context.Context, userID int64) ([]
 }
 
 const getRepositoryByIDAndUserID = `-- name: GetRepositoryByIDAndUserID :one
-SELECT id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at FROM repositories
+SELECT id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at, sync_error, sync_started_at FROM repositories
 WHERE id = $1 AND user_id = $2
 LIMIT 1
 `
@@ -392,6 +396,8 @@ func (q *Queries) GetRepositoryByIDAndUserID(ctx context.Context, arg GetReposit
 		&i.LastSyncAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SyncError,
+		&i.SyncStartedAt,
 	)
 	return i, err
 }
@@ -483,7 +489,7 @@ SET
 	last_sync_at = CASE WHEN $5::boolean THEN NULL ELSE last_sync_at END,
 	updated_at = NOW()
 WHERE id = $1 AND user_id = $2
-RETURNING id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at
+RETURNING id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at, sync_error, sync_started_at
 `
 
 type UpdateRepositoryParams struct {
@@ -525,6 +531,8 @@ func (q *Queries) UpdateRepository(ctx context.Context, arg UpdateRepositoryPara
 		&i.LastSyncAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SyncError,
+		&i.SyncStartedAt,
 	)
 	return i, err
 }
