@@ -12,6 +12,54 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const claimRepositorySync = `-- name: ClaimRepositorySync :one
+UPDATE repositories
+SET sync_status = 'queued', updated_at = NOW()
+WHERE id = $1 AND user_id = $2 AND sync_status NOT IN ('queued', 'running')
+RETURNING id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at, sync_error, sync_started_at
+`
+
+type ClaimRepositorySyncParams struct {
+	ID     int64
+	UserID int64
+}
+
+// basically, the caller locks the repo for syncing
+// if it's already running, this does not return anything, so the caller
+// is not locking it, because someone else is already syncing it (either queued or running)
+// otherwise, this returns the locked row and the caller can perform the syncing.
+// the row is considered lock until the caller (or a recovery mechanism is case it gets stuck)
+// will update the row with sync status 'ok' or 'failed'
+// NOTE: there is no 'queued_at' timestamp, cause the sync shouldn't get queued element stuck:
+// if the program crashes, it should retrieve all the queued rows and start processing them
+func (q *Queries) ClaimRepositorySync(ctx context.Context, arg ClaimRepositorySyncParams) (Repository, error) {
+	row := q.db.QueryRow(ctx, claimRepositorySync, arg.ID, arg.UserID)
+	var i Repository
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AccountID,
+		&i.Provider,
+		&i.ProviderRepoID,
+		&i.Owner,
+		&i.Name,
+		&i.FullName,
+		&i.HtmlUrl,
+		&i.IsPrivate,
+		&i.DefaultBranch,
+		&i.TrackedBranch,
+		&i.SyncedCommit,
+		&i.SyncStatus,
+		&i.AutoSync,
+		&i.LastSyncAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SyncError,
+		&i.SyncStartedAt,
+	)
+	return i, err
+}
+
 const clearExternalGitAccountTokens = `-- name: ClearExternalGitAccountTokens :one
 UPDATE external_git_accounts
 SET
@@ -156,6 +204,39 @@ WHERE id = $1
 func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, deleteUser, id)
 	return err
+}
+
+const finalizeRepositorySync = `-- name: FinalizeRepositorySync :execrows
+UPDATE repositories
+SET
+	synced_commit = $1,
+	sync_status = 'ok',
+	sync_error = NULL,
+	sync_started_at = NULL,
+	last_sync_at = NOW(),
+	updated_at = NOW()
+WHERE id = $2 AND user_id = $3
+AND tracked_branch = $4 AND sync_status = 'running'
+`
+
+type FinalizeRepositorySyncParams struct {
+	SyncedCommit  pgtype.Text
+	ID            int64
+	UserID        int64
+	TrackedBranch string
+}
+
+func (q *Queries) FinalizeRepositorySync(ctx context.Context, arg FinalizeRepositorySyncParams) (int64, error) {
+	result, err := q.db.Exec(ctx, finalizeRepositorySync,
+		arg.SyncedCommit,
+		arg.ID,
+		arg.UserID,
+		arg.TrackedBranch,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getExternalGitAccountById = `-- name: GetExternalGitAccountById :one
@@ -442,6 +523,82 @@ func (q *Queries) GetUserById(ctx context.Context, id int64) (User, error) {
 		&i.LastLoginAt,
 	)
 	return i, err
+}
+
+const markRepositorySyncAsFailed = `-- name: MarkRepositorySyncAsFailed :exec
+UPDATE repositories
+SET
+	sync_status = 'failed',
+	sync_error = $1,
+	sync_started_at = NULL,
+	updated_at = NOW()
+WHERE id = $2 AND user_id = $3
+`
+
+type MarkRepositorySyncAsFailedParams struct {
+	SyncError pgtype.Text
+	ID        int64
+	UserID    int64
+}
+
+func (q *Queries) MarkRepositorySyncAsFailed(ctx context.Context, arg MarkRepositorySyncAsFailedParams) error {
+	_, err := q.db.Exec(ctx, markRepositorySyncAsFailed, arg.SyncError, arg.ID, arg.UserID)
+	return err
+}
+
+const markRepositorySyncAsRunning = `-- name: MarkRepositorySyncAsRunning :execrows
+UPDATE repositories
+SET
+	sync_status = 'running',
+	sync_error = NULL,
+	sync_started_at = NOW(),
+	updated_at = NOW()
+WHERE id = $1 AND user_id = $2 AND sync_status = 'queued'
+`
+
+type MarkRepositorySyncAsRunningParams struct {
+	ID     int64
+	UserID int64
+}
+
+func (q *Queries) MarkRepositorySyncAsRunning(ctx context.Context, arg MarkRepositorySyncAsRunningParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markRepositorySyncAsRunning, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const resetStuckRepositorySyncs = `-- name: ResetStuckRepositorySyncs :many
+UPDATE repositories
+SET
+	sync_status = 'queued',
+	sync_started_at = NULL,
+	updated_at = NOW()
+WHERE sync_status IN ('queued', 'running')
+RETURNING id
+`
+
+// NOTE: this only works fine is only one server handles the queue, otherwise
+// a server could reset a running job of another instance
+func (q *Queries) ResetStuckRepositorySyncs(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.Query(ctx, resetStuckRepositorySyncs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateExternalGitAccountTokens = `-- name: UpdateExternalGitAccountTokens :one

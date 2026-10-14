@@ -11,11 +11,12 @@ import (
 )
 
 type Document struct {
-	RepositoryID pgtype.Int8
+	ID           int64
+	RepositoryID int64
 	Path         string
 	BlobSha      string
 	Content      string
-	SyncedAt     *time.Time
+	SyncedAt     time.Time
 }
 
 type ExternalGitAccount struct {

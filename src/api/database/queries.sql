@@ -138,6 +138,8 @@ SET
 	synced_commit = CASE WHEN sqlc.arg(reset_sync)::boolean THEN NULL ELSE synced_commit END,
 	sync_status = CASE WHEN sqlc.arg(reset_sync)::boolean THEN 'pending' ELSE sync_status END,
 	last_sync_at = CASE WHEN sqlc.arg(reset_sync)::boolean THEN NULL ELSE last_sync_at END,
+	sync_error = CASE WHEN sqlc.arg(reset_sync)::boolean THEN NULL ELSE sync_error END,
+	sync_started_at = CASE WHEN sqlc.arg(reset_sync)::boolean THEN NULL ELSE sync_started_at END,
 	updated_at = NOW()
 WHERE id = $1 AND user_id = $2
 RETURNING *;
@@ -145,3 +147,58 @@ RETURNING *;
 -- name: DeleteRepository :exec
 DELETE FROM repositories
 WHERE id = $1 AND user_id = $2;
+
+-- name: ClaimRepositorySync :one
+-- basically, the caller locks the repo for syncing
+-- if it's already running, this does not return anything, so the caller
+-- is not locking it, because someone else is already syncing it (either queued or running)
+-- otherwise, this returns the locked row and the caller can perform the syncing.
+-- the row is considered lock until the caller (or a recovery mechanism is case it gets stuck)
+-- will update the row with sync status 'ok' or 'failed'
+-- NOTE: there is no 'queued_at' timestamp, cause the sync shouldn't get queued element stuck:
+-- if the program crashes, it should retrieve all the queued rows and start processing them
+UPDATE repositories
+SET sync_status = 'queued', updated_at = NOW()
+WHERE id = $1 AND user_id = $2 AND sync_status NOT IN ('queued', 'running')
+RETURNING *;
+
+-- name: MarkRepositorySyncAsRunning :execrows
+UPDATE repositories
+SET
+	sync_status = 'running',
+	sync_error = NULL,
+	sync_started_at = NOW(),
+	updated_at = NOW()
+WHERE id = $1 AND user_id = $2 AND sync_status = 'queued';
+
+-- name: MarkRepositorySyncAsFailed :exec
+UPDATE repositories
+SET
+	sync_status = 'failed',
+	sync_error = $1,
+	sync_started_at = NULL,
+	updated_at = NOW()
+WHERE id = $2 AND user_id = $3 AND sync_status IN ('queued', 'running');
+
+-- name: FinalizeRepositorySync :execrows
+UPDATE repositories
+SET
+	synced_commit = $1,
+	sync_status = 'ok',
+	sync_error = NULL,
+	sync_started_at = NULL,
+	last_sync_at = NOW(),
+	updated_at = NOW()
+WHERE id = $2 AND user_id = $3
+AND tracked_branch = $4 AND sync_status = 'running';
+
+-- name: ResetStuckRepositorySyncs :many
+-- NOTE: this only works fine is only one server handles the queue, otherwise
+-- a server could reset a running job of another instance
+UPDATE repositories
+SET
+	sync_status = 'queued',
+	sync_started_at = NULL,
+	updated_at = NOW()
+WHERE sync_status IN ('queued', 'running')
+RETURNING id; -- return id so they can be enqueued again
