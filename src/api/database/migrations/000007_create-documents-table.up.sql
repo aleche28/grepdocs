@@ -1,13 +1,12 @@
 CREATE TABLE IF NOT EXISTS documents (
-	repository_id BIGINT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+	id BIGSERIAL PRIMARY KEY,
+	repository_id BIGINT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
 	path TEXT NOT NULL,
 	blob_sha TEXT NOT NULL,
 	content TEXT NOT NULL,
-	synced_at TIMESTAMPTZ DEFAULT NOW(),
+	synced_at TIMESTAMPTZ NOT NULL,
 	UNIQUE(repository_id, path)
 );
-
-CREATE INDEX IF NOT EXISTS idx_documents_repository ON documents(repository_id);
 
 ALTER TABLE repositories
 	ADD COLUMN sync_error TEXT NULL,
