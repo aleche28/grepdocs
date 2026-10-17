@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -649,6 +650,231 @@ func TestRevoke(t *testing.T) {
 		gh := NewGitHub(GitHubOptions{ClientID: "cid", BaseURL: srv.URL, HTTPClient: srv.Client()})
 		if err := gh.Revoke(context.Background(), "ghu_old"); err == nil {
 			t.Fatal("Revoke() = nil, want a network error")
+		}
+	})
+}
+
+func TestGetBranch(t *testing.T) {
+	t.Run("happy path", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if got := r.Header.Get("Authorization"); got != "token tok" {
+				t.Errorf("Authorization = %q, want %q", got, "token tok")
+			}
+			if r.URL.Path != "/repos/acme/docs/branches/main" {
+				t.Errorf("path = %q, want /repos/acme/docs/branches/main", r.URL.Path)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"name":"main","protected":true,"commit":{"sha":"abc123","url":"ignored"}}`)
+		}))
+		defer srv.Close()
+
+		gh := NewGitHub(GitHubOptions{BaseURL: srv.URL, HTTPClient: srv.Client()})
+		branch, err := gh.GetBranch(context.Background(), "tok", "acme", "docs", "main")
+		if err != nil {
+			t.Fatalf("GetBranch: %v", err)
+		}
+
+		want := Branch{Name: "main", Commit: "abc123", Protected: true}
+		if branch != want {
+			t.Errorf("GetBranch() = %+v, want %+v", branch, want)
+		}
+	})
+
+	t.Run("escapes a slash in the branch name", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// r.URL.Path is decoded, so only the escaped form tells %2F from /
+			if got := r.URL.EscapedPath(); got != "/repos/acme/docs/branches/feature%2Fdocs" {
+				t.Errorf("escaped path = %q, want /repos/acme/docs/branches/feature%%2Fdocs", got)
+			}
+			io.WriteString(w, `{"name":"feature/docs","commit":{"sha":"abc123"}}`)
+		}))
+		defer srv.Close()
+
+		gh := NewGitHub(GitHubOptions{BaseURL: srv.URL, HTTPClient: srv.Client()})
+		if _, err := gh.GetBranch(context.Background(), "tok", "acme", "docs", "feature/docs"); err != nil {
+			t.Fatalf("GetBranch: %v", err)
+		}
+	})
+}
+
+func TestGetTree(t *testing.T) {
+	t.Run("keeps only regular files", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/repos/acme/docs/git/trees/abc123" {
+				t.Errorf("path = %q, want /repos/acme/docs/git/trees/abc123", r.URL.Path)
+			}
+			if got := r.URL.Query().Get("recursive"); got != "1" {
+				t.Errorf("recursive = %q, want 1", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"sha":"tree1","truncated":false,"tree":[
+				{"path":"README.md","mode":"100644","type":"blob","sha":"b1","size":10},
+				{"path":"docs","mode":"040000","type":"tree","sha":"t1"},
+				{"path":"docs/run.sh","mode":"100755","type":"blob","sha":"b2","size":20},
+				{"path":"docs/link.md","mode":"120000","type":"blob","sha":"b3","size":9},
+				{"path":"vendor/lib","mode":"160000","type":"commit","sha":"c1"}
+			]}`)
+		}))
+		defer srv.Close()
+
+		gh := NewGitHub(GitHubOptions{BaseURL: srv.URL, HTTPClient: srv.Client()})
+		tree, err := gh.GetTree(context.Background(), "tok", "acme", "docs", "abc123")
+		if err != nil {
+			t.Fatalf("GetTree: %v", err)
+		}
+
+		if tree.SHA != "tree1" {
+			t.Errorf("SHA = %q, want tree1", tree.SHA)
+		}
+		// directories, symlinks (120000) and submodules (160000) are dropped
+		want := []TreeEntry{
+			{Path: "README.md", SHA: "b1", Size: 10},
+			{Path: "docs/run.sh", SHA: "b2", Size: 20},
+		}
+		if !slices.Equal(tree.Tree, want) {
+			t.Errorf("Tree = %+v, want %+v", tree.Tree, want)
+		}
+	})
+
+	t.Run("truncated", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"sha":"tree1","truncated":true,"tree":[{"path":"README.md","mode":"100644","type":"blob","sha":"b1"}]}`)
+		}))
+		defer srv.Close()
+
+		gh := NewGitHub(GitHubOptions{BaseURL: srv.URL, HTTPClient: srv.Client()})
+		if _, err := gh.GetTree(context.Background(), "tok", "acme", "docs", "abc123"); !errors.Is(err, ErrTreeTruncated) {
+			t.Fatalf("GetTree() = %v, want %v", err, ErrTreeTruncated)
+		}
+	})
+}
+
+func TestGetBlob(t *testing.T) {
+	t.Run("returns raw content", func(t *testing.T) {
+		// not valid UTF-8: the provider must return the bytes untouched
+		content := "# Title\n\xff\n"
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/repos/acme/docs/git/blobs/b1" {
+				t.Errorf("path = %q, want /repos/acme/docs/git/blobs/b1", r.URL.Path)
+			}
+			// exactly one value: a second (the default JSON type) would let GitHub
+			// answer with base64 JSON instead of the raw file
+			if got := r.Header.Values("Accept"); !slices.Equal(got, []string{"application/vnd.github.raw+json"}) {
+				t.Errorf("Accept = %q, want only application/vnd.github.raw+json", got)
+			}
+			io.WriteString(w, content)
+		}))
+		defer srv.Close()
+
+		gh := NewGitHub(GitHubOptions{BaseURL: srv.URL, HTTPClient: srv.Client()})
+		got, err := gh.GetBlob(context.Background(), "tok", "acme", "docs", "b1")
+		if err != nil {
+			t.Fatalf("GetBlob: %v", err)
+		}
+		if string(got) != content {
+			t.Errorf("GetBlob() = %q, want %q", got, content)
+		}
+	})
+
+	for _, tc := range []struct {
+		name    string
+		size    int64
+		wantErr error
+	}{
+		{name: "at the limit", size: maxBlobContentBytes},
+		{name: "over the limit", size: maxBlobContentBytes + 1, wantErr: ErrContentTooLarge},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if testing.Short() {
+				t.Skip("streams a blob of the size limit")
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				io.CopyN(w, zeroReader{}, tc.size)
+			}))
+			defer srv.Close()
+
+			gh := NewGitHub(GitHubOptions{BaseURL: srv.URL, HTTPClient: srv.Client()})
+			got, err := gh.GetBlob(context.Background(), "tok", "acme", "docs", "b1")
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("GetBlob() error = %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantErr == nil && int64(len(got)) != tc.size {
+				t.Errorf("len(GetBlob()) = %d, want %d", len(got), tc.size)
+			}
+		})
+	}
+}
+
+// zeroReader is an endless stream of zero bytes.
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
+}
+
+// TestGitObjectErrors covers the failure paths shared by GetBranch, GetTree and GetBlob.
+func TestGitObjectErrors(t *testing.T) {
+	methods := map[string]func(gh *GitHubProvider) error{
+		"GetBranch": func(gh *GitHubProvider) error {
+			_, err := gh.GetBranch(context.Background(), "tok", "acme", "docs", "main")
+			return err
+		},
+		"GetTree": func(gh *GitHubProvider) error {
+			_, err := gh.GetTree(context.Background(), "tok", "acme", "docs", "abc123")
+			return err
+		},
+		"GetBlob": func(gh *GitHubProvider) error {
+			_, err := gh.GetBlob(context.Background(), "tok", "acme", "docs", "b1")
+			return err
+		},
+	}
+
+	tests := []struct {
+		name    string
+		status  int
+		body    string
+		wantErr error // nil means any error
+	}{
+		{name: "not found", status: http.StatusNotFound, wantErr: ErrNotFound},
+		{name: "invalid token", status: http.StatusUnauthorized, wantErr: ErrInvalidToken},
+		{name: "rate limited", status: http.StatusTooManyRequests, wantErr: ErrRateLimited},
+		{name: "server error", status: http.StatusInternalServerError},
+		// GetBlob reads raw bytes, so a body that is not JSON is valid content there
+		{name: "malformed json", status: http.StatusOK, body: `{not json`},
+	}
+
+	for name, call := range methods {
+		for _, tc := range tests {
+			if name == "GetBlob" && tc.name == "malformed json" {
+				continue
+			}
+			t.Run(name+"/"+tc.name, func(t *testing.T) {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(tc.status)
+					io.WriteString(w, tc.body)
+				}))
+				defer srv.Close()
+
+				err := call(NewGitHub(GitHubOptions{BaseURL: srv.URL, HTTPClient: srv.Client()}))
+				if err == nil {
+					t.Fatalf("%s() = nil, want an error", name)
+				}
+				if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+					t.Fatalf("%s() = %v, want %v", name, err, tc.wantErr)
+				}
+			})
+		}
+	}
+
+	t.Run("network error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		srv.Close() // every request now fails before a response exists
+
+		for name, call := range methods {
+			if err := call(NewGitHub(GitHubOptions{BaseURL: srv.URL, HTTPClient: srv.Client()})); err == nil {
+				t.Errorf("%s() = nil, want a network error", name)
+			}
 		}
 	})
 }
