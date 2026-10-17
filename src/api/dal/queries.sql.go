@@ -215,24 +215,18 @@ SET
 	sync_started_at = NULL,
 	last_sync_at = NOW(),
 	updated_at = NOW()
-WHERE id = $2 AND user_id = $3
-AND tracked_branch = $4 AND sync_status = 'running'
+WHERE id = $2
+AND tracked_branch = $3 AND sync_status = 'running'
 `
 
 type FinalizeRepositorySyncParams struct {
 	SyncedCommit  pgtype.Text
 	ID            int64
-	UserID        int64
 	TrackedBranch string
 }
 
 func (q *Queries) FinalizeRepositorySync(ctx context.Context, arg FinalizeRepositorySyncParams) (int64, error) {
-	result, err := q.db.Exec(ctx, finalizeRepositorySync,
-		arg.SyncedCommit,
-		arg.ID,
-		arg.UserID,
-		arg.TrackedBranch,
-	)
+	result, err := q.db.Exec(ctx, finalizeRepositorySync, arg.SyncedCommit, arg.ID, arg.TrackedBranch)
 	if err != nil {
 		return 0, err
 	}
@@ -444,6 +438,40 @@ func (q *Queries) GetRepositoriesByUserID(ctx context.Context, userID int64) ([]
 	return items, nil
 }
 
+const getRepositoryByID = `-- name: GetRepositoryByID :one
+SELECT id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at, sync_error, sync_started_at FROM repositories
+WHERE id = $1
+LIMIT 1
+`
+
+func (q *Queries) GetRepositoryByID(ctx context.Context, id int64) (Repository, error) {
+	row := q.db.QueryRow(ctx, getRepositoryByID, id)
+	var i Repository
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AccountID,
+		&i.Provider,
+		&i.ProviderRepoID,
+		&i.Owner,
+		&i.Name,
+		&i.FullName,
+		&i.HtmlUrl,
+		&i.IsPrivate,
+		&i.DefaultBranch,
+		&i.TrackedBranch,
+		&i.SyncedCommit,
+		&i.SyncStatus,
+		&i.AutoSync,
+		&i.LastSyncAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SyncError,
+		&i.SyncStartedAt,
+	)
+	return i, err
+}
+
 const getRepositoryByIDAndUserID = `-- name: GetRepositoryByIDAndUserID :one
 SELECT id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at, sync_error, sync_started_at FROM repositories
 WHERE id = $1 AND user_id = $2
@@ -532,17 +560,16 @@ SET
 	sync_error = $1,
 	sync_started_at = NULL,
 	updated_at = NOW()
-WHERE id = $2 AND user_id = $3
+WHERE id = $2 AND sync_status IN ('queued', 'running')
 `
 
 type MarkRepositorySyncAsFailedParams struct {
 	SyncError pgtype.Text
 	ID        int64
-	UserID    int64
 }
 
 func (q *Queries) MarkRepositorySyncAsFailed(ctx context.Context, arg MarkRepositorySyncAsFailedParams) error {
-	_, err := q.db.Exec(ctx, markRepositorySyncAsFailed, arg.SyncError, arg.ID, arg.UserID)
+	_, err := q.db.Exec(ctx, markRepositorySyncAsFailed, arg.SyncError, arg.ID)
 	return err
 }
 
@@ -553,16 +580,11 @@ SET
 	sync_error = NULL,
 	sync_started_at = NOW(),
 	updated_at = NOW()
-WHERE id = $1 AND user_id = $2 AND sync_status = 'queued'
+WHERE id = $1 AND sync_status = 'queued'
 `
 
-type MarkRepositorySyncAsRunningParams struct {
-	ID     int64
-	UserID int64
-}
-
-func (q *Queries) MarkRepositorySyncAsRunning(ctx context.Context, arg MarkRepositorySyncAsRunningParams) (int64, error) {
-	result, err := q.db.Exec(ctx, markRepositorySyncAsRunning, arg.ID, arg.UserID)
+func (q *Queries) MarkRepositorySyncAsRunning(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, markRepositorySyncAsRunning, id)
 	if err != nil {
 		return 0, err
 	}
@@ -644,6 +666,8 @@ SET
 	synced_commit = CASE WHEN $5::boolean THEN NULL ELSE synced_commit END,
 	sync_status = CASE WHEN $5::boolean THEN 'pending' ELSE sync_status END,
 	last_sync_at = CASE WHEN $5::boolean THEN NULL ELSE last_sync_at END,
+	sync_error = CASE WHEN $5::boolean THEN NULL ELSE sync_error END,
+	sync_started_at = CASE WHEN $5::boolean THEN NULL ELSE sync_started_at END,
 	updated_at = NOW()
 WHERE id = $1 AND user_id = $2
 RETURNING id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at, sync_error, sync_started_at

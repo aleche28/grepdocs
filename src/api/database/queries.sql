@@ -110,6 +110,11 @@ SELECT * FROM repositories
 WHERE id = $1 AND user_id = $2
 LIMIT 1;
 
+-- name: GetRepositoryByID :one
+SELECT * FROM repositories
+WHERE id = $1
+LIMIT 1;
+
 -- name: CreateRepository :one
 INSERT INTO repositories (
 	user_id,
@@ -169,7 +174,7 @@ SET
 	sync_error = NULL,
 	sync_started_at = NOW(),
 	updated_at = NOW()
-WHERE id = $1 AND user_id = $2 AND sync_status = 'queued';
+WHERE id = $1 AND sync_status = 'queued';
 
 -- name: MarkRepositorySyncAsFailed :exec
 UPDATE repositories
@@ -178,7 +183,7 @@ SET
 	sync_error = $1,
 	sync_started_at = NULL,
 	updated_at = NOW()
-WHERE id = $2 AND user_id = $3 AND sync_status IN ('queued', 'running');
+WHERE id = $2 AND sync_status IN ('queued', 'running');
 
 -- name: FinalizeRepositorySync :execrows
 UPDATE repositories
@@ -189,8 +194,8 @@ SET
 	sync_started_at = NULL,
 	last_sync_at = NOW(),
 	updated_at = NOW()
-WHERE id = $2 AND user_id = $3
-AND tracked_branch = $4 AND sync_status = 'running';
+WHERE id = $2
+AND tracked_branch = $3 AND sync_status = 'running';
 
 -- name: ResetStuckRepositorySyncs :many
 -- NOTE: this only works fine is only one server handles the queue, otherwise
