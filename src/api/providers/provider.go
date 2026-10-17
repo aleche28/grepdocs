@@ -11,6 +11,8 @@ var (
 	ErrRateLimited     = errors.New("provider rate limit exceeded")
 	ErrNotFound        = errors.New("provider resource not found")
 	ErrAppNotInstalled = errors.New("provider app not installed")
+	ErrTreeTruncated   = errors.New("tree too large")
+	ErrContentTooLarge = errors.New("content too large")
 )
 
 type User struct {
@@ -37,6 +39,18 @@ type Branch struct {
 	Protected bool   `json:"protected"`
 }
 
+type Tree struct {
+	SHA string `json:"sha"`
+	// this is returned flat, the hierarchy can only be derived from the path
+	Tree []TreeEntry `json:"tree"`
+}
+
+type TreeEntry struct {
+	Path string `json:"path"`
+	SHA  string `json:"sha"`
+	Size int64  `json:"size"`
+}
+
 type Token struct {
 	AccessToken   string
 	Expiry        *time.Time
@@ -52,6 +66,9 @@ type Provider interface {
 	ListRepositories(ctx context.Context, accessToken string) ([]Repository, error)
 	GetRepository(ctx context.Context, accessToken string, owner string, name string) (Repository, error)
 	ListBranches(ctx context.Context, accessToken string, owner string, name string) ([]Branch, error)
+	GetBranch(ctx context.Context, accessToken string, owner string, name string, branch string) (Branch, error)
+	GetTree(ctx context.Context, accessToken string, owner string, name string, sha string) (Tree, error)
+	GetBlob(ctx context.Context, accessToken string, owner string, name string, sha string) ([]byte, error)
 }
 
 // Refresher is implemented by providers whose token can be refreshed

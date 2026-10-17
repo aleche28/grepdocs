@@ -22,6 +22,9 @@ const GitHub = "github"
 // Bound the size of GitHub API response bodies before decoding
 const maxGitHubResponseBytes = 8 * 1024 * 1024
 
+// Bound the size of blob content
+const maxBlobContentBytes = 5 * 1024 * 1024
+
 // Safety cap for pagination (100 pages * 100 repos = 10000 repos)
 const maxGitHubPages = 100
 
@@ -315,6 +318,105 @@ func (ghp *GitHubProvider) Revoke(ctx context.Context, accessToken string) error
 	return nil
 }
 
+func (ghp *GitHubProvider) GetBranch(ctx context.Context, accessToken string, owner string, name string, branch string) (Branch, error) {
+	reqURL := fmt.Sprintf("%s/repos/%s/%s/branches/%s", ghp.options.BaseURL, url.PathEscape(owner), url.PathEscape(name), url.PathEscape(branch))
+	req, err := newGitHubGetRequest(ctx, reqURL, accessToken)
+	if err != nil {
+		return Branch{}, fmt.Errorf("failed to fetch branch: %w", err)
+	}
+
+	resp, err := ghp.options.HTTPClient.Do(req)
+	if err != nil {
+		return Branch{}, fmt.Errorf("failed to fetch branch: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return Branch{}, classifyGitHubResponse(resp)
+	}
+
+	var ghBranch githubBranch
+	err = json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseBytes)).Decode(&ghBranch)
+	resp.Body.Close()
+	if err != nil {
+		return Branch{}, fmt.Errorf("failed to parse branch data: %w", err)
+	}
+
+	b := Branch{
+		Name:      ghBranch.Name,
+		Protected: ghBranch.Protected,
+		Commit:    ghBranch.Commit.Sha,
+	}
+	return b, nil
+}
+
+func (ghp *GitHubProvider) GetTree(ctx context.Context, accessToken string, owner string, name string, sha string) (Tree, error) {
+	reqURL := fmt.Sprintf("%s/repos/%s/%s/git/trees/%s?recursive=1", ghp.options.BaseURL, url.PathEscape(owner), url.PathEscape(name), url.PathEscape(sha))
+	req, err := newGitHubGetRequest(ctx, reqURL, accessToken)
+	if err != nil {
+		return Tree{}, fmt.Errorf("failed to fetch git tree: %w", err)
+	}
+
+	resp, err := ghp.options.HTTPClient.Do(req)
+	if err != nil {
+		return Tree{}, fmt.Errorf("failed to fetch git tree: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return Tree{}, classifyGitHubResponse(resp)
+	}
+
+	var ghTree githubTree
+	err = json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseBytes)).Decode(&ghTree)
+	resp.Body.Close()
+	if err != nil {
+		return Tree{}, fmt.Errorf("failed to parse git tree data: %w", err)
+	}
+
+	// maybe in the future there will be a method to navigate the tree level by level
+	// to support also large trees
+	if ghTree.Truncated {
+		return Tree{}, ErrTreeTruncated
+	}
+
+	return toTree(ghTree), nil
+}
+
+func (ghp *GitHubProvider) GetBlob(ctx context.Context, accessToken string, owner string, name string, sha string) ([]byte, error) {
+	reqURL := fmt.Sprintf("%s/repos/%s/%s/git/blobs/%s", ghp.options.BaseURL, url.PathEscape(owner), url.PathEscape(name), url.PathEscape(sha))
+	req, err := newGitHubGetRequest(ctx, reqURL, accessToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch git blob: %w", err)
+	}
+
+	// as per https://docs.github.com/en/rest/git/blobs?apiVersion=2026-03-10#get-a-blob
+	// with 'application/vnd.github.raw+json' we can get raw blob data
+	req.Header.Set("Accept", "application/vnd.github.raw+json")
+
+	resp, err := ghp.options.HTTPClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch git blob: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, classifyGitHubResponse(resp)
+	}
+
+	content, err := io.ReadAll(io.LimitReader(resp.Body, maxBlobContentBytes+1))
+	resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read git blob content: %w", err)
+	}
+
+	if len(content) > maxBlobContentBytes {
+		return nil, ErrContentTooLarge
+	}
+
+	return content, nil
+}
+
 // private helpers
 
 type githubUser struct {
@@ -346,6 +448,18 @@ type githubBranch struct {
 
 type githubInstallationResponse struct {
 	TotalCount int `json:"total_count"`
+}
+
+type githubTree struct {
+	SHA       string `json:"sha"`
+	Truncated bool   `json:"truncated"`
+	Tree      []struct {
+		SHA  string `json:"sha"`
+		Path string `json:"path"`
+		Mode string `json:"mode"`
+		Type string `json:"type"`
+		Size int64  `json:"size"`
+	} `json:"tree"`
 }
 
 // newGitHubGetRequest creates an authenticated GET request against the GitHub API
@@ -507,4 +621,19 @@ func toToken(oauthTok *oauth2.Token) Token {
 	}
 
 	return tok
+}
+
+func toTree(t githubTree) Tree {
+	tree := Tree{SHA: t.SHA, Tree: make([]TreeEntry, 0, len(t.Tree))}
+	for _, e := range t.Tree {
+		// exclude symlinks and submodules
+		if e.Mode == "100644" || e.Mode == "100755" {
+			tree.Tree = append(tree.Tree, TreeEntry{
+				SHA:  e.SHA,
+				Path: e.Path,
+				Size: e.Size,
+			})
+		}
+	}
+	return tree
 }
