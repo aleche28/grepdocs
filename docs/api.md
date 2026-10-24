@@ -309,6 +309,40 @@ Repository DTO (returned by `GET`/`POST`/`PATCH`; `account_id` and `synced_commi
 A new `tracked_branch` must exist upstream (`400 bad_request` otherwise), and changing it resets
 the sync state (`synced_commit` → `null`, `sync_status` → `pending`, `last_sync_at` → `null`).
 
+### Sync status and errors
+
+The sync job (`reposync`) is implemented; `POST /repositories/{id}/sync` and the `sync_error`
+field on the repository DTO are not exposed yet. A sync copies the Markdown files (`*.md`, any
+case) of the tracked branch into documents; the client triggers it and polls
+`GET /repositories/{id}` until `sync_status` is `ok` or `failed`.
+
+| `sync_status` | Meaning                                                                 |
+| ------------- | ----------------------------------------------------------------------- |
+| `pending`     | Never synced, or the tracked branch changed since the last sync          |
+| `queued`      | A sync was requested and waits for a worker                              |
+| `running`     | A worker is syncing the repository                                       |
+| `ok`          | The last sync succeeded; `synced_commit` and `last_sync_at` are updated  |
+| `failed`      | The last sync failed; `sync_error` says why                              |
+
+`sync_error` is `null` unless `sync_status` is `failed`. It is cleared when the next sync starts and
+when the tracked branch changes. Its value is one of these stable codes, never an error message
+(details are only in the server logs):
+
+| `sync_error`             | Cause                                                              | What the user can do        |
+| ------------------------ | ------------------------------------------------------------------ | --------------------------- |
+| `reauth_required`        | The linked account's token was revoked or can no longer be refreshed | Re-link the account         |
+| `resource_not_found`     | The repository or the tracked branch no longer exists upstream, or is no longer accessible | Change the tracked branch or untrack |
+| `app_not_installed`      | The GitHub App is not installed on the repository                  | Install the app             |
+| `rate_limited`           | The provider's rate limit was hit                                  | Retry later                 |
+| `truncated_tree`         | The repository tree is too large for the provider to list in full  | None (not supported yet)    |
+| `provider_not_supported` | The repository's provider is not configured on this server         | None                        |
+| `internal`               | Any other failure                                                  | Retry; report if it persists |
+
+A failed sync changes nothing: documents and `synced_commit` keep their previous values. Files that
+cannot be stored do not fail the sync; they are skipped and logged: blobs over 5 MB and files
+that are not valid UTF-8 text. A skipped new file is not added, and a skipped changed file keeps
+its previous content.
+
 `GET /api/repositories/{id}/branches` returns the branches of the tracked repository; provider
 pagination is followed internally (capped, so very large repositories may be truncated):
 
