@@ -22,9 +22,6 @@ const GitHub = "github"
 // Bound the size of GitHub API response bodies before decoding
 const maxGitHubResponseBytes = 8 * 1024 * 1024
 
-// Bound the size of blob content
-const maxBlobContentBytes = 5 * 1024 * 1024
-
 // Safety cap for pagination (100 pages * 100 repos = 10000 repos)
 const maxGitHubPages = 100
 
@@ -404,13 +401,13 @@ func (ghp *GitHubProvider) GetBlob(ctx context.Context, accessToken string, owne
 		return nil, classifyGitHubResponse(resp)
 	}
 
-	content, err := io.ReadAll(io.LimitReader(resp.Body, maxBlobContentBytes+1))
+	content, err := io.ReadAll(io.LimitReader(resp.Body, MaxBlobContentBytes+1))
 	resp.Body.Close()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read git blob content: %w", err)
 	}
 
-	if len(content) > maxBlobContentBytes {
+	if len(content) > MaxBlobContentBytes {
 		return nil, ErrContentTooLarge
 	}
 

@@ -207,3 +207,17 @@ SET
 	updated_at = NOW()
 WHERE sync_status IN ('queued', 'running')
 RETURNING id; -- return id so they can be enqueued again
+
+-- name: ListDocumentShas :many
+SELECT path, blob_sha
+FROM documents
+WHERE repository_id = $1;
+
+-- name: UpsertDocument :batchexec
+INSERT INTO documents (repository_id, path, blob_sha, content, synced_at)
+VALUES ($1, $2, $3, $4, NOW())
+ON CONFLICT (repository_id, path) DO UPDATE
+SET blob_sha = EXCLUDED.blob_sha, content = EXCLUDED.content, synced_at = EXCLUDED.synced_at;
+
+-- name: DeleteDocuments :exec
+DELETE FROM documents WHERE repository_id = @repository_id AND path = ANY(@paths::text[]);

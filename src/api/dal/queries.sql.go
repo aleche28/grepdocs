@@ -150,6 +150,20 @@ func (q *Queries) CreateRepository(ctx context.Context, arg CreateRepositoryPara
 	return i, err
 }
 
+const deleteDocuments = `-- name: DeleteDocuments :exec
+DELETE FROM documents WHERE repository_id = $1 AND path = ANY($2::text[])
+`
+
+type DeleteDocumentsParams struct {
+	RepositoryID int64
+	Paths        []string
+}
+
+func (q *Queries) DeleteDocuments(ctx context.Context, arg DeleteDocumentsParams) error {
+	_, err := q.db.Exec(ctx, deleteDocuments, arg.RepositoryID, arg.Paths)
+	return err
+}
+
 const deleteExternalGitAccountByIdAndUserId = `-- name: DeleteExternalGitAccountByIdAndUserId :one
 DELETE FROM external_git_accounts
 WHERE id = $1
@@ -551,6 +565,39 @@ func (q *Queries) GetUserById(ctx context.Context, id int64) (User, error) {
 		&i.LastLoginAt,
 	)
 	return i, err
+}
+
+const listDocumentShas = `-- name: ListDocumentShas :many
+
+SELECT path, blob_sha
+FROM documents
+WHERE repository_id = $1
+`
+
+type ListDocumentShasRow struct {
+	Path    string
+	BlobSha string
+}
+
+// return id so they can be enqueued again
+func (q *Queries) ListDocumentShas(ctx context.Context, repositoryID int64) ([]ListDocumentShasRow, error) {
+	rows, err := q.db.Query(ctx, listDocumentShas, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDocumentShasRow
+	for rows.Next() {
+		var i ListDocumentShasRow
+		if err := rows.Scan(&i.Path, &i.BlobSha); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const markRepositorySyncAsFailed = `-- name: MarkRepositorySyncAsFailed :exec

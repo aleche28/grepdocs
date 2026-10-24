@@ -15,6 +15,9 @@ var (
 	ErrContentTooLarge = errors.New("content too large")
 )
 
+// Bound the size of blob content
+const MaxBlobContentBytes = 5 * 1024 * 1024
+
 type User struct {
 	ProviderUserID string `json:"provider_user_id"`
 	Login          string `json:"login"`
