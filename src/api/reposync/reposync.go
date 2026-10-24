@@ -21,6 +21,18 @@ import (
 
 var errProviderNotSupported = errors.New("provider not supported")
 
+// Stable codes stored in repositories.sync_error when a sync fails. They reach the
+// client, so changing a value is a breaking API change (see docs/api.md).
+const (
+	CodeReauthRequired       = "reauth_required"
+	CodeResourceNotFound     = "resource_not_found"
+	CodeAppNotInstalled      = "app_not_installed"
+	CodeRateLimited          = "rate_limited"
+	CodeTruncatedTree        = "truncated_tree"
+	CodeProviderNotSupported = "provider_not_supported"
+	CodeInternal             = "internal"
+)
+
 // markFailedTimeout bounds the failure write, which runs detached from the job context
 const markFailedTimeout = 5 * time.Second
 
@@ -238,18 +250,18 @@ func (s *Service) sync(ctx context.Context, repoID int64) error {
 func syncErrorCode(err error) string {
 	switch {
 	case errors.Is(err, credentials.ErrReauthRequired) || errors.Is(err, providers.ErrInvalidToken):
-		return "reauth_required"
+		return CodeReauthRequired
 	case errors.Is(err, providers.ErrNotFound):
-		return "resource_not_found"
+		return CodeResourceNotFound
 	case errors.Is(err, providers.ErrAppNotInstalled):
-		return "app_not_installed"
+		return CodeAppNotInstalled
 	case errors.Is(err, providers.ErrRateLimited):
-		return "rate_limited"
+		return CodeRateLimited
 	case errors.Is(err, providers.ErrTreeTruncated):
-		return "truncated_tree"
+		return CodeTruncatedTree
 	case errors.Is(err, errProviderNotSupported):
-		return "provider_not_supported"
+		return CodeProviderNotSupported
 	default:
-		return "internal"
+		return CodeInternal
 	}
 }
