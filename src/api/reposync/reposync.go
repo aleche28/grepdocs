@@ -21,15 +21,17 @@ import (
 
 var errProviderNotSupported = errors.New("provider not supported")
 
-const markFailedTimeout time.Duration = 5 * time.Second
+// markFailedTimeout bounds the failure write, which runs detached from the job context
+const markFailedTimeout = 5 * time.Second
 
+// Service syncs the Markdown files of tracked repositories into the documents table
 type Service struct {
 	pool     *pgxpool.Pool
 	creds    *credentials.Service
 	registry *providers.Registry
 }
 
-// New returns a Service backed by pool, credentials and provider registry
+// New returns a Service backed by pool, credentials and the provider registry
 func New(pool *pgxpool.Pool, creds *credentials.Service, registry *providers.Registry) *Service {
 	return &Service{
 		pool:     pool,
@@ -38,13 +40,16 @@ func New(pool *pgxpool.Pool, creds *credentials.Service, registry *providers.Reg
 	}
 }
 
-// Sync fetches tracked branch for repository repoID and updates tracked files if changed
+// Sync runs a queued sync of repository repoID: it fetches the tracked branch and
+// updates the stored documents if the branch moved. A stale job (the repository is no
+// longer queued) returns nil. On failure, the error code is stored in sync_error and
+// the full error is returned for logging.
 func (s *Service) Sync(ctx context.Context, repoID int64) error {
 	q := dal.New(s.pool)
 
 	cnt, err := q.MarkRepositorySyncAsRunning(ctx, repoID)
 	if err != nil {
-		return fmt.Errorf("error while marking repo sync running: %w", err)
+		return fmt.Errorf("mark repo %d sync running: %w", repoID, err)
 	}
 	if cnt == 0 {
 		return nil // stale job
@@ -67,16 +72,16 @@ func (s *Service) Sync(ctx context.Context, repoID int64) error {
 	return nil
 }
 
-// does the work, Sync records the failure
+// sync does the work; Sync records the failure
 func (s *Service) sync(ctx context.Context, repoID int64) error {
 	q := dal.New(s.pool)
 
 	repo, err := q.GetRepositoryByID(ctx, repoID)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		return nil
+		return nil // deleted while the job was running
 	case err != nil:
-		return fmt.Errorf("error while fetching repo: %w", err)
+		return fmt.Errorf("get repo: %w", err)
 	}
 
 	prov, ok := s.registry.Lookup(repo.Provider)
@@ -94,10 +99,15 @@ func (s *Service) sync(ctx context.Context, repoID int64) error {
 		return fmt.Errorf("get branch: %w", err)
 	}
 
+	// Up to date: only record the check. A row count of 0 means the tracked branch
+	// changed meanwhile, which needs no handling.
 	if repo.SyncedCommit.Valid && repo.SyncedCommit.String == branch.Commit {
-		_, err := q.FinalizeRepositorySync(ctx, dal.FinalizeRepositorySyncParams{})
-		switch {
-		case err != nil && !errors.Is(err, pgx.ErrNoRows):
+		_, err := q.FinalizeRepositorySync(ctx, dal.FinalizeRepositorySyncParams{
+			ID:            repoID,
+			SyncedCommit:  repo.SyncedCommit,
+			TrackedBranch: repo.TrackedBranch,
+		})
+		if err != nil {
 			return fmt.Errorf("finalize repo sync: %w", err)
 		}
 		return nil
@@ -108,21 +118,17 @@ func (s *Service) sync(ctx context.Context, repoID int64) error {
 		return fmt.Errorf("get tree: %w", err)
 	}
 
-	mdfiles := make([]providers.TreeEntry, 0, len(tree.Tree))
-	for _, entry := range tree.Tree {
-		if strings.HasSuffix(strings.ToLower(entry.Path), ".md") {
-			mdfiles = append(mdfiles, entry)
-		}
-	}
-
 	docs, err := q.ListDocumentShas(ctx, repoID)
 	if err != nil {
-		return fmt.Errorf("get repo stored docs: %w", err)
+		return fmt.Errorf("list stored documents: %w", err)
 	}
 
-	liveTree := make(map[string]providers.TreeEntry, len(mdfiles))
-	for _, f := range mdfiles {
-		liveTree[f.Path] = f
+	// Markdown files only, keyed by path
+	liveTree := make(map[string]providers.TreeEntry, len(tree.Tree))
+	for _, entry := range tree.Tree {
+		if strings.HasSuffix(strings.ToLower(entry.Path), ".md") {
+			liveTree[entry.Path] = entry
+		}
 	}
 	storedTree := make(map[string]string, len(docs))
 	for _, d := range docs {
@@ -146,25 +152,32 @@ func (s *Service) sync(ctx context.Context, repoID int64) error {
 	}
 
 	for path := range storedTree {
-		if _, skip := liveTree[path]; !skip {
+		if _, live := liveTree[path]; !live {
 			removed = append(removed, path)
 		}
 	}
 
+	// Files that cannot be stored are skipped: a new one is not inserted, a changed one
+	// keeps its old row (its sha still differs, so the next sync retries it). Any other
+	// error fails the whole sync, so a partial result is never committed.
 	entries := slices.Concat(added, changed)
 	params := make([]dal.UpsertDocumentParams, 0, len(entries))
 	for _, e := range entries {
 		if e.Size > providers.MaxBlobContentBytes {
-			// log and skip insert/update
-			log.Printf("get blob repo id %d and path %s: content too large", repoID, e.Path)
+			log.Printf("sync repo %d: skip %s: blob too large (%d bytes)", repoID, e.Path, e.Size)
 			continue
 		}
 		content, err := prov.GetBlob(ctx, accessToken, repo.Owner, repo.Name, e.SHA)
 		switch {
+		case errors.Is(err, providers.ErrContentTooLarge):
+			// the tree size may be missing or stale: GetBlob enforces the limit anyway
+			log.Printf("sync repo %d: skip %s: blob too large", repoID, e.Path)
+			continue
 		case err != nil:
 			return fmt.Errorf("get blob %s: %w", e.Path, err)
 		case !utf8.Valid(content) || bytes.Contains(content, []byte{0}):
-			log.Printf("blob content for repo id %d and path %s is invalid", repoID, e.Path)
+			// Postgres TEXT requires valid UTF-8 without NUL bytes
+			log.Printf("sync repo %d: skip %s: not valid UTF-8 text", repoID, e.Path)
 			continue
 		}
 		params = append(params, dal.UpsertDocumentParams{
@@ -208,6 +221,8 @@ func (s *Service) sync(ctx context.Context, repoID int64) error {
 		return fmt.Errorf("finalize repo sync: %w", err)
 	}
 
+	// 0 rows: the tracked branch changed meanwhile, so the deferred rollback discards
+	// the documents of the old branch
 	if cnt > 0 {
 		err = tx.Commit(ctx)
 		if err != nil {
@@ -218,7 +233,8 @@ func (s *Service) sync(ctx context.Context, repoID int64) error {
 	return nil
 }
 
-// maps error to corresponding string code
+// syncErrorCode maps err to the stable code stored in sync_error. Error strings are
+// never stored, since sync_error reaches the client.
 func syncErrorCode(err error) string {
 	switch {
 	case errors.Is(err, credentials.ErrReauthRequired) || errors.Is(err, providers.ErrInvalidToken):

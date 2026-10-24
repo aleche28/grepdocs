@@ -781,8 +781,8 @@ func TestGetBlob(t *testing.T) {
 		size    int64
 		wantErr error
 	}{
-		{name: "at the limit", size: maxBlobContentBytes},
-		{name: "over the limit", size: maxBlobContentBytes + 1, wantErr: ErrContentTooLarge},
+		{name: "at the limit", size: MaxBlobContentBytes},
+		{name: "over the limit", size: MaxBlobContentBytes + 1, wantErr: ErrContentTooLarge},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if testing.Short() {

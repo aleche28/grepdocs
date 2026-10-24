@@ -15,7 +15,7 @@ var (
 	ErrContentTooLarge = errors.New("content too large")
 )
 
-// Bound the size of blob content
+// MaxBlobContentBytes bounds the size of the blob content returned by GetBlob
 const MaxBlobContentBytes = 5 * 1024 * 1024
 
 type User struct {
