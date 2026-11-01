@@ -231,6 +231,8 @@ refresh and revocation flows are described above, under `credentials`.
 
 Reusable workflows live in `.agents/skills/<name>/SKILL.md`. Agents that understand skills load
 them on matching requests; if yours doesn't, read the relevant file directly before acting.
+`.claude/skills` is a symlink to `../.agents/skills` so Claude Code discovers them — add new skills
+under `.agents/skills`, never inside `.claude/skills`.
 
 - `migration-generator` — scaffold new golang-migrate up/down files from a table/column description.
 - `roadmap-next` — determine the next task in the current roadmap phase (reads `docs/roadmap.md`,
@@ -239,6 +241,8 @@ them on matching requests; if yours doesn't, read the relevant file directly bef
   `REVIEW-RUBRIC.md`). Advisory by default; only applies fixes on explicit opt-in.
 - `phase-status-sync` — close out finished work across `docs/roadmap.md`,
   `docs/code-review-checklist.md`, and `docs/roadmap-stakeholders.md`. Docs only.
+- `deep-dive` — Socratic, read-only mentor for understanding how a part of the code works, down to
+  dependency/stdlib source, with history, trade-offs, and related patterns. Never edits code.
 
 ## Documentation map
 
