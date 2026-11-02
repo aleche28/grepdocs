@@ -8,6 +8,7 @@ import (
 	"grepdocs/api/credentials"
 	"grepdocs/api/dal"
 	"grepdocs/api/providers"
+	"grepdocs/api/syncqueue"
 	"log"
 	"slices"
 	"strings"
@@ -43,6 +44,8 @@ type Service struct {
 	registry *providers.Registry
 }
 
+var _ syncqueue.Syncer = (*Service)(nil)
+
 // New returns a Service backed by pool, credentials and the provider registry
 func New(pool *pgxpool.Pool, creds *credentials.Service, registry *providers.Registry) *Service {
 	return &Service{
@@ -71,9 +74,15 @@ func (s *Service) Sync(ctx context.Context, repoID int64) error {
 	if err != nil {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), markFailedTimeout)
 		defer cancel()
+
+		if errors.Is(ctx.Err(), context.Canceled) {
+			// leave it running: it will be picked up by the cleanup
+			return nil
+		}
+
 		markErr := q.MarkRepositorySyncAsFailed(ctx, dal.MarkRepositorySyncAsFailedParams{
 			ID:        repoID,
-			SyncError: pgtype.Text{String: syncErrorCode(err), Valid: true},
+			SyncError: pgtype.Text{String: syncErrorCode(ctx.Err()), Valid: true},
 		})
 		if markErr != nil {
 			log.Printf("failed to mark repo %d sync as failed, state stays 'running': %v", repoID, markErr)
@@ -262,6 +271,7 @@ func syncErrorCode(err error) string {
 	case errors.Is(err, errProviderNotSupported):
 		return CodeProviderNotSupported
 	default:
+		// context.DeadlineExceeded (per-job timeout) goes here for now
 		return CodeInternal
 	}
 }

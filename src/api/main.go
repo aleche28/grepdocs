@@ -6,9 +6,11 @@ import (
 	"errors"
 	"grepdocs/api/credentials"
 	"grepdocs/api/providers"
+	"grepdocs/api/reposync"
 	"grepdocs/api/routers"
 	"grepdocs/api/secrets"
 	"grepdocs/api/session"
+	"grepdocs/api/syncqueue"
 	"log"
 	"net/http"
 	"os"
@@ -105,6 +107,16 @@ func main() {
 	}))
 
 	credSvc := credentials.New(pool, tokenCipher, registry)
+	syncSvc := reposync.New(pool, credSvc, registry)
+	syncPool := syncqueue.New(syncSvc)
+
+	// Graceful shutdown on SIGINT/SIGTERM
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	syncPool.Start(ctx)
+
+	// TODO: call the query to reset stuck repo syncs and re-enqueue them
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
@@ -132,10 +144,6 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	// Graceful shutdown on SIGINT/SIGTERM
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	go func() {
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("Server error: %v", err)
@@ -148,6 +156,8 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("Graceful shutdown failed: %v", err)
+		log.Printf("Graceful shutdown failed: %v", err)
 	}
+
+	syncPool.Shutdown()
 }
