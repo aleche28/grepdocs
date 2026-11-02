@@ -25,8 +25,8 @@ don't tick anything.
 
 ### `docs/roadmap.md`
 
-- Each phase has a **`Status:`** line describing what's done vs. outstanding. Some early phases may
-  lack one (Phase 2 currently does) — add or extend it following the Phase 1 phrasing style
+- Each phase has a **`Status:`** line describing what's done vs. outstanding. Some phases may
+  lack one — add or extend it following the Phase 1 phrasing style
   ("Status: **schema + linking + ... done** — ... Still open in this phase: ...").
 - Move finished bullets out of the open list (or annotate them `**Done** — ...` inline, as Phase 1
   does for provider abstraction / token encryption).

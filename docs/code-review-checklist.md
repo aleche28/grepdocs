@@ -53,7 +53,7 @@ Legend: `[x]` done · `[ ]` open · last updated 2026-10-06
       the interface, `main.go` builds the registry, GitHub HTTP/OAuth code moved out of
       `routers/external_git_accounts.go`, and provider failures are normalized to
       `ErrInvalidToken`/`ErrRateLimited` and mapped to `403`/`429`. A service/use-case layer was
-      deliberately **not** added yet — deferred to Phase 2, where sync orchestration gives it real
+      deliberately **not** added yet — deferred to Phase 3, where sync orchestration gives it real
       work.
 - [x] **C2 — No shared auth middleware.** Fixed: `middleware/middleware.go` provides
       `RequireAuth(sm)` (JSON-less plain 401 today, see C5) and `CurrentUserID(r)`; wired into the
