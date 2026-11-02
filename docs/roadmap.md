@@ -6,8 +6,9 @@ that needs or exposes it, rather than pushed into a separate "hardening" track. 
 `docs/api.md` (target API shape), `docs/code-review-checklist.md` (tracked findings, `[ ]` =
 open), `docs/requirements.md` / `docs/user-stories.md` (product spec).
 
-Each phase is a GitHub milestone with the same name, and its tasks are issues in that milestone
-(tracked on the "GrepDocs Roadmap" project). Work that belongs to no phase has no milestone.
+Each phase is a GitHub milestone named like its heading (e.g. "Phase 3 — Sync engine"), and its
+tasks are issues in that milestone (tracked on the "GrepDocs Roadmap" project). Work that belongs
+to no phase has no milestone.
 
 Order: the API and the sync engine come first, then a thin read-only UI (Phase 4) so the product
 is usable as early as possible. Every phase after that ships its API and its UI together. The
@@ -24,7 +25,7 @@ progress (Phase 3). No document API, tracked-file selection, search, groups, com
 yet. Unit tests cover sessions, auth middleware, providers, credentials, response envelopes, the
 session model, and DB-free router helpers; no CI.
 
-## Phase 1 — Foundation (multi-account & providers)
+## Phase 1 — Foundation
 
 Goal: remove the one-account-per-provider ceiling and put a real provider abstraction under it,
 since both the multi-account work and any future non-GitHub provider need the same seam. Token
