@@ -69,7 +69,7 @@ about it" over "here's the corrected file".
 - **Provider isolation** — provider HTTP/OAuth logic belongs in `src/api/providers/` behind
   `providers.Provider` + `Registry`; never inline GitHub-shaped code in a handler (C1).
 - **Deliberate absences** — do **not** flag as a defect: no DI container, no general service/use-case
-  layer (deferred to Phase 2 sync orchestration; `credentials.Service` is the one deliberate
+  layer (deferred to Phase 3 sync orchestration; `credentials.Service` is the one deliberate
   service), no token refresh, install URL or revocation on `Provider` (optional `Refresher` /
   `Installer` / `Revoker`), hand-rolled sessions instead of `scs`. A revoke failure that is only
   logged is deliberate too (best-effort, after the database change).
