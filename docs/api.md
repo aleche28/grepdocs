@@ -42,13 +42,19 @@ improvising a new one.
   }
   ```
 
+  Some errors add an optional `details` object with data the client can act on (e.g.
+  `install_url`, see External accounts). It is omitted when there is nothing to add, so clients
+  must not rely on it being present.
+
   | Status | `code`             | Meaning                                            |
   | ------ | ------------------ | --------------------------------------------------- |
   | 400    | `bad_request`       | Malformed input (bad body, invalid enum value, ...) |
   | 401    | `not_authenticated` | No valid session                                    |
   | 403    | `forbidden`         | Authenticated, but not the resource owner           |
+  | 403    | `app_not_installed` | Provider app not installed for the linked account   |
   | 404    | `not_found`         | Resource does not exist                             |
   | 409    | `conflict`          | Upstream state changed under the request            |
+  | 429    | `rate_limited`      | Provider rate limit hit                             |
   | 500    | `internal`          | Server error                                        |
   | 501    | `not_implemented`   | Provider or feature not implemented yet             |
 
@@ -131,7 +137,7 @@ is planned, so only self endpoints exist.
 | GET    | `/accounts/{provider}/login`      | Y    | Implemented for `github`       | Redirect: start linking a provider account                       |
 | GET    | `/accounts/{provider}/callback`   | Y    | Implemented for `github`       | Provider OAuth callback (verify state, store tokens, redirect)   |
 | GET    | `/accounts/{provider}/repositories` | Y  | Implemented for `github` (no filtering yet) | Discover repos from a linked account (`?account_id=` disambiguates) |
-| DELETE | `/accounts/{id}`                  | Y    | Implemented                    | Unlink account (must own it)                                      |
+| DELETE | `/accounts/{id}`                  | Y    | Implemented                    | Unlink account (must own it) and revoke its token                 |
 
 `bitbucket` (and any other non-`github` value) currently returns `501 not_implemented` on all four
 provider-scoped routes.
@@ -146,9 +152,40 @@ provider-scoped routes.
   "label": "",
   "linked_at": "2026-03-02T10:11:12Z",
   "last_refreshed_at": "2026-03-02T10:11:12Z",
-  "token_expires_at": "2027-03-02T10:11:12Z"
+  "token_expires_at": "2026-03-02T18:11:12Z",
+  "refresh_token_expires_at": "2026-09-02T10:11:12Z"
 }
 ```
+
+`token_expires_at` and `refresh_token_expires_at` are the expiries reported by the provider when
+the tokens were issued (for a GitHub App: 8 hours and ~6 months). Either is `null` when the
+provider reports none, e.g. a GitHub App with token expiration opted out. `last_refreshed_at` is
+set whenever stored tokens are replaced, by a refresh or a re-link; it is `null` for an account
+that has never been refreshed or re-linked.
+
+Access tokens are refreshed automatically: any request that calls the provider with an account's
+token refreshes it first when it expires within 5 minutes, so the expiries above move forward on
+their own. There is no refresh endpoint. The account must be re-linked only when the token cannot
+be refreshed: the refresh token is missing or past `refresh_token_expires_at`, or the provider
+rejects it (e.g. the user revoked the app). A rejected refresh clears the stored tokens, so later
+requests fail immediately with `403` instead of contacting the provider again. A refresh that fails
+for any other reason (provider outage, network error) returns `500 internal` and the account stays
+usable; retrying later is enough. `GET /api/accounts` does not yet flag accounts that need
+re-linking.
+
+`DELETE /api/accounts/{id}` unlinks an account and returns `200` with
+`{"message": "External account unlinked successfully"}`. An unknown `id` and another user's account
+both return `404 not_found`, never `403`, so the response does not reveal that the account exists;
+a non-numeric `id` returns `400 bad_request`. Tracked repositories that used the account keep their
+rows, with `account_id` set to `null`.
+
+Tokens GrepDocs stops using are revoked at the provider: on unlink, and on a re-link that replaces
+the stored token (`GET /accounts/{provider}/callback` for an identity already linked). For GitHub,
+revoking a live access token also revokes its refresh token; when the stored access token has
+already expired, the server first spends the refresh token on a new pair and revokes that, so no
+refresh token outlives the account. Revocation runs after the database change and is best-effort: a
+failure is logged server-side and never fails the request, since the account is already unlinked or
+re-linked.
 
 `label` exists in the schema so a user can tell multiple accounts for one provider apart (e.g.
 "personal" vs "work"). It is read-only for now (always `""`); no write endpoint exists yet.
@@ -168,9 +205,28 @@ provider-neutral shape; GitHub pagination is followed internally. **Not yet impl
   pagination params.
 - `tracked: true` will be added to each item once repositories can be tracked (Phase 2).
 
-Failures: `403 forbidden` when the stored token is invalid or revoked (the user must re-link the
-account), `429 rate_limited` when the provider's rate limit is hit, `501 not_implemented` for a
-provider that has no registered implementation.
+For GitHub the list contains only repositories the GitHub App is installed on. When the list is
+empty, the API checks the account's installations: with none, the request fails with
+`403 app_not_installed` instead of returning `[]`, so the client can send the user to install the
+app. An empty `[]` therefore means the app is installed but no repository is selected.
+
+```json
+{
+  "error": {
+    "code": "app_not_installed",
+    "message": "The app is not installed on any of your accounts, install it to grant repository access",
+    "details": { "install_url": "https://github.com/apps/<slug>/installations/new" }
+  }
+}
+```
+
+`details.install_url` opens GitHub's install page, which also lets the user add repositories to an
+existing installation. It is omitted when the server has no `GITHUB_APP_SLUG` configured.
+
+Failures: `403 app_not_installed` as above, `403 forbidden` when the stored token cannot be used or
+refreshed, or the provider rejects it as revoked (the user must re-link the account),
+`429 rate_limited` when the provider's rate limit is hit, `501 not_implemented` for a provider that
+has no registered implementation.
 
 Both provider OAuth routes verify a single-use, session-bound `state` value the same way as
 Google login — a linking flow using a state cookie instead of the session would be a regression,
@@ -265,11 +321,14 @@ pagination is followed internally (capped, so very large repositories may be tru
 Provider calls on an already-tracked repository (`PATCH` with a new branch, `branches`) use the
 linked account's token whenever the repository has an `account_id` or is private; public
 repositories tracked without an account are read anonymously. `POST` uses the token of the given
-`account_id`, or none. Failures: `403 forbidden` when no usable linked
-account exists or its token is empty, expired, or revoked (the user must re-link),
-`409 conflict` when a private repository has no `account_id` and the caller has several accounts
-for that provider, `404 not_found` when the provider no longer finds the repository,
-`429 rate_limited` on provider rate limits, `501 not_implemented` for an unregistered provider.
+`account_id`, or none. Expiring tokens are refreshed first (see External accounts). Failures:
+`403 forbidden` when no usable linked account exists or its token cannot be refreshed or is
+revoked (the user must re-link), `409 conflict` when a private repository has no `account_id`
+and the caller has several accounts for that provider, `404 not_found` when the provider does not
+find the repository, `429 rate_limited` on provider rate limits, `501 not_implemented` for an
+unregistered provider. A `404` on a request made with a token cannot tell a missing repository from
+a private one the app is not installed on, so it carries `details.install_url` (when configured);
+anonymous requests get a plain `404`.
 
 `POST /api/repositories/{id}/commits` body — each file must reference a document that currently
 has a draft:

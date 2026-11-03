@@ -1,18 +1,18 @@
 package routers
 
 import (
-	"context"
 	"errors"
+	"grepdocs/api/credentials"
 	"grepdocs/api/dal"
 	"grepdocs/api/httpx"
 	"grepdocs/api/middleware"
 	"grepdocs/api/providers"
 	"grepdocs/api/secrets"
 	"grepdocs/api/session"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -24,21 +24,23 @@ type ExternalAccountsHandler struct {
 	sessionMgr       *session.SessionManager
 	providerRegistry *providers.Registry
 	cipher           secrets.Cipher
+	creds            *credentials.Service
 }
 
-// Errors returned by resolveAccount; callers map them to HTTP responses.
-var (
-	errAccountNotFound  = errors.New("external account not found")
-	errAccountAmbiguous = errors.New("multiple external accounts for provider")
-)
-
 // ExternalAccountsRoutes initializes the external git accounts routes
-func ExternalAccountsRoutes(pool *pgxpool.Pool, sm *session.SessionManager, pr *providers.Registry, c secrets.Cipher) chi.Router {
+func ExternalAccountsRoutes(
+	pool *pgxpool.Pool,
+	sm *session.SessionManager,
+	pr *providers.Registry,
+	cipher secrets.Cipher,
+	creds *credentials.Service,
+) chi.Router {
 	h := &ExternalAccountsHandler{
 		dbPool:           pool,
 		sessionMgr:       sm,
 		providerRegistry: pr,
-		cipher:           c,
+		cipher:           cipher,
+		creds:            creds,
 	}
 
 	r := chi.NewRouter()
@@ -75,13 +77,14 @@ func (h *ExternalAccountsHandler) listExternalAccounts(w http.ResponseWriter, r 
 	sanitizedAccounts := make([]map[string]interface{}, len(accounts))
 	for i, acc := range accounts {
 		sanitizedAccounts[i] = map[string]interface{}{
-			"id":                acc.ID,
-			"provider":          acc.Provider,
-			"provider_user_id":  acc.ProviderUserID,
-			"linked_at":         acc.LinkedAt,
-			"last_refreshed_at": acc.LastRefreshedAt,
-			"token_expires_at":  acc.TokenExpiresAt,
-			"label":             acc.Label,
+			"id":                       acc.ID,
+			"provider":                 acc.Provider,
+			"provider_user_id":         acc.ProviderUserID,
+			"linked_at":                acc.LinkedAt,
+			"last_refreshed_at":        acc.LastRefreshedAt,
+			"token_expires_at":         acc.TokenExpiresAt,
+			"refresh_token_expires_at": acc.RefreshTokenExpiresAt,
+			"label":                    acc.Label,
 		}
 	}
 
@@ -165,17 +168,6 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 	// Store external account
 	q := dal.New(h.dbPool)
 
-	// Calculate token expiration (GitHub tokens don't expire by default, set to far future)
-	expiresAt := time.Now().AddDate(1, 0, 0) // 1 year from now
-	if !token.Expiry.IsZero() {
-		expiresAt = token.Expiry
-	}
-
-	refreshToken := ""
-	if token.RefreshToken != "" {
-		refreshToken = token.RefreshToken
-	}
-
 	encAccTok, err := h.cipher.Encrypt(token.AccessToken)
 	if err != nil {
 		httpx.WriteInternalError(w, err)
@@ -183,25 +175,46 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 	}
 
 	encRefTok := ""
-	if len(refreshToken) > 0 {
-		encRefTok, err = h.cipher.Encrypt(refreshToken)
+	if len(token.RefreshToken) > 0 {
+		encRefTok, err = h.cipher.Encrypt(token.RefreshToken)
 		if err != nil {
 			httpx.WriteInternalError(w, err)
 			return
 		}
 	}
 
+	existing, err := q.GetExternalGitAccountByIdentity(
+		r.Context(),
+		dal.GetExternalGitAccountByIdentityParams{
+			UserID:         userID,
+			Provider:       provider.Name(),
+			ProviderUserID: provUser.ProviderUserID,
+		},
+	)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		httpx.WriteInternalError(w, err)
+		return
+	}
+
 	_, err = q.UpsertExternalGitAccount(r.Context(), dal.UpsertExternalGitAccountParams{
-		UserID:         userID,
-		Provider:       provider.Name(),
-		ProviderUserID: provUser.ProviderUserID,
-		AccessToken:    encAccTok,
-		RefreshToken:   encRefTok,
-		TokenExpiresAt: &expiresAt,
+		UserID:                userID,
+		Provider:              provider.Name(),
+		ProviderUserID:        provUser.ProviderUserID,
+		AccessToken:           encAccTok,
+		RefreshToken:          encRefTok,
+		TokenExpiresAt:        token.Expiry,
+		RefreshTokenExpiresAt: token.RefreshExpiry,
 	})
 	if err != nil {
 		httpx.WriteInternalError(w, err)
 		return
+	}
+
+	if existing.ID > 0 {
+		if err = h.creds.Revoke(r.Context(), existing); err != nil {
+			// just log, account has been successfully re-linked anyway
+			log.Printf("error with token revocation: %v", err)
+		}
 	}
 
 	// Redirect to frontend success page
@@ -225,23 +238,26 @@ func (h *ExternalAccountsHandler) deleteExternalAccount(w http.ResponseWriter, r
 
 	q := dal.New(h.dbPool)
 
-	// Verify the account belongs to the user
-	account, err := q.GetExternalGitAccountById(r.Context(), accountID)
-	if err != nil {
+	// Delete the account
+	account, err := q.DeleteExternalGitAccountByIdAndUserId(r.Context(), dal.DeleteExternalGitAccountByIdAndUserIdParams{
+		ID:     accountID,
+		UserID: userID,
+	})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// 404 doesn't leak existence of another user's account
 		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "Account not found")
 		return
-	}
-
-	if account.UserID != userID {
-		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Forbidden")
-		return
-	}
-
-	// Delete the account
-	err = q.DeleteExternalGitAccount(r.Context(), accountID)
-	if err != nil {
+	case err != nil:
 		httpx.WriteInternalError(w, err)
 		return
+	}
+
+	// Revoke tokens
+	err = h.creds.Revoke(r.Context(), account)
+	if err != nil {
+		// just log, account has been successfully unlinked anyway
+		log.Printf("error with token revocation: %v", err)
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{
@@ -259,7 +275,6 @@ func (h *ExternalAccountsHandler) listExternalRepositories(w http.ResponseWriter
 	}
 
 	userID, _ := middleware.CurrentUserID(r)
-	q := dal.New(h.dbPool)
 
 	accountIDParam := r.URL.Query().Get("account_id")
 	var accountID int64
@@ -272,12 +287,12 @@ func (h *ExternalAccountsHandler) listExternalRepositories(w http.ResponseWriter
 		accountID = parsed
 	}
 
-	account, err := resolveAccount(r.Context(), q, userID, provider.Name(), accountID)
+	account, err := h.creds.ResolveAccount(r.Context(), userID, provider.Name(), accountID)
 	switch {
-	case errors.Is(err, errAccountNotFound):
+	case errors.Is(err, credentials.ErrAccountNotFound):
 		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "No account found for provider "+provider.Name())
 		return
-	case errors.Is(err, errAccountAmbiguous):
+	case errors.Is(err, credentials.ErrAccountAmbiguous):
 		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Multiple accounts found for provider "+provider.Name()+", please specify account_id to select one")
 		return
 	case err != nil:
@@ -285,22 +300,24 @@ func (h *ExternalAccountsHandler) listExternalRepositories(w http.ResponseWriter
 		return
 	}
 
-	if account.AccessToken == "" || (account.TokenExpiresAt != nil && account.TokenExpiresAt.Before(time.Now())) {
-		// No refresh flow yet: the user must re-link the account
-		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Empty access token or expired")
+	tok, err := h.creds.ForAccount(r.Context(), account)
+	switch {
+	case errors.Is(err, credentials.ErrReauthRequired):
+		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Invalid or expired token, re-link your account")
 		return
-	}
-
-	tok, err := h.cipher.Decrypt(account.AccessToken)
-	if err != nil {
+	case err != nil:
 		httpx.WriteInternalError(w, err)
 		return
 	}
 
 	repos, err := provider.ListRepositories(r.Context(), tok)
 	switch {
+	case errors.Is(err, providers.ErrAppNotInstalled):
+		httpx.WriteErrorWithDetails(w, http.StatusForbidden, httpx.CodeAppNotInstalled,
+			"The app is not installed on any of your accounts, install it to grant repository access",
+			installDetails(provider))
+		return
 	case errors.Is(err, providers.ErrInvalidToken):
-		// TODO: if provider impls Refresher, refresh token
 		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
 			"The linked account's access token is invalid or revoked, please re-link your account")
 		return
@@ -314,42 +331,4 @@ func (h *ExternalAccountsHandler) listExternalRepositories(w http.ResponseWriter
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, repos)
-}
-
-// resolveAccount selects the external account an account-scoped request refers
-// to. With a positive accountID it loads that account and verifies it belongs to
-// userID and matches provider. Otherwise it resolves the single account for
-// (userID, provider), returning errAccountAmbiguous when more than one exists so
-// the caller can require an explicit account_id.
-func resolveAccount(ctx context.Context, q *dal.Queries, userID int64, provider string, accountID int64) (dal.ExternalGitAccount, error) {
-	if accountID > 0 {
-		account, err := q.GetExternalGitAccountById(ctx, accountID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return dal.ExternalGitAccount{}, errAccountNotFound
-		}
-		if err != nil {
-			return dal.ExternalGitAccount{}, err
-		}
-		if account.UserID != userID || account.Provider != provider {
-			return dal.ExternalGitAccount{}, errAccountNotFound
-		}
-		return account, nil
-	}
-
-	accounts, err := q.GetExternalGitAccountsByUserIDAndProvider(ctx, dal.GetExternalGitAccountsByUserIDAndProviderParams{
-		UserID:   userID,
-		Provider: provider,
-	})
-	if err != nil {
-		return dal.ExternalGitAccount{}, err
-	}
-
-	switch len(accounts) {
-	case 0:
-		return dal.ExternalGitAccount{}, errAccountNotFound
-	case 1:
-		return accounts[0], nil
-	default:
-		return dal.ExternalGitAccount{}, errAccountAmbiguous
-	}
 }

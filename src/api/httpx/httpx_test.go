@@ -63,6 +63,51 @@ func TestWriteError(t *testing.T) {
 	}
 }
 
+func TestWriteErrorWithDetails(t *testing.T) {
+	tests := []struct {
+		name        string
+		details     map[string]any
+		wantDetails bool
+	}{
+		{name: "with details", details: map[string]any{"install_url": "https://example.com"}, wantDetails: true},
+		{name: "nil details", details: nil},
+		{name: "empty details", details: map[string]any{}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+
+			WriteErrorWithDetails(rr, http.StatusForbidden, CodeAppNotInstalled, "boom", tc.details)
+
+			res := rr.Result()
+			defer res.Body.Close()
+
+			if res.StatusCode != http.StatusForbidden {
+				t.Errorf("status = %d, want %d", res.StatusCode, http.StatusForbidden)
+			}
+
+			var env struct {
+				Error map[string]any `json:"error"`
+			}
+			if err := json.NewDecoder(res.Body).Decode(&env); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			if env.Error["code"] != CodeAppNotInstalled || env.Error["message"] != "boom" {
+				t.Errorf("error = %v, want code %q and message %q", env.Error, CodeAppNotInstalled, "boom")
+			}
+
+			details, ok := env.Error["details"].(map[string]any)
+			switch {
+			case tc.wantDetails && (!ok || details["install_url"] != "https://example.com"):
+				t.Errorf("error.details = %v, want install_url", env.Error["details"])
+			case !tc.wantDetails && env.Error["details"] != nil:
+				t.Errorf("error.details = %v, want the key omitted", env.Error["details"])
+			}
+		})
+	}
+}
+
 func TestWriteInternalErrorDoesNotLeakDetails(t *testing.T) {
 	rr := httptest.NewRecorder()
 

@@ -3,17 +3,16 @@ package routers
 import (
 	"encoding/json"
 	"errors"
+	"grepdocs/api/credentials"
 	"grepdocs/api/dal"
 	"grepdocs/api/httpx"
 	"grepdocs/api/middleware"
 	"grepdocs/api/models"
 	"grepdocs/api/providers"
-	"grepdocs/api/secrets"
 	"grepdocs/api/session"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -29,15 +28,20 @@ type RepositoriesHandler struct {
 	dbPool           *pgxpool.Pool
 	sessionMgr       *session.SessionManager
 	providerRegistry *providers.Registry
-	cipher           secrets.Cipher
+	creds            *credentials.Service
 }
 
-func RepositoriesRoutes(pool *pgxpool.Pool, sm *session.SessionManager, reg *providers.Registry, cipher secrets.Cipher) chi.Router {
+func RepositoriesRoutes(
+	pool *pgxpool.Pool,
+	sm *session.SessionManager,
+	pr *providers.Registry,
+	creds *credentials.Service,
+) chi.Router {
 	h := &RepositoriesHandler{
 		dbPool:           pool,
 		sessionMgr:       sm,
-		providerRegistry: reg,
-		cipher:           cipher,
+		providerRegistry: pr,
+		creds:            creds,
 	}
 
 	r := chi.NewRouter()
@@ -96,12 +100,12 @@ func (h *RepositoriesHandler) trackNewRepository(w http.ResponseWriter, r *http.
 	var acc dal.ExternalGitAccount
 	if reqBody.AccountID > 0 {
 		var err error
-		acc, err = resolveAccount(r.Context(), q, uid, reqBody.Provider, reqBody.AccountID)
+		acc, err = h.creds.ResolveAccount(r.Context(), uid, reqBody.Provider, reqBody.AccountID)
 		switch {
-		case errors.Is(err, errAccountNotFound):
+		case errors.Is(err, credentials.ErrAccountNotFound):
 			httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "No account found for provider "+reqBody.Provider)
 			return
-		case errors.Is(err, errAccountAmbiguous):
+		case errors.Is(err, credentials.ErrAccountAmbiguous):
 			httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Multiple accounts found for provider "+reqBody.Provider+", please specify account_id to select one")
 			return
 		case err != nil:
@@ -110,26 +114,23 @@ func (h *RepositoriesHandler) trackNewRepository(w http.ResponseWriter, r *http.
 		}
 	}
 
-	// A repo can be tracked without an account if the repo is public
-	token := ""
-	if acc.ID != 0 {
-		if acc.AccessToken == "" || (acc.TokenExpiresAt != nil && acc.TokenExpiresAt.Before(time.Now())) {
-			// No refresh flow yet: the user must re-link the account
-			httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Empty access token or expired")
+	var token string
+	var err error
+	if acc.ID > 0 {
+		token, err = h.creds.ForAccount(r.Context(), acc)
+		switch {
+		case errors.Is(err, credentials.ErrReauthRequired):
+			httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Invalid or expired token, re-link your account")
 			return
-		}
-
-		decrypted, err := h.cipher.Decrypt(acc.AccessToken)
-		if err != nil {
+		case err != nil:
 			httpx.WriteInternalError(w, err)
 			return
 		}
-		token = decrypted
 	}
 
 	provRepo, err := prov.GetRepository(r.Context(), token, reqBody.Owner, reqBody.Name)
 	if err != nil {
-		if !writeProviderError(w, err) {
+		if !writeProviderError(w, err, prov, token != "") {
 			httpx.WriteInternalError(w, err)
 		}
 		return
@@ -141,7 +142,7 @@ func (h *RepositoriesHandler) trackNewRepository(w http.ResponseWriter, r *http.
 	} else {
 		branches, err := prov.ListBranches(r.Context(), token, provRepo.Owner, provRepo.Name)
 		if err != nil {
-			if !writeProviderError(w, err) {
+			if !writeProviderError(w, err, prov, token != "") {
 				httpx.WriteInternalError(w, err)
 			}
 			return
@@ -255,14 +256,27 @@ func (h *RepositoriesHandler) updateRepository(w http.ResponseWriter, r *http.Re
 			return
 		}
 
-		token, ok := h.repoAccessToken(w, r, q, uid, repo)
-		if !ok {
+		token, err := h.creds.ForRepository(r.Context(), repo)
+		switch {
+		case errors.Is(err, credentials.ErrReauthRequired):
+			httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Invalid or expired token, re-link your account")
+			return
+		case errors.Is(err, credentials.ErrAccountNotFound):
+			httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
+				"No linked "+repo.Provider+" account available, please re-link your account")
+			return
+		case errors.Is(err, credentials.ErrAccountAmbiguous):
+			httpx.WriteError(w, http.StatusConflict, httpx.CodeConflict,
+				"Multiple "+repo.Provider+" accounts found")
+			return
+		case err != nil:
+			httpx.WriteInternalError(w, err)
 			return
 		}
 
 		branches, err := prov.ListBranches(r.Context(), token, repo.Owner, repo.Name)
 		if err != nil {
-			if !writeProviderError(w, err) {
+			if !writeProviderError(w, err, prov, token != "") {
 				httpx.WriteInternalError(w, err)
 			}
 			return
@@ -341,14 +355,27 @@ func (h *RepositoriesHandler) listRepositoryBranches(w http.ResponseWriter, r *h
 		return
 	}
 
-	token, ok := h.repoAccessToken(w, r, q, uid, repo)
-	if !ok {
+	token, err := h.creds.ForRepository(r.Context(), repo)
+	switch {
+	case errors.Is(err, credentials.ErrReauthRequired):
+		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Invalid or expired token, re-link your account")
+		return
+	case errors.Is(err, credentials.ErrAccountNotFound):
+		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
+			"No linked "+repo.Provider+" account available, please re-link your account")
+		return
+	case errors.Is(err, credentials.ErrAccountAmbiguous):
+		httpx.WriteError(w, http.StatusConflict, httpx.CodeConflict,
+			"Multiple "+repo.Provider+" accounts found")
+		return
+	case err != nil:
+		httpx.WriteInternalError(w, err)
 		return
 	}
 
 	branches, err := prov.ListBranches(r.Context(), token, repo.Owner, repo.Name)
 	if err != nil {
-		if !writeProviderError(w, err) {
+		if !writeProviderError(w, err, prov, token != "") {
 			httpx.WriteInternalError(w, err)
 		}
 		return
@@ -361,12 +388,18 @@ func (h *RepositoriesHandler) listRepositoryBranches(w http.ResponseWriter, r *h
 
 // writeProviderError maps a normalized provider error to an HTTP response,
 // returning true when the error was recognized and a response was written.
-func writeProviderError(w http.ResponseWriter, err error) bool {
+func writeProviderError(w http.ResponseWriter, err error, prov providers.Provider, authenticated bool) bool {
 	switch {
 	case errors.Is(err, providers.ErrNotFound):
-		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "repository not found")
+		// with a token, a private repository the app is not installed on is also a 404
+		details := installDetails(prov)
+		if !authenticated || details == nil {
+			httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "Repository not found")
+			break
+		}
+		httpx.WriteErrorWithDetails(w, http.StatusNotFound, httpx.CodeNotFound,
+			"Repository not found, or the app is not installed on it", details)
 	case errors.Is(err, providers.ErrInvalidToken):
-		// TODO: if provider impls Refresher, refresh token
 		httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
 			"The linked account's access token is invalid or revoked, please re-link your account")
 	case errors.Is(err, providers.ErrRateLimited):
@@ -376,6 +409,15 @@ func writeProviderError(w http.ResponseWriter, err error) bool {
 		return false
 	}
 	return true
+}
+
+// installDetails returns the error details with prov's app install link, or nil when it has none
+func installDetails(prov providers.Provider) map[string]any {
+	inst, ok := prov.(providers.Installer)
+	if !ok || inst.InstallURL() == "" {
+		return nil
+	}
+	return map[string]any{"install_url": inst.InstallURL()}
 }
 
 func branchExists(branches []providers.Branch, name string) bool {
@@ -395,42 +437,6 @@ func parseIDParam(w http.ResponseWriter, r *http.Request) (int64, bool) {
 		return 0, false
 	}
 	return id, true
-}
-
-// repoAccessToken get and decrypts the access token required for the passed repo
-// on error, it writes the response and returns false
-func (h *RepositoriesHandler) repoAccessToken(w http.ResponseWriter, r *http.Request, q *dal.Queries, uid int64, repo dal.Repository) (string, bool) {
-	token := ""
-	if repo.IsPrivate || repo.AccountID.Valid {
-		acc, err := resolveAccount(r.Context(), q, uid, repo.Provider, repo.AccountID.Int64)
-		switch {
-		case errors.Is(err, errAccountNotFound):
-			httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden,
-				"No linked "+repo.Provider+" account available, please re-link your account")
-			return token, false
-		case errors.Is(err, errAccountAmbiguous):
-			httpx.WriteError(w, http.StatusConflict, httpx.CodeConflict,
-				"Multiple "+repo.Provider+" accounts found")
-			return token, false
-		case err != nil:
-			httpx.WriteInternalError(w, err)
-			return token, false
-		}
-
-		if acc.AccessToken == "" || (acc.TokenExpiresAt != nil && acc.TokenExpiresAt.Before(time.Now())) {
-			// No refresh flow yet: the user must re-link the account
-			httpx.WriteError(w, http.StatusForbidden, httpx.CodeForbidden, "Empty access token or expired")
-			return token, false
-		}
-
-		decrypted, err := h.cipher.Decrypt(acc.AccessToken)
-		if err != nil {
-			httpx.WriteInternalError(w, err)
-			return token, false
-		}
-		token = decrypted
-	}
-	return token, true
 }
 
 func toRepositoryDTO(repo dal.Repository) models.Repository {

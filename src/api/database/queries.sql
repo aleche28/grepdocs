@@ -34,9 +34,18 @@ WHERE user_id = $1;
 SELECT * FROM external_git_accounts
 WHERE id = $1 LIMIT 1;
 
+-- name: GetExternalGitAccountByIdForUpdate :one
+SELECT * FROM external_git_accounts
+WHERE id = $1
+FOR UPDATE;
+
 -- name: GetExternalGitAccountsByUserIDAndProvider :many
 SELECT * FROM external_git_accounts
 WHERE user_id = $1 AND provider = $2;
+
+-- name: GetExternalGitAccountByIdentity :one
+SELECT * FROM external_git_accounts
+WHERE user_id = $1 AND provider = $2 AND provider_user_id = $3;
 
 -- name: UpsertExternalGitAccount :one
 INSERT INTO external_git_accounts (
@@ -45,30 +54,51 @@ INSERT INTO external_git_accounts (
 	provider_user_id,
 	access_token,
 	refresh_token,
-	token_expires_at
+	token_expires_at,
+	refresh_token_expires_at
 ) VALUES (
-	$1, $2, $3, $4, $5, $6
+	$1, $2, $3, $4, $5, $6, $7
 )
 ON CONFLICT (user_id, provider, provider_user_id)
 	DO UPDATE SET
 		access_token = EXCLUDED.access_token,
 		refresh_token = COALESCE(NULLIF(EXCLUDED.refresh_token, ''), external_git_accounts.refresh_token),
 		token_expires_at = EXCLUDED.token_expires_at,
+		refresh_token_expires_at = CASE
+			WHEN EXCLUDED.refresh_token <> '' THEN EXCLUDED.refresh_token_expires_at
+			ELSE external_git_accounts.refresh_token_expires_at END,
 		last_refreshed_at = NOW()
 RETURNING *;
 
--- name: UpdateExternalGitAccountTokens :exec
+-- name: UpdateExternalGitAccountTokens :one
 UPDATE external_git_accounts
 SET 
 	access_token = $2,
-	refresh_token = COALESCE($3, refresh_token),
-	token_expires_at = $4,
+	refresh_token = COALESCE(NULLIF(sqlc.arg(refresh_token)::text, ''), refresh_token),
+	token_expires_at = $3,
+	refresh_token_expires_at = CASE
+		WHEN sqlc.arg(refresh_token)::text <> '' THEN sqlc.narg(refresh_token_expires_at)::timestamptz
+		ELSE refresh_token_expires_at END,
 	last_refreshed_at = NOW()
-WHERE id = $1;
+WHERE id = $1
+RETURNING id;
 
--- name: DeleteExternalGitAccount :exec
+-- name: ClearExternalGitAccountTokens :one
+-- Called when the provider rejects the refresh token: the account can only be
+-- re-linked, so later lookups fail fast without contacting the provider.
+-- Expiries are kept: they still describe the last tokens issued.
+UPDATE external_git_accounts
+SET
+	access_token = '',
+	refresh_token = ''
+WHERE id = $1
+RETURNING id;
+
+-- name: DeleteExternalGitAccountByIdAndUserId :one
 DELETE FROM external_git_accounts
-WHERE id = $1;
+WHERE id = $1
+AND user_id = $2
+RETURNING *;
 
 -- name: GetRepositoriesByUserID :many
 SELECT * FROM repositories

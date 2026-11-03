@@ -1,8 +1,10 @@
 package providers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,12 +31,23 @@ type GitHubOptions struct {
 	RedirectURL  string
 	HTTPClient   *http.Client
 	BaseURL      string
+	// TokenURL overrides GitHub's OAuth token endpoint (used by tests)
+	TokenURL string
+	AppSlug  string
 }
 
 type GitHubProvider struct {
 	options      GitHubOptions
 	oauth2Config *oauth2.Config
 }
+
+// compile-check interface implementations
+var (
+	_ Provider  = (*GitHubProvider)(nil)
+	_ Refresher = (*GitHubProvider)(nil)
+	_ Installer = (*GitHubProvider)(nil)
+	_ Revoker   = (*GitHubProvider)(nil)
+)
 
 func NewGitHub(opts GitHubOptions) *GitHubProvider {
 	if opts.HTTPClient == nil {
@@ -47,13 +60,17 @@ func NewGitHub(opts GitHubOptions) *GitHubProvider {
 		// TODO: strip final / if present
 	}
 
+	endpoint := github.Endpoint
+	if opts.TokenURL != "" {
+		endpoint.TokenURL = opts.TokenURL
+	}
+
 	p := &GitHubProvider{options: opts}
 	p.oauth2Config = &oauth2.Config{
 		ClientID:     opts.ClientID,
 		ClientSecret: opts.ClientSecret,
 		RedirectURL:  opts.RedirectURL,
-		Scopes:       []string{"repo", "user:email"},
-		Endpoint:     github.Endpoint,
+		Endpoint:     endpoint,
 	}
 
 	return p
@@ -62,16 +79,22 @@ func NewGitHub(opts GitHubOptions) *GitHubProvider {
 func (ghp *GitHubProvider) Name() string { return GitHub }
 
 func (ghp *GitHubProvider) AuthCodeURL(state string) string {
-	return ghp.oauth2Config.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	return ghp.oauth2Config.AuthCodeURL(state)
 }
 
-func (ghp *GitHubProvider) Exchange(ctx context.Context, code string) (*oauth2.Token, error) {
-	token, err := ghp.oauth2Config.Exchange(ctx, code)
-	return token, err
+func (ghp *GitHubProvider) Exchange(ctx context.Context, code string) (Token, error) {
+	// oauth2 reads the HTTP client from the context; without it, it falls back to http.DefaultClient (no timeout)
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, ghp.options.HTTPClient)
+	ghtok, err := ghp.oauth2Config.Exchange(ctx, code)
+	if err != nil {
+		return Token{}, err
+	}
+
+	return toToken(ghtok), nil
 }
 
 func (ghp *GitHubProvider) FetchUser(ctx context.Context, accessToken string) (User, error) {
-	req, err := newGitHubRequest(ctx, ghp.options.BaseURL+"/user", accessToken)
+	req, err := newGitHubGetRequest(ctx, ghp.options.BaseURL+"/user", accessToken)
 	if err != nil {
 		return User{}, fmt.Errorf("failed to fetch user data: %w", err)
 	}
@@ -110,7 +133,7 @@ func (ghp *GitHubProvider) ListRepositories(ctx context.Context, accessToken str
 	reqURL := fmt.Sprintf("%s/user/repos?per_page=%d&page=%d", ghp.options.BaseURL, perPage, page)
 
 	for {
-		req, err := newGitHubRequest(ctx, reqURL, accessToken)
+		req, err := newGitHubGetRequest(ctx, reqURL, accessToken)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch user github repos: %w", err)
 		}
@@ -144,12 +167,22 @@ func (ghp *GitHubProvider) ListRepositories(ctx context.Context, accessToken str
 		}
 	}
 
+	if len(repos) == 0 {
+		installed, err := ghp.hasInstalledApp(ctx, accessToken)
+		if err != nil {
+			return nil, err
+		}
+		if !installed {
+			return nil, ErrAppNotInstalled
+		}
+	}
+
 	return toRepositories(repos), nil
 }
 
 func (ghp *GitHubProvider) GetRepository(ctx context.Context, accessToken string, owner string, name string) (Repository, error) {
 	reqURL := fmt.Sprintf("%s/repos/%s/%s", ghp.options.BaseURL, url.PathEscape(owner), url.PathEscape(name))
-	req, err := newGitHubRequest(ctx, reqURL, accessToken)
+	req, err := newGitHubGetRequest(ctx, reqURL, accessToken)
 	if err != nil {
 		return Repository{}, fmt.Errorf("failed to fetch repository: %w", err)
 	}
@@ -192,7 +225,7 @@ func (ghp *GitHubProvider) ListBranches(ctx context.Context, accessToken string,
 	reqURL := fmt.Sprintf("%s/repos/%s/%s/branches?per_page=%d&page=%d", ghp.options.BaseURL, url.PathEscape(owner), url.PathEscape(name), perPage, page)
 
 	for {
-		req, err := newGitHubRequest(ctx, reqURL, accessToken)
+		req, err := newGitHubGetRequest(ctx, reqURL, accessToken)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch repository branches: %w", err)
 		}
@@ -229,6 +262,59 @@ func (ghp *GitHubProvider) ListBranches(ctx context.Context, accessToken string,
 	return toBranches(branches), nil
 }
 
+// Refresh exchanges refreshToken for a new token pair. GitHub rotates both
+// tokens and invalidates the old refresh token. A refresh token that is expired,
+// already used, or revoked yields ErrInvalidToken; any other failure (network,
+// GitHub outage, bad client credentials) is returned as a plain error.
+func (ghp *GitHubProvider) Refresh(ctx context.Context, refreshToken string) (Token, error) {
+	// oauth2 reads the HTTP client from the context; without it, it falls back to http.DefaultClient (no timeout)
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, ghp.options.HTTPClient)
+	// a token with no access token is invalid, so the source refreshes it right away
+	tok, err := ghp.oauth2Config.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken}).Token()
+	if err != nil {
+		var retrieveErr *oauth2.RetrieveError
+		if errors.As(err, &retrieveErr) && retrieveErr.ErrorCode == "bad_refresh_token" {
+			return Token{}, fmt.Errorf("%w: %w", ErrInvalidToken, err)
+		}
+		return Token{}, fmt.Errorf("github token refresh: %w", err)
+	}
+	return toToken(tok), nil
+}
+
+func (ghp *GitHubProvider) InstallURL() string {
+	if ghp.options.AppSlug == "" {
+		return ""
+	}
+	return "https://github.com/apps/" + ghp.options.AppSlug + "/installations/new"
+}
+
+func (ghp *GitHubProvider) Revoke(ctx context.Context, accessToken string) error {
+	reqURL := fmt.Sprintf("%s/applications/%s/token", ghp.options.BaseURL, ghp.options.ClientID)
+	// pass empty token so authorization header is not set (will be overwritten with basic auth next)
+	req, err := newGitHubDeleteRequest(ctx, reqURL, "", map[string]string{"access_token": accessToken})
+	if err != nil {
+		return fmt.Errorf("failed to revoke token: %w", err)
+	}
+	req.SetBasicAuth(ghp.options.ClientID, ghp.options.ClientSecret)
+
+	res, err := ghp.options.HTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to revoke token: %w", err)
+	}
+	defer res.Body.Close()
+
+	// returns 204 or 422 as per docs here:
+	// https://docs.github.com/en/rest/apps/oauth-applications?apiVersion=2026-03-10#delete-an-app-token
+	// accept 404 in case token was from old OAuth app or token is already gone
+	if res.StatusCode != http.StatusNoContent &&
+		res.StatusCode != http.StatusNotFound &&
+		res.StatusCode != http.StatusUnprocessableEntity {
+		return fmt.Errorf("failed to revoke token, github api returned with status code: %d", res.StatusCode)
+	}
+
+	return nil
+}
+
 // private helpers
 
 type githubUser struct {
@@ -258,20 +344,49 @@ type githubBranch struct {
 	} `json:"commit"`
 }
 
-// newGitHubRequest creates an authenticated GET request against the GitHub API
-func newGitHubRequest(ctx context.Context, url, accessToken string) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+type githubInstallationResponse struct {
+	TotalCount int `json:"total_count"`
+}
+
+// newGitHubGetRequest creates an authenticated GET request against the GitHub API
+func newGitHubGetRequest(ctx context.Context, url, accessToken string) (*http.Request, error) {
+	return newGitHubRequest(ctx, http.MethodGet, url, accessToken, nil)
+}
+
+// newGitHubDeleteRequest creates an authenticated DELETE request against the GitHub API
+func newGitHubDeleteRequest(ctx context.Context, url, accessToken string, body any) (*http.Request, error) {
+	return newGitHubRequest(ctx, http.MethodDelete, url, accessToken, body)
+}
+
+func newGitHubRequest(ctx context.Context, method, url, accessToken string, body any) (*http.Request, error) {
+	var reader io.Reader
+
+	if body != nil {
+		out, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		reader = bytes.NewReader(out)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, reader)
 	if err != nil {
 		return nil, err
 	}
 
+	setGitHubRequestHeaders(req, accessToken, body != nil)
+	return req, nil
+}
+
+func setGitHubRequestHeaders(req *http.Request, accessToken string, hasBody bool) {
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
 	if len(accessToken) > 0 {
 		req.Header.Set("Authorization", "token "+accessToken)
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2026-03-10")
-
-	return req, nil
+	if hasBody {
+		req.Header.Set("Content-Type", "application/json")
+	}
 }
 
 // nextGitHubPage returns the URL of the next page from the response Link header,
@@ -291,6 +406,34 @@ func nextGitHubPage(resp *http.Response) string {
 	}
 
 	return ""
+}
+
+func (ghp *GitHubProvider) hasInstalledApp(ctx context.Context, accessToken string) (bool, error) {
+	reqURL := fmt.Sprintf("%s/user/installations?per_page=1", ghp.options.BaseURL)
+
+	req, err := newGitHubGetRequest(ctx, reqURL, accessToken)
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch app installations: %w", err)
+	}
+
+	resp, err := ghp.options.HTTPClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch app installations: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return false, classifyGitHubResponse(resp)
+	}
+
+	var res githubInstallationResponse
+	err = json.NewDecoder(io.LimitReader(resp.Body, maxGitHubResponseBytes)).Decode(&res)
+	resp.Body.Close()
+	if err != nil {
+		return false, fmt.Errorf("failed to parse app installation response: %w", err)
+	}
+
+	return res.TotalCount > 0, nil
 }
 
 func toRepositories(ghRepos []githubRepo) []Repository {
@@ -339,4 +482,29 @@ func classifyGitHubResponse(res *http.Response) error {
 	default:
 		return fmt.Errorf("github API returned status: %d", res.StatusCode)
 	}
+}
+
+func toToken(oauthTok *oauth2.Token) Token {
+	tok := Token{
+		AccessToken:  oauthTok.AccessToken,
+		RefreshToken: oauthTok.RefreshToken,
+	}
+
+	if !oauthTok.Expiry.IsZero() {
+		tok.Expiry = &oauthTok.Expiry
+	}
+
+	var intval int64
+	switch val := oauthTok.Extra("refresh_token_expires_in").(type) {
+	case int64:
+		intval = val
+	case float64:
+		intval = int64(val)
+	}
+	if intval > 0 {
+		t := time.Now().Add(time.Second * time.Duration(intval))
+		tok.RefreshExpiry = &t
+	}
+
+	return tok
 }

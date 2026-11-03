@@ -87,7 +87,8 @@ docs/                  # Requirements, user stories, how-to guides
 
 - `AGENTS.md` — development conventions and commands for tooling/agents
 - `docs/requirements.md`, `docs/user-stories.md` — product spec
-- `docs/howto/setup-google-auth.md` — Google OAuth setup (also covers GitHub OAuth basics)
+- `docs/howto/setup-google-auth.md` — Google OAuth setup
+- `docs/howto/setup-github-app.md` — GitHub App registration, credentials, and installation
 - `docs/howto/database-migrations.md` — golang-migrate workflow
 - `docs/howto/use-sqlc.md` — sqlc schema/query generation
 
