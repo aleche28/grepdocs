@@ -261,8 +261,3 @@ under `.agents/skills`, never inside `.claude/skills`.
   not tracked as issues.
 - `docs/roadmap-stakeholders.md` — non-technical companion to `docs/roadmap.md`: same plan grouped
   into Now/Next/Later, feature language only. Keep the two in sync when phases change.
-
-## Known inconsistencies
-
-- `CLAUDE.md` is only a pointer to this file (Claude Code reads it via an `@AGENTS.md` import).
-  This file is the single source of truth — put new guidance here.
