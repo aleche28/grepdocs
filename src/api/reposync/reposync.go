@@ -44,6 +44,7 @@ type Service struct {
 	registry *providers.Registry
 }
 
+// compile-time check that Service can be the pool's Syncer
 var _ syncqueue.Syncer = (*Service)(nil)
 
 // New returns a Service backed by pool, credentials and the provider registry
@@ -92,8 +93,10 @@ func (s *Service) Sync(ctx context.Context, repoID int64) error {
 	return nil
 }
 
-// ResetStuck resets the sync state of the repos with a queued or running state
-// from a previous server run, returning their ids
+// ResetStuck sets back to queued the repositories left queued or running by a
+// previous server run, and returns their ids so they can be enqueued again. Call it
+// only at startup, before any job runs: it cannot tell a sync interrupted by a
+// restart from one running now (single server only).
 func (s *Service) ResetStuck(ctx context.Context) ([]int64, error) {
 	q := dal.New(s.pool)
 	return q.ResetStuckRepositorySyncs(ctx)

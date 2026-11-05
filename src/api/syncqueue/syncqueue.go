@@ -1,3 +1,9 @@
+// Package syncqueue runs repository syncs in the background with a fixed pool of
+// workers fed by a bounded in-memory queue.
+//
+// The queue is only a fast path: the database is the source of truth. A job lost
+// from the channel (shutdown, crash) leaves its repository queued or running, and
+// the startup reset re-enqueues it.
 package syncqueue
 
 import (
@@ -10,27 +16,31 @@ import (
 )
 
 const (
-	queueSize            = 100
-	numConcurrentWorkers = 10
-	workerTimeout        = 5 * time.Minute // this might be too much, let's see
-	tryWriteTimeout      = 100 * time.Millisecond
+	queueSize            = 100                    // jobs waiting for a worker
+	numConcurrentWorkers = 10                     // syncs running at the same time
+	workerTimeout        = 5 * time.Minute        // bounds a single job; this might be too much, let's see
+	tryWriteTimeout      = 100 * time.Millisecond // how long Enqueue waits for a free slot
 )
 
+// Syncer runs the job for repository id. Workers call it concurrently, so an
+// implementation must be safe for concurrent use.
 type Syncer interface {
 	Sync(ctx context.Context, id int64) error
 }
 
+// SyncPool is a fixed pool of workers that take repository ids from a bounded queue
+// and sync them. Build it with New.
 type SyncPool struct {
 	jobs   chan int64 // each job is just an id
 	syncer Syncer
 	wg     sync.WaitGroup
 }
 
-// ErrQueueFull is returned when jobs queue is full and a new job cannot be enqueue
-// without waiting
+// ErrQueueFull is returned by Enqueue when the queue has no free slot.
 var ErrQueueFull = errors.New("jobs queue is full")
 
-// New creates a new SyncPool with Syncer as worker interface
+// New returns a SyncPool whose workers run their jobs with s. Call Start before
+// enqueuing jobs that must run.
 func New(s Syncer) *SyncPool {
 	return &SyncPool{
 		jobs:   make(chan int64, queueSize),
@@ -38,7 +48,8 @@ func New(s Syncer) *SyncPool {
 	}
 }
 
-// Start spins up the pool workers and returns
+// Start launches the workers and returns. The workers stop when ctx is cancelled, and
+// ctx is the parent of every job context, so cancelling it also aborts running jobs.
 func (sp *SyncPool) Start(ctx context.Context) {
 	for range numConcurrentWorkers {
 		sp.wg.Go(func() {
@@ -54,12 +65,11 @@ func (sp *SyncPool) Start(ctx context.Context) {
 	}
 }
 
-// Enqueue (non-blocking) tries to enqueue a new job in the queue,
-// failing and returning immediately if the queue is full
+// Enqueue adds a job for request handlers, which must not block: if no slot frees up
+// within tryWriteTimeout, it returns ErrQueueFull.
 func (sp *SyncPool) Enqueue(ctx context.Context, id int64) error {
-	// instead of immediately failing when full, let's use a short timeout:
-	// if the queue frees up a place fast enough, we can write without wasting
-	// too much time and the caller is happy!
+	// a short wait instead of failing at once: if a slot frees up in time, the
+	// caller does not have to retry
 	ctx, cancel := context.WithTimeout(ctx, tryWriteTimeout)
 	defer cancel()
 
@@ -71,8 +81,8 @@ func (sp *SyncPool) Enqueue(ctx context.Context, id int64) error {
 	}
 }
 
-// EnqueueWait is the blocking version of Enqueue: if the queue is full,
-// it waits until one spot is freed, adds the job to queue and returns
+// EnqueueWait adds a job for background producers: it blocks until a slot is free, and
+// returns ctx's error if ctx ends first.
 func (sp *SyncPool) EnqueueWait(ctx context.Context, id int64) error {
 	select {
 	case sp.jobs <- id:
@@ -82,15 +92,17 @@ func (sp *SyncPool) EnqueueWait(ctx context.Context, id int64) error {
 	}
 }
 
-// Shutdown waits for all workers to terminate and release resources
+// Shutdown waits for the workers to return. It returns only after the ctx passed to
+// Start is cancelled. Jobs still queued are dropped; their repositories stay queued
+// in the database and are re-enqueued at the next startup.
 func (sp *SyncPool) Shutdown() {
-	// TODO: instead of relying only on the context cancellation from main,
-	// here have grace period after which a termination signal is sent to all
-	// running workers
+	// TODO: instead of relying only on the context cancellation from main, give
+	// running jobs a grace period, then cancel them
 	sp.wg.Wait()
 }
 
-// run wraps timeout and panic recovery around the Sync function
+// run runs one job with its own timeout, and recovers a panic so that a single bad
+// repository cannot crash the server.
 func (sp *SyncPool) run(ctx context.Context, id int64) {
 	ctx, cancel := context.WithTimeout(ctx, workerTimeout)
 	defer cancel()
