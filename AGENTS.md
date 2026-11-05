@@ -11,9 +11,10 @@ multiple git repositories, committing edits back to source control. Only the bac
 
 There is no CI. `go test ./...`, `go vet`, and `go fmt` are the quality gates — run all three before
 committing (`make test`, `make vet`, `make fmt`). Unit tests cover sessions, auth middleware,
-providers, credentials, response envelopes, and the session model. `routers` tests cover only
-helpers that need no database (`writeProviderError`, `installDetails`); handlers stay untested
-because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
+providers, credentials, response envelopes, the session model, and the `syncqueue` worker pool
+(on `testing/synctest`, so its timeouts run on a fake clock). `routers` tests cover only helpers
+that need no database (`writeProviderError`, `installDetails`); handlers and `reposync` stay
+untested because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
 
 ## Commands
 

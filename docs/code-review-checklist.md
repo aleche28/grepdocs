@@ -3,7 +3,7 @@
 Source: senior review of `src/api` (first critique). One item per checkbox, update with
 the file/commit that closed it.
 
-Legend: `[x]` done · `[ ]` open · last updated 2026-10-06
+Legend: `[x]` done · `[ ]` open · last updated 2026-11-05
 
 ## A. Security
 
@@ -109,13 +109,14 @@ Legend: `[x]` done · `[ ]` open · last updated 2026-10-06
       (`middleware/middleware_test.go`), provider HTTP + pagination against `httptest`
       (`providers/github_test.go`), response envelopes (`httpx/httpx_test.go`), the session
       model (`models/session_test.go`), `credentials` token checks and revocation
-      (`credentials/credentials_test.go`), and DB-free router helpers
-      (`routers/repositories_test.go`); runnable via `make test` / `make test-race`. Still open:
+      (`credentials/credentials_test.go`), DB-free router helpers
+      (`routers/repositories_test.go`), and the `syncqueue` worker pool
+      (`syncqueue/syncqueue_test.go`); runnable via `make test` / `make test-race`. Still open:
       the OAuth callback integration test with a fake provider — blocked because handlers hold a
       concrete `*pgxpool.Pool` and there is no DB seam to inject a fake (or a test Postgres); the
-      same gap leaves `credentials`' locked refresh path and the unlink/re-link handlers untested —
-      plus
-      a `ping` smoke test (`/ping` is an inline closure in `main.go`, not a testable router) and CI.
+      same gap leaves `credentials`' locked refresh path, the unlink/re-link handlers, and
+      `reposync` untested — plus a `ping` smoke test (`/ping` is an inline closure in `main.go`,
+      not a testable router) and CI.
       `go vet`/`go fmt` won't catch the bugs in B.
 
 ## Completed during refactor (out of the original list)
