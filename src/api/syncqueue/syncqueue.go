@@ -66,18 +66,21 @@ func (sp *SyncPool) Start(ctx context.Context) {
 }
 
 // Enqueue adds a job for request handlers, which must not block: if no slot frees up
-// within tryWriteTimeout, it returns ErrQueueFull.
+// within tryWriteTimeout, it returns ErrQueueFull. If ctx ends first, it returns ctx's
+// error instead, so a cancelled request is not reported as a full queue.
 func (sp *SyncPool) Enqueue(ctx context.Context, id int64) error {
 	// a short wait instead of failing at once: if a slot frees up in time, the
 	// caller does not have to retry
-	ctx, cancel := context.WithTimeout(ctx, tryWriteTimeout)
-	defer cancel()
+	timer := time.NewTimer(tryWriteTimeout)
+	defer timer.Stop()
 
 	select {
 	case sp.jobs <- id:
 		return nil
-	case <-ctx.Done():
+	case <-timer.C:
 		return ErrQueueFull
+	case <-ctx.Done():
+		return fmt.Errorf("enqueue: %w", ctx.Err())
 	}
 }
 
