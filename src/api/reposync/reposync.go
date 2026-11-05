@@ -72,17 +72,16 @@ func (s *Service) Sync(ctx context.Context, repoID int64) error {
 
 	err = s.sync(ctx, repoID)
 	if err != nil {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), markFailedTimeout)
-		defer cancel()
-
 		if errors.Is(ctx.Err(), context.Canceled) {
-			// leave it running: it will be picked up by the cleanup
-			return nil
+			// shutdown: leave it running, ResetStuckRepositorySyncs re-queues it at startup
+			return fmt.Errorf("sync repo %d interrupted: %w", repoID, err)
 		}
 
-		markErr := q.MarkRepositorySyncAsFailed(ctx, dal.MarkRepositorySyncAsFailedParams{
+		markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), markFailedTimeout)
+		defer cancel()
+		markErr := q.MarkRepositorySyncAsFailed(markCtx, dal.MarkRepositorySyncAsFailedParams{
 			ID:        repoID,
-			SyncError: pgtype.Text{String: syncErrorCode(ctx.Err()), Valid: true},
+			SyncError: pgtype.Text{String: syncErrorCode(err), Valid: true},
 		})
 		if markErr != nil {
 			log.Printf("failed to mark repo %d sync as failed, state stays 'running': %v", repoID, markErr)
