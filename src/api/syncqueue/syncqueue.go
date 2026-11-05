@@ -9,13 +9,11 @@ import (
 	"time"
 )
 
-// numConcurrent workers in the pool that take on queueSize jobs
 const (
-	queueSize       = 100
-	numConcurrent   = 10
-	workerTimeout   = 5 * time.Minute // this might be too much, let's see
-	tryWriteTimeout = 100 * time.Millisecond
-	gracePeriod     = 3 * time.Second
+	queueSize            = 100
+	numConcurrentWorkers = 10
+	workerTimeout        = 5 * time.Minute // this might be too much, let's see
+	tryWriteTimeout      = 100 * time.Millisecond
 )
 
 type Syncer interface {
@@ -24,7 +22,7 @@ type Syncer interface {
 
 type SyncPool struct {
 	jobs   chan int64 // each job is just an id
-	worker Syncer     // interface each worker must implement
+	syncer Syncer
 	wg     sync.WaitGroup
 }
 
@@ -36,20 +34,17 @@ var ErrQueueFull = errors.New("jobs queue is full")
 func New(s Syncer) *SyncPool {
 	return &SyncPool{
 		jobs:   make(chan int64, queueSize),
-		worker: s,
+		syncer: s,
 	}
 }
 
 // Start spins up the pool workers and returns
 func (sp *SyncPool) Start(ctx context.Context) {
-	for range numConcurrent {
+	for range numConcurrentWorkers {
 		sp.wg.Go(func() {
 			for {
 				select {
-				case id, ok := <-sp.jobs:
-					if !ok {
-						return
-					}
+				case id := <-sp.jobs:
 					sp.run(ctx, id)
 				case <-ctx.Done():
 					return
@@ -102,11 +97,11 @@ func (sp *SyncPool) run(ctx context.Context, id int64) {
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("worker recovered from panic: %v", r)
+			log.Printf("worker: repo %d panicked: %v", id, r)
 		}
 	}()
 
-	err := sp.worker.Sync(ctx, id)
+	err := sp.syncer.Sync(ctx, id)
 	if err != nil {
 		log.Printf("worker: %v", err)
 	}

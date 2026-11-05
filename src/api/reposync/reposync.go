@@ -92,8 +92,17 @@ func (s *Service) Sync(ctx context.Context, repoID int64) error {
 	return nil
 }
 
+// ResetStuck resets the sync state of the repos with a queued or running state
+// from a previous server run, returning their ids
+func (s *Service) ResetStuck(ctx context.Context) ([]int64, error) {
+	q := dal.New(s.pool)
+	return q.ResetStuckRepositorySyncs(ctx)
+}
+
 // sync does the work; Sync records the failure
 func (s *Service) sync(ctx context.Context, repoID int64) error {
+	// TODO: refactor this ugly mess of a function!
+
 	q := dal.New(s.pool)
 
 	repo, err := q.GetRepositoryByID(ctx, repoID)

@@ -116,7 +116,23 @@ func main() {
 
 	syncPool.Start(ctx)
 
-	// TODO: call the query to reset stuck repo syncs and re-enqueue them
+	ids, err := syncSvc.ResetStuck(ctx)
+	if err != nil {
+		log.Printf("reset stuck repo sync, continuing without reset: %v", err)
+	} else {
+		// in a goroutine to avoid slowing down the server start:
+		// rare scenario where queue size is decreased between restarts
+		// and it was full at shutdown, which would cause the EnqueueWait
+		// to actually wait, blocking the thread before calling ListenAndServe
+		go func() {
+			for _, id := range ids {
+				if err := syncPool.EnqueueWait(ctx, id); err != nil {
+					log.Printf("re-enqueue repo %d: %v", id, err)
+					return // ctx cancelled: the rest stay queued, the next startup resets them
+				}
+			}
+		}()
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
