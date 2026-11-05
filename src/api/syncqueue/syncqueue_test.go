@@ -202,7 +202,14 @@ func TestEnqueueWaitBlocksUntilSlotIsFree(t *testing.T) {
 	})
 }
 
-func TestEnqueueWaitReturnsWhenContextEnds(t *testing.T) {
+func TestEnqueueReturnsContextErrorWhenContextEnds(t *testing.T) {
+	enqueues := []struct {
+		name    string
+		enqueue func(sp *SyncPool, ctx context.Context, id int64) error
+	}{
+		{name: "Enqueue", enqueue: (*SyncPool).Enqueue},
+		{name: "EnqueueWait", enqueue: (*SyncPool).EnqueueWait},
+	}
 	tests := []struct {
 		name    string
 		ctx     func() (context.Context, context.CancelFunc)
@@ -218,30 +225,36 @@ func TestEnqueueWaitReturnsWhenContextEnds(t *testing.T) {
 			wantErr: context.Canceled,
 		},
 		{
+			// shorter than tryWriteTimeout, so Enqueue sees the caller's deadline first
 			name: "deadline exceeded",
 			ctx: func() (context.Context, context.CancelFunc) {
-				return context.WithTimeout(context.Background(), time.Minute)
+				return context.WithTimeout(context.Background(), tryWriteTimeout/2)
 			},
 			wantErr: context.DeadlineExceeded,
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				sp := New(&recorder{})
-				// a full queue, or select could take the free slot over the done context
-				fillQueue(t, sp)
+	for _, e := range enqueues {
+		for _, tt := range tests {
+			t.Run(e.name+"/"+tt.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					sp := New(&recorder{})
+					// a full queue, or select could take the free slot over the done context
+					fillQueue(t, sp)
 
-				ctx, cancel := tt.ctx()
-				defer cancel()
+					ctx, cancel := tt.ctx()
+					defer cancel()
 
-				err := sp.EnqueueWait(ctx, queueSize)
-				if !errors.Is(err, tt.wantErr) {
-					t.Errorf("EnqueueWait: err = %v, want %v", err, tt.wantErr)
-				}
+					err := e.enqueue(sp, ctx, queueSize)
+					if !errors.Is(err, tt.wantErr) {
+						t.Errorf("%s: err = %v, want %v", e.name, err, tt.wantErr)
+					}
+					if errors.Is(err, ErrQueueFull) {
+						t.Errorf("%s: a context error reported as %v", e.name, ErrQueueFull)
+					}
+				})
 			})
-		})
+		}
 	}
 }
 
