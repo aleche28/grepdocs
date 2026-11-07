@@ -6,32 +6,40 @@ that needs or exposes it, rather than pushed into a separate "hardening" track. 
 `docs/api.md` (target API shape), GitHub issues labeled `tech-debt` (open review findings),
 `docs/requirements.md` / `docs/user-stories.md` (product spec).
 
+Each phase is a GitHub milestone named like its heading (e.g. "Phase 3 — Sync engine"), and its
+tasks are issues in that milestone (tracked on the "GrepDocs Roadmap" project). Work that belongs
+to no phase has no milestone.
+
+Order: the API and the sync engine come first, then a thin read-only UI (Phase 4) so the product
+is usable as early as possible. Every phase after that ships its API and its UI together. The
+read-only UI does not wait for tracked-file selection because sync already copies every Markdown
+file of the tracked branch; file selection narrows that set later.
+
 ## Baseline (today)
 
 Implemented: Google OAuth login, session management (Redis-backed), GitHub account linking
 through a GitHub App (several accounts per provider per user; tokens encrypted at rest, refreshed
 automatically, and revoked on unlink/re-link), GitHub repository discovery for a linked account,
 repository tracking (CRUD + branch listing), on-demand repository sync of Markdown files into
-stored documents, self-service user endpoints. No automatic sync, tracked-file selection, document
-endpoints, search, groups, commit-back, or UI yet. Unit tests cover sessions, auth middleware,
-providers, credentials, response envelopes, the session model, the sync worker pool, and DB-free
-router helpers; no CI.
+stored documents, self-service user endpoints. No automatic sync, document API, tracked-file
+selection, search, groups, commit-back, or UI yet. Unit tests cover sessions, auth middleware,
+providers, credentials, response envelopes, the session model, the sync worker pool, the sync
+error mapping, and DB-free router helpers; no CI.
 
-## Phase 1 — Multi-account & provider foundation
+## Phase 1 — Foundation
 
 Goal: remove the one-account-per-provider ceiling and put a real provider abstraction under it,
 since both the multi-account work and any future non-GitHub provider need the same seam. Token
 encryption rides along because multi-account multiplies the number of tokens at rest.
 
-Status: **schema + linking + provider abstraction + token encryption done** — migration `000004`
+Status: **done** — migration `000004`
 moves the unique key to `(user_id, provider, provider_user_id)` and adds `label`;
 `UpsertExternalGitAccount` makes relinking idempotent; account-scoped reads take `?account_id=`;
 GitHub access now sits behind the `providers` package (`Provider` interface + `Registry`), with
 provider failures normalized to `ErrInvalidToken`/`ErrRateLimited` and mapped to `403`/`429`;
 provider tokens are encrypted at rest with AES-256-GCM behind the `secrets.Cipher` interface.
-Still open in this phase: the rest of the seed tests (#94, #100) — the
-session/`RequireAuth`/provider unit tests landed, but the OAuth callback integration test (needs a
-DB seam) and CI (#44) are outstanding.
+The session/`RequireAuth`/provider unit tests landed; the rest of the seed tests (#94: the OAuth
+callback integration test, which needs a DB seam) and CI (#44) moved to "Ongoing, not phase-bound".
 
 - **Schema**: `external_git_accounts` currently enforces `UNIQUE(user_id, provider)`
   (`database/migrations/000002_create_external_git_accounts_table.up.sql:12`). New migration
@@ -68,17 +76,13 @@ DB seam) and CI (#44) are outstanding.
 
 ## Phase 2 — Repository tracking
 
-Status: **tracking CRUD + branch listing + GitHub App migration + token refresh + sync engine
-done** — the `repositories` table (migration `000005`) backs `POST/GET/PATCH/DELETE
-/api/repositories` and `GET /repositories/{id}/branches`; GitHub accounts link through a GitHub App
-with expiring tokens that `credentials.Service` refreshes and revokes;
-`POST /repositories/{id}/sync` queues a background sync (`syncqueue` + `reposync`) that stores the
-tracked branch's Markdown files in `documents` (migration `000007`). Known gaps carried forward:
-handler, locked-refresh, and `reposync` tests need a DB seam (#94, #100); a re-link racing a
-refresh can leave the rotated token unrevoked; `GET /api/accounts` does not flag accounts that need
-re-linking; `auto_sync` is stored but nothing triggers a sync from it yet; a sync can stay `running`
-until restart (#98); public repositories tracked without an account sync anonymously
-(#99).
+Status: **done** — the
+`repositories` table (migration `000005`) backs `POST/GET/PATCH/DELETE /api/repositories` and
+`GET /repositories/{id}/branches`; GitHub accounts link through a GitHub App with expiring tokens
+that `credentials.Service` refreshes and revokes. The sync engine, planned here at first, is now
+Phase 3. Known gaps carried forward: handler and locked-refresh tests need a DB seam (#94, #100,
+ongoing); a re-link racing a refresh can leave the rotated token unrevoked (accepted as rare);
+`GET /api/accounts` does not flag accounts that need re-linking (Phase 4).
 
 - `POST/GET/PATCH/DELETE /api/repositories`, `GET /repositories/{id}/branches`. **Done.**
 - Track a repo from a linked account **or** by public `owner`/`name` (no account needed for public
@@ -116,54 +120,94 @@ until restart (#98); public repositories tracked without an account sync anonymo
     its refresh token cannot survive.
   - Existing OAuth-App-linked accounts must re-link (different client id). **Done** — documented in
     `docs/howto/setup-github-app.md`.
-- Sync engine: clone/pull the tracked branch, record `tracked_commit`/`last_sync_at`/
-  `sync_status`, `POST /repositories/{id}/sync` to trigger on demand. Uses the user's (refreshed)
-  token; GitHub push webhooks are a natural follow-up trigger for `auto_sync`. **Done
-  differently** — no clone: the sync reads the branch, the recursive tree, and changed blobs
-  through the provider API, and stores `*.md` files in `documents`, diffed by blob SHA and
-  committed in one transaction. `POST /repositories/{id}/sync` claims the repository in the
-  database (`queued`) and hands it to a bounded in-memory worker pool (`syncqueue`); the database
-  stays the source of truth, and repositories left `queued`/`running` are re-enqueued at startup
-  (single server only). Failures are stored as stable `sync_error` codes (see `docs/api.md`), and
-  the failure and finalize writes are scoped to their run by `sync_started_at`. Push webhooks /
-  `auto_sync` remain a follow-up.
 
-## Phase 3 — Tracked file selection
+## Phase 3 — Sync engine
 
-- `GET`/`PUT /repositories/{id}/tracking` (include/exclude patterns).
+Goal: copy the Markdown files of each tracked branch into the database, on demand, with a status
+the user can see. Everything after this phase reads documents from the database, not from the
+provider.
+
+Status: **done** — `POST /repositories/{id}/sync` queues a background sync (`syncqueue` +
+`reposync`) that stores the tracked branch's Markdown files in `documents` (migration `000007`).
+The state machine is in `docs/sync-engine.md`. Known gaps carried forward: `reposync` tests need a
+DB seam (#100); a sync can stay `running` until restart (#98); public repositories tracked without
+an account sync anonymously and can hit the unauthenticated rate limit (#99).
+
+- `documents` table, GitHub branch/tree/blob methods, and the `reposync` job. **Done** — no clone:
+  the sync reads the branch, the recursive tree, and changed blobs through the provider API, and
+  stores `*.md` files in `documents`, diffed by blob SHA and committed in one transaction. It
+  records `synced_commit`/`last_sync_at`/`sync_status`, and a stable `sync_error` code on failure
+  (see `docs/api.md` → Sync status and errors). The failure and finalize writes are scoped to
+  their run by `sync_started_at`.
+- Bounded worker pool for sync jobs, started in `main.go` and drained on graceful shutdown.
+  **Done** — `syncqueue`.
+- `POST /repositories/{id}/sync`: mark the repository `queued` and enqueue a job; the client polls
+  `GET /repositories/{id}`. **Done** — the database stays the source of truth; a full queue is
+  `503` with `Retry-After`.
+- `sync_error` on the repository DTO. **Done.**
+- Recovery after a restart: the queue lives in memory, so queued jobs are lost on shutdown and
+  repositories can stay `queued`/`running`. Re-enqueue or reset them at startup. **Done** — they
+  are re-enqueued at startup (single server only).
+- Tests that need no database: worker pool, error-code mapping. **Done.**
+- Not in this phase: automatic sync (`auto_sync` on app open, GitHub push webhooks) — see
+  "Explicitly deferred".
+
+## Phase 4 — Read-only MVP
+
+Goal: the first usable product. A user signs in, links GitHub, tracks repositories, syncs them, and
+browses and reads their documentation in a browser. This is the first point a real browser origin
+exists.
+
+- **Document API (read only)**: `GET /documents` (metadata, filter by `repo_id`) and
+  `GET /documents/{id}` + `/raw`, with the repository and branch the document comes from. No
+  draft fields yet.
+- `GET /api/accounts` flags accounts that need re-linking, so the UI can offer a "Re-link" action.
+- **CORS + rate limiting (#64)**: currently skipped because there's no real frontend to
+  protect against; mandatory before the UI is used.
+- **UI (`src/ui`, Angular)**: Google login with an auth guard and logout; app shell; linked
+  accounts (link, unlink, re-link, install-the-app link); track a repository (pick account and
+  branch, filter repositories client-side, or a public repository by `owner/name`); repositories
+  page with sync status, trigger and polling, branch and `auto_sync` changes, untrack; a
+  repository's document tree built from `GET /documents`; a document viewer with rendered
+  (client-side, sanitized) and raw modes.
+- A documented way to run the API and the UI together locally (dev-server proxy, so the session
+  cookie stays same-origin).
+- Not in this phase: deployment, a server-side `GET /documents/{id}/rendered`, filters and
+  pagination on `GET /accounts/{provider}/repositories`.
+
+## Phase 5 — Tracked file selection
+
+- `GET`/`PUT /repositories/{id}/tracking` (include/exclude patterns). The default stays "every
+  Markdown file".
+- Sync applies the rules and removes documents that no longer match; changing the rules resets
+  the sync state, like changing the branch does.
 - `GET /repositories/{id}/tree` file browsing, applying the tracking rules.
+- UI: choose tracked files from the file tree.
 
-## Phase 4 — Documents & drafts
+## Phase 6 — Editing & commit-back
 
-- Document DTO, `GET /documents`, `GET /documents/{id}` (+ `raw`, `rendered`, `diff`).
-- `PUT /documents/{id}` writes a draft (never pushed); `DELETE /documents/{id}/draft` reverts.
+- `PUT /documents/{id}` writes a draft (never pushed); `DELETE /documents/{id}/draft` reverts;
+  `GET /documents/{id}/diff` compares the draft with upstream.
 - Storage decision: draft content in Postgres vs. a blob store — pick based on expected doc size
-  and how `diff`/`rendered` will be computed.
-
-## Phase 5 — Commit-back workflow
-
-- `POST /repositories/{id}/commits`: atomic push of selected drafts with a user message.
-- `409` on upstream drift since last sync, `422` on a referenced file with no draft.
+  and how `diff` will be computed.
+- `POST /repositories/{id}/commits`: atomic push of selected drafts with a user message. `409` on
+  upstream drift since last sync, `422` on a referenced file with no draft.
 - `GET /repositories/{id}/commits` history.
+- UI: Markdown editor with live preview; review changes and commit, explaining a `409`.
 
-## Phase 6 — Search
+## Phase 7 — Search
 
-- `GET /api/search` full-text search across tracked documents, with `repo`/`group`/`provider`
-  filters and snippet highlighting.
-- Start with Postgres full-text search (`tsvector`); revisit only if scale/relevance needs outgrow
-  it.
+- `GET /api/search` full-text search across tracked documents, with `repo`/`provider` filters
+  (`group` once Phase 8 lands) and snippet highlighting.
+- Start with Postgres full-text search (`tsvector`) kept up to date by sync; revisit only if
+  scale/relevance needs outgrow it.
+- UI: search box and results page.
 
-## Phase 7 — Groups
+## Phase 8 — Groups
 
 - `GET/POST/PATCH/DELETE /groups`, repo assignment endpoints.
-- Wire `group` filters into `/documents`, `/repositories`, `/search` once groups exist.
-
-## Phase 8 — Frontend (`src/ui`)
-
-- Build the UI consuming the API surface from phases 1–7. This is the first point a real browser
-  origin exists.
-- **CORS + rate limiting (#64)**: currently skipped because there's no real frontend to
-  protect against; becomes mandatory at (or just before) this phase.
+- Wire `group` filters into `/documents`, `/repositories`, `/search`.
+- UI: manage groups and filter by group.
 
 ## Ongoing, not phase-bound
 
@@ -176,14 +220,22 @@ adjacent code, rather than batching into a dedicated cleanup pass:
   anonymous ones; only persist on mutation.
 - **`username` column (#93)** — defaults to `''`, never populated; decide if it's a real
   product feature (fits naturally with Phase 1's account labels) or drop it.
-- **Test/CI coverage (#94, #100, #44)** — grow alongside each phase above rather than as a
-  standalone effort; Phase 1 seeds it.
+- **Test coverage (#94, #100)** — grow alongside each phase rather than as a standalone
+  effort. Still missing: a DB seam (or test Postgres) for handler tests and the OAuth callback
+  integration test.
+- **CI (#44)** — `fmt`, `vet`, build and test workflows, then quality and security checks.
 
 ## Explicitly deferred
 
+These live in the "Later" milestone.
+
 - **Bitbucket / GitLab providers** — Phase 1's provider abstraction sets this up, but no phase is
-  committed yet. Revisit once Phase 2 has proven the interface out with GitHub plus multi-account
-  in production use.
+  committed yet. Revisit once the interface has been proven with GitHub plus multi-account in
+  production use.
+- **Automatic sync** — honor `auto_sync` by syncing when the user opens the app and/or on GitHub
+  push webhooks.
+- **Several sign-in identities per user** (e.g. email + GitHub merged into one account) — an
+  external proposal, not yet planned.
 - **Multi-user / shared accounts** — out of scope. This roadmap's multi-account work is
   multiple accounts *per user*, not accounts shared across users; `docs/api.md` treats users as
   private with no collaboration model, and revisiting that is a bigger product decision than this

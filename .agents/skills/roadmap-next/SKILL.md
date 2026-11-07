@@ -12,7 +12,8 @@ Answer the recurring "what's next?" question with a ranked, repo-grounded recomm
 
 1. `docs/roadmap.md` — the phase plan. The **current phase** is the first phase with unfinished
    work; its `Status:` line and bullets say what is done vs. open. Some phases have no `Status:`
-   line yet (Phase 2 does not) — infer status from the bullets and code.
+   line yet — infer status from the bullets and code. The phase's GitHub milestone (named like
+   the heading, e.g. "Phase 3 — Sync engine") lists its tasks as issues; `gh issue list --milestone "<name>"` shows what is open.
 2. Open `tech-debt` issues — `gh issue list --label tech-debt --state open`. The roadmap names
    which phase depends on or exposes each one by `#NN` (e.g. Phase 8 owns #64 CORS/rate limiting).
 3. `docs/api.md` — the target shape for any endpoint involved. Marked **Implemented** vs.

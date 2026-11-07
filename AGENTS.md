@@ -232,6 +232,8 @@ refresh and revocation flows are described above, under `credentials`.
 
 Reusable workflows live in `.agents/skills/<name>/SKILL.md`. Agents that understand skills load
 them on matching requests; if yours doesn't, read the relevant file directly before acting.
+`.claude/skills` is a symlink to `../.agents/skills` so Claude Code discovers them — add new skills
+under `.agents/skills`, never inside `.claude/skills`.
 
 - `migration-generator` — scaffold new golang-migrate up/down files from a table/column description.
 - `roadmap-next` — determine the next task in the current roadmap phase (reads `docs/roadmap.md`,
@@ -240,6 +242,8 @@ them on matching requests; if yours doesn't, read the relevant file directly bef
   `REVIEW-RUBRIC.md`). Advisory by default; only applies fixes on explicit opt-in.
 - `phase-status-sync` — close out finished work across `docs/roadmap.md` and
   `docs/roadmap-stakeholders.md`, and name the GitHub issues it closes. Docs only.
+- `deep-dive` — Socratic, read-only mentor for understanding how a part of the code works, down to
+  dependency/stdlib source, with history, trade-offs, and related patterns. Never edits code.
 
 ## Documentation map
 
@@ -253,6 +257,8 @@ them on matching requests; if yours doesn't, read the relevant file directly bef
 - `docs/howto/` — Google OAuth setup, GitHub App setup, golang-migrate workflow, sqlc usage.
 - `docs/roadmap.md` — phased build-out plan (not dated), interleaving new features with the open
   `tech-debt` issues each phase depends on or exposes. Update it as phases complete or scope shifts.
+  Each phase is a GitHub milestone of the same name whose issues are its tasks; user stories are
+  not tracked as issues.
 - `docs/roadmap-stakeholders.md` — non-technical companion to `docs/roadmap.md`: same plan grouped
   into Now/Next/Later, feature language only. Keep the two in sync when phases change.
 
