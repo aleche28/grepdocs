@@ -670,6 +670,22 @@ func (q *Queries) ResetStuckRepositorySyncs(ctx context.Context) ([]int64, error
 	return items, nil
 }
 
+const unclaimRepositorySync = `-- name: UnclaimRepositorySync :exec
+UPDATE repositories
+SET
+	sync_status = CASE
+		WHEN sync_error    IS NOT NULL THEN 'failed'
+		WHEN synced_commit IS NULL THEN 'pending'
+		ELSE 'ok' END,
+	updated_at = NOW()
+WHERE id = $1 AND sync_status = 'queued'
+`
+
+func (q *Queries) UnclaimRepositorySync(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, unclaimRepositorySync, id)
+	return err
+}
+
 const updateExternalGitAccountTokens = `-- name: UpdateExternalGitAccountTokens :one
 UPDATE external_git_accounts
 SET 

@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"grepdocs/api/credentials"
@@ -10,6 +11,8 @@ import (
 	"grepdocs/api/models"
 	"grepdocs/api/providers"
 	"grepdocs/api/session"
+	"grepdocs/api/syncqueue"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,14 +24,19 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// pgUniqueViolation is the PostgreSQL SQLSTATE for a unique constraint violation.
-const pgUniqueViolation = "23505"
+const (
+	// pgUniqueViolation is the PostgreSQL SQLSTATE for a unique constraint violation.
+	pgUniqueViolation = "23505"
+	// retryAfterFullQueue sets a delay after which clients can retry to enqueue after a full queue error
+	retryAfterFullQueue = "30"
+)
 
 type RepositoriesHandler struct {
 	dbPool           *pgxpool.Pool
 	sessionMgr       *session.SessionManager
 	providerRegistry *providers.Registry
 	creds            *credentials.Service
+	syncpool         *syncqueue.SyncPool
 }
 
 func RepositoriesRoutes(
@@ -36,12 +44,14 @@ func RepositoriesRoutes(
 	sm *session.SessionManager,
 	pr *providers.Registry,
 	creds *credentials.Service,
+	syncpool *syncqueue.SyncPool,
 ) chi.Router {
 	h := &RepositoriesHandler{
 		dbPool:           pool,
 		sessionMgr:       sm,
 		providerRegistry: pr,
 		creds:            creds,
+		syncpool:         syncpool,
 	}
 
 	r := chi.NewRouter()
@@ -53,6 +63,7 @@ func RepositoriesRoutes(
 	r.Patch("/{id}", h.updateRepository)
 	r.Delete("/{id}", h.deleteRepository)
 	r.Get("/{id}/branches", h.listRepositoryBranches)
+	r.Post("/{id}/sync", h.syncRepository)
 
 	return r
 }
@@ -384,6 +395,60 @@ func (h *RepositoriesHandler) listRepositoryBranches(w http.ResponseWriter, r *h
 	httpx.WriteJSON(w, http.StatusOK, branches)
 }
 
+func (h *RepositoriesHandler) syncRepository(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+
+	uid, _ := middleware.CurrentUserID(r)
+	q := dal.New(h.dbPool)
+
+	_, err := q.GetRepositoryByIDAndUserID(r.Context(), dal.GetRepositoryByIDAndUserIDParams{
+		ID:     id,
+		UserID: uid,
+	})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "repository not found for current user")
+		return
+	case err != nil:
+		httpx.WriteInternalError(w, err)
+		return
+	}
+
+	repo, err := q.ClaimRepositorySync(r.Context(), dal.ClaimRepositorySyncParams{
+		ID:     id,
+		UserID: uid,
+	})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// technically, it could also have been deleted! (rare)
+		httpx.WriteError(w, http.StatusConflict, httpx.CodeConflict, "repository is already queued or running")
+		return
+	case err != nil:
+		httpx.WriteInternalError(w, err)
+		return
+	}
+
+	if err = h.syncpool.Enqueue(r.Context(), id); err != nil {
+		cancelErr := q.UnclaimRepositorySync(context.WithoutCancel(r.Context()), id)
+		if cancelErr != nil {
+			log.Printf("cancel repo %d sync: %v", id, cancelErr)
+		}
+
+		if errors.Is(err, syncqueue.ErrQueueFull) {
+			w.Header().Set("Retry-After", retryAfterFullQueue)
+			httpx.WriteError(w, http.StatusServiceUnavailable, httpx.CodeServiceUnavailable, "sync service unavailable")
+		} else {
+			httpx.WriteInternalError(w, err)
+		}
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusAccepted, toRepositoryDTO(repo))
+}
+
 // private helpers
 
 // writeProviderError maps a normalized provider error to an HTTP response,
@@ -465,6 +530,10 @@ func toRepositoryDTO(repo dal.Repository) models.Repository {
 	if repo.SyncedCommit.Valid {
 		syncedCommit := repo.SyncedCommit.String
 		dto.SyncedCommit = &syncedCommit
+	}
+	if repo.SyncError.Valid {
+		syncError := repo.SyncError.String
+		dto.SyncError = &syncError
 	}
 
 	return dto

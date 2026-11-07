@@ -221,3 +221,13 @@ SET blob_sha = EXCLUDED.blob_sha, content = EXCLUDED.content, synced_at = EXCLUD
 
 -- name: DeleteDocuments :exec
 DELETE FROM documents WHERE repository_id = @repository_id AND path = ANY(@paths::text[]);
+
+-- name: UnclaimRepositorySync :exec
+UPDATE repositories
+SET
+	sync_status = CASE
+		WHEN sync_error    IS NOT NULL THEN 'failed'
+		WHEN synced_commit IS NULL THEN 'pending'
+		ELSE 'ok' END,
+	updated_at = NOW()
+WHERE id = $1 AND sync_status = 'queued';
