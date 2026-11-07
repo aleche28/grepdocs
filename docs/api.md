@@ -53,10 +53,11 @@ improvising a new one.
   | 403    | `forbidden`         | Authenticated, but not the resource owner           |
   | 403    | `app_not_installed` | Provider app not installed for the linked account   |
   | 404    | `not_found`         | Resource does not exist                             |
-  | 409    | `conflict`          | Upstream state changed under the request            |
+  | 409    | `conflict`          | Conflicts with the current state (upstream changed, already tracked, sync already in progress) |
   | 429    | `rate_limited`      | Provider rate limit hit                             |
   | 500    | `internal`          | Server error                                        |
   | 501    | `not_implemented`   | Provider or feature not implemented yet             |
+  | 503    | `service_unavailable` | Temporarily overloaded; retry after `Retry-After` seconds |
 
   Endpoints that validate a request body against domain rules (e.g. committing drafts) may need a
   `422`/`validation_failed` pair for "well-formed but semantically invalid" cases — **Proposed**,
@@ -234,8 +235,8 @@ not an alternative implementation.
 
 ## Repositories (tracked)
 
-Tracking CRUD and branch listing are implemented (`repositories` table, migration `000005`); sync,
-tree, tracking rules, and commits are not. Every route is scoped to the caller: another user's
+Tracking CRUD, branch listing, and sync are implemented (`repositories` table, migration `000005`;
+`documents` table, migration `000007`); tree, tracking rules, and commits are not. Every route is scoped to the caller: another user's
 repository `id` returns `404 not_found`, never `403`.
 
 | Method | Path                              | Auth | Status                            | Description                                                    |
@@ -246,7 +247,7 @@ repository `id` returns `404 not_found`, never `403`.
 | PATCH  | `/repositories/{id}`               | Y    | Implemented                       | Change tracked branch, `auto_sync`, etc.                          |
 | DELETE | `/repositories/{id}`               | Y    | Implemented (untrack only)        | Untrack (removes resolved docs + drafts)                          |
 | GET    | `/repositories/{id}/branches`      | Y    | Implemented for `github`          | List branches                                                     |
-| POST   | `/repositories/{id}/sync`          | Y    | Proposed                          | Trigger a sync now                                                |
+| POST   | `/repositories/{id}/sync`          | Y    | Implemented for `github`          | Trigger a sync now                                                |
 | GET    | `/repositories/{id}/tree`          | Y    | Proposed                          | Browse file tree (`?path=docs/&ref=<sha>`, S3.1)                  |
 | GET    | `/repositories/{id}/tracking`      | Y    | Proposed                          | Show include/exclude pattern rules                                |
 | PUT    | `/repositories/{id}/tracking`      | Y    | Proposed                          | Set file tracking rules (S3.2/3.3/3.4)                            |
@@ -276,7 +277,8 @@ repository `id` returns `404 not_found`, never `403`.
   upstream (`400 bad_request` otherwise).
 - `201` with the repository DTO below; `409 conflict` if the repository is already tracked.
 
-Repository DTO (returned by `GET`/`POST`/`PATCH`; `account_id` and `synced_commit` may be `null`):
+Repository DTO (returned by `GET`/`POST`/`PATCH` and `POST /sync`; `account_id`, `synced_commit`,
+`sync_error`, and `last_sync_at` may be `null`):
 
 ```json
 {
@@ -293,6 +295,7 @@ Repository DTO (returned by `GET`/`POST`/`PATCH`; `account_id` and `synced_commi
   "tracked_branch": "main",
   "synced_commit": null,
   "sync_status": "pending",
+  "sync_error": null,
   "auto_sync": true,
   "last_sync_at": null,
   "created_at": "2026-09-20T10:11:12Z",
@@ -307,14 +310,28 @@ Repository DTO (returned by `GET`/`POST`/`PATCH`; `account_id` and `synced_commi
 ```
 
 A new `tracked_branch` must exist upstream (`400 bad_request` otherwise), and changing it resets
-the sync state (`synced_commit` → `null`, `sync_status` → `pending`, `last_sync_at` → `null`).
+the sync state (`synced_commit` → `null`, `sync_status` → `pending`, `sync_error` → `null`,
+`last_sync_at` → `null`). A sync queued or running for the old branch is discarded without storing
+anything; trigger a new one for the new branch.
+
+### Sync
+
+A sync copies the Markdown files (`*.md`, any case) of the tracked branch into documents. The client
+triggers it with `POST /api/repositories/{id}/sync` (no body) and polls `GET /repositories/{id}`
+until `sync_status` is `ok` or `failed`. Syncs run in the background on a bounded queue.
+
+- `202` with the repository DTO, `sync_status` set to `queued`.
+- `404 not_found` if the repository does not exist or belongs to another user.
+- `409 conflict` if a sync is already `queued` or `running`; poll instead of retrying.
+- `503 service_unavailable` if the sync queue is full, with a `Retry-After` header (seconds). The
+  repository keeps its previous `sync_status`.
+
+Public repositories tracked without a linked account sync anonymously, so they share the
+provider's unauthenticated rate limit (60 requests per hour on GitHub). A sync makes one request per
+new or changed Markdown file, so a large first sync of such a repository can fail with
+`rate_limited` on every attempt. Tracking it through a linked account avoids this.
 
 ### Sync status and errors
-
-The sync job (`reposync`) is implemented; `POST /repositories/{id}/sync` and the `sync_error`
-field on the repository DTO are not exposed yet. A sync copies the Markdown files (`*.md`, any
-case) of the tracked branch into documents; the client triggers it and polls
-`GET /repositories/{id}` until `sync_status` is `ok` or `failed`.
 
 | `sync_status` | Meaning                                                                 |
 | ------------- | ----------------------------------------------------------------------- |
