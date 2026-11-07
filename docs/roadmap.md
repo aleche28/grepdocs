@@ -3,8 +3,8 @@
 Phased, not dated — each phase is a scope milestone, not a calendar commitment. Phases are
 intended to run roughly in order but security/architecture work is interleaved into the phase
 that needs or exposes it, rather than pushed into a separate "hardening" track. Source material:
-`docs/api.md` (target API shape), `docs/code-review-checklist.md` (tracked findings, `[ ]` =
-open), `docs/requirements.md` / `docs/user-stories.md` (product spec).
+`docs/api.md` (target API shape), GitHub issues labeled `tech-debt` (open review findings),
+`docs/requirements.md` / `docs/user-stories.md` (product spec).
 
 Each phase is a GitHub milestone named like its heading (e.g. "Phase 3 — Sync engine"), and its
 tasks are issues in that milestone (tracked on the "GrepDocs Roadmap" project). Work that belongs
@@ -20,10 +20,11 @@ file of the tracked branch; file selection narrows that set later.
 Implemented: Google OAuth login, session management (Redis-backed), GitHub account linking
 through a GitHub App (several accounts per provider per user; tokens encrypted at rest, refreshed
 automatically, and revoked on unlink/re-link), GitHub repository discovery for a linked account,
-repository tracking (CRUD + branch listing), self-service user endpoints. The sync engine is in
-progress (Phase 3). No document API, tracked-file selection, search, groups, commit-back, or UI
-yet. Unit tests cover sessions, auth middleware, providers, credentials, response envelopes, the
-session model, and DB-free router helpers; no CI.
+repository tracking (CRUD + branch listing), on-demand repository sync of Markdown files into
+stored documents, self-service user endpoints. No automatic sync, document API, tracked-file
+selection, search, groups, commit-back, or UI yet. Unit tests cover sessions, auth middleware,
+providers, credentials, response envelopes, the session model, the sync worker pool, the sync
+error mapping, and DB-free router helpers; no CI.
 
 ## Phase 1 — Foundation
 
@@ -37,8 +38,8 @@ moves the unique key to `(user_id, provider, provider_user_id)` and adds `label`
 GitHub access now sits behind the `providers` package (`Provider` interface + `Registry`), with
 provider failures normalized to `ErrInvalidToken`/`ErrRateLimited` and mapped to `403`/`429`;
 provider tokens are encrypted at rest with AES-256-GCM behind the `secrets.Cipher` interface.
-The session/`RequireAuth`/provider unit tests landed; the rest of the seed tests (E1: the OAuth
-callback integration test, which needs a DB seam, and CI) moved to "Ongoing, not phase-bound".
+The session/`RequireAuth`/provider unit tests landed; the rest of the seed tests (#94: the OAuth
+callback integration test, which needs a DB seam) and CI (#44) moved to "Ongoing, not phase-bound".
 
 - **Schema**: `external_git_accounts` currently enforces `UNIQUE(user_id, provider)`
   (`database/migrations/000002_create_external_git_accounts_table.up.sql:12`). New migration
@@ -53,7 +54,7 @@ callback integration test, which needs a DB seam, and CI) moved to "Ongoing, not
   `GET /accounts/{provider}/repositories` and `POST /repositories` already take/accept an
   `account_id` — confirm every account-scoped read is disambiguated by account, not provider.
   `DELETE /accounts/{id}` enforces ownership and cascades cleanup.
-- **Provider abstraction (checklist C1)**: extract a `providers` interface (exchange code, list
+- **Provider abstraction**: extract a `providers` interface (exchange code, list
   repositories, refresh token) out of the inline GitHub calls in
   `routers/external_git_accounts.go`. Multi-account and a future Bitbucket/GitLab provider both
   need this seam — build it once here rather than duplicating inline GitHub-shaped code per
@@ -61,14 +62,14 @@ callback integration test, which needs a DB seam, and CI) moved to "Ongoing, not
   refresh is modeled as an optional `Refresher` capability rather than a method on every provider,
   since GitHub OAuth App tokens don't refresh (this changes with the Phase 2 GitHub App migration).
   GitHub implements it since that migration (Phase 2).
-- **Token encryption (checklist A2/D1)**: `access_token`/`refresh_token` are plaintext today. Add
+- **Token encryption**: `access_token`/`refresh_token` are plaintext today. Add
   at-rest encryption (app-level AEAD or KMS envelope) before the number of stored tokens grows
   with multi-account. **Done** — app-level AES-256-GCM in the `secrets` package, keyed by a
   base64 `TOKEN_ENCRYPTION_KEY` validated at startup; ciphertext is versioned (`v1:`) and
   base64-encoded for safe storage in the existing `TEXT` columns. KMS envelope remains a future
   swap behind `secrets.Cipher`.
-- **Tests (checklist E1, started here not deferred)**: first unit tests for session lifecycle and
-  `RequireAuth` are in (`session/manager_test.go`, `middleware/middleware_test.go`), alongside
+- **Tests (started here not deferred; #94, #100, CI #44)**: first unit tests for session
+  lifecycle and `RequireAuth` are in (`session/manager_test.go`, `middleware/middleware_test.go`), alongside
   provider HTTP/pagination tests against `httptest` (`providers/github_test.go`) and response
   envelope tests (`httpx`). The OAuth callback integration test with a fake provider is still open —
   it needs a DB seam (handlers hold a concrete `*pgxpool.Pool`) or a test Postgres — as is CI.
@@ -78,15 +79,15 @@ callback integration test, which needs a DB seam, and CI) moved to "Ongoing, not
 Status: **done** — the
 `repositories` table (migration `000005`) backs `POST/GET/PATCH/DELETE /api/repositories` and
 `GET /repositories/{id}/branches`; GitHub accounts link through a GitHub App with expiring tokens
-that `credentials.Service` refreshes and revokes (checklist D3 closed). The sync engine, planned
-here at first, is now Phase 3. Known gaps carried forward: handler and locked-refresh tests need a
-DB seam (checklist E1, ongoing); a re-link racing a refresh can leave the rotated token unrevoked
-(accepted as rare); `GET /api/accounts` does not flag accounts that need re-linking (Phase 4).
+that `credentials.Service` refreshes and revokes. The sync engine, planned here at first, is now
+Phase 3. Known gaps carried forward: handler and locked-refresh tests need a DB seam (#94, #100,
+ongoing); a re-link racing a refresh can leave the rotated token unrevoked (accepted as rare);
+`GET /api/accounts` does not flag accounts that need re-linking (Phase 4).
 
 - `POST/GET/PATCH/DELETE /api/repositories`, `GET /repositories/{id}/branches`. **Done.**
 - Track a repo from a linked account **or** by public `owner`/`name` (no account needed for public
   GitHub repos, per `docs/api.md`). **Done.**
-- **GitHub App migration + token refresh (checklist D3) — before the sync engine.** **Done** — see
+- **GitHub App migration + token refresh — before the sync engine.** **Done** — see
   the per-item notes below. Replace the GitHub OAuth App with a GitHub App using expiring user
   tokens (8h access, 6-month single-use refresh token), so stored tokens stop being non-expiring,
   full-`repo`-scope credentials. The sync engine design depends on this (who owns the token, that
@@ -126,18 +127,28 @@ Goal: copy the Markdown files of each tracked branch into the database, on deman
 the user can see. Everything after this phase reads documents from the database, not from the
 provider.
 
-Status: **in progress** on `feat/sync-engine` — the `documents` table (migration `000007`),
-GitHub branch/tree/blob methods, the `reposync` job (stores every `*.md` file, records
-`synced_commit`/`last_sync_at`/`sync_status`, and a stable `sync_error` code on failure; see
-`docs/api.md` → Sync status and errors) and a draft worker pool (`syncqueue`).
+Status: **done** — `POST /repositories/{id}/sync` queues a background sync (`syncqueue` +
+`reposync`) that stores the tracked branch's Markdown files in `documents` (migration `000007`).
+The state machine is in `docs/sync-engine.md`. Known gaps carried forward: `reposync` tests need a
+DB seam (#100); a sync can stay `running` until restart (#98); public repositories tracked without
+an account sync anonymously and can hit the unauthenticated rate limit (#99).
 
+- `documents` table, GitHub branch/tree/blob methods, and the `reposync` job. **Done** — no clone:
+  the sync reads the branch, the recursive tree, and changed blobs through the provider API, and
+  stores `*.md` files in `documents`, diffed by blob SHA and committed in one transaction. It
+  records `synced_commit`/`last_sync_at`/`sync_status`, and a stable `sync_error` code on failure
+  (see `docs/api.md` → Sync status and errors). The failure and finalize writes are scoped to
+  their run by `sync_started_at`.
 - Bounded worker pool for sync jobs, started in `main.go` and drained on graceful shutdown.
+  **Done** — `syncqueue`.
 - `POST /repositories/{id}/sync`: mark the repository `queued` and enqueue a job; the client polls
-  `GET /repositories/{id}`.
-- `sync_error` on the repository DTO.
+  `GET /repositories/{id}`. **Done** — the database stays the source of truth; a full queue is
+  `503` with `Retry-After`.
+- `sync_error` on the repository DTO. **Done.**
 - Recovery after a restart: the queue lives in memory, so queued jobs are lost on shutdown and
-  repositories can stay `queued`/`running`. Re-enqueue or reset them at startup.
-- Tests that need no database: worker pool, error-code mapping.
+  repositories can stay `queued`/`running`. Re-enqueue or reset them at startup. **Done** — they
+  are re-enqueued at startup (single server only).
+- Tests that need no database: worker pool, error-code mapping. **Done.**
 - Not in this phase: automatic sync (`auto_sync` on app open, GitHub push webhooks) — see
   "Explicitly deferred".
 
@@ -151,7 +162,7 @@ exists.
   `GET /documents/{id}` + `/raw`, with the repository and branch the document comes from. No
   draft fields yet.
 - `GET /api/accounts` flags accounts that need re-linking, so the UI can offer a "Re-link" action.
-- **CORS + rate limiting (checklist A7)**: currently skipped because there's no real frontend to
+- **CORS + rate limiting (#64)**: currently skipped because there's no real frontend to
   protect against; mandatory before the UI is used.
 - **UI (`src/ui`, Angular)**: Google login with an auth guard and logout; app shell; linked
   accounts (link, unlink, re-link, install-the-app link); track a repository (pick account and
@@ -203,16 +214,16 @@ exists.
 Small items that don't need their own phase — pick up opportunistically whenever touching the
 adjacent code, rather than batching into a dedicated cleanup pass:
 
-- **Config consolidation (checklist C7)** — `main.go` builds `AppConfig` but routers also read
+- **Config consolidation (#91)** — `main.go` builds `AppConfig` but routers also read
   `os.Getenv` directly; consolidate next time a router constructor changes.
-- **Session write amplification (checklist C8)** — `Handle` persists every request including
+- **Session write amplification (#92)** — `Handle` persists every request including
   anonymous ones; only persist on mutation.
-- **`username` column (checklist D5)** — defaults to `''`, never populated; decide if it's a real
+- **`username` column (#93)** — defaults to `''`, never populated; decide if it's a real
   product feature (fits naturally with Phase 1's account labels) or drop it.
-- **Test coverage (checklist E1)** — grow alongside each phase rather than as a standalone
+- **Test coverage (#94, #100)** — grow alongside each phase rather than as a standalone
   effort. Still missing: a DB seam (or test Postgres) for handler tests and the OAuth callback
   integration test.
-- **CI** — `fmt`, `vet`, build and test workflows, then quality and security checks.
+- **CI (#44)** — `fmt`, `vet`, build and test workflows, then quality and security checks.
 
 ## Explicitly deferred
 

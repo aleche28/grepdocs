@@ -10,6 +10,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Document struct {
+	ID           int64
+	RepositoryID int64
+	Path         string
+	BlobSha      string
+	Content      string
+	SyncedAt     time.Time
+}
+
 type ExternalGitAccount struct {
 	ID                    int64
 	UserID                int64
@@ -43,6 +52,8 @@ type Repository struct {
 	LastSyncAt     *time.Time
 	CreatedAt      *time.Time
 	UpdatedAt      *time.Time
+	SyncError      pgtype.Text
+	SyncStartedAt  *time.Time
 }
 
 type User struct {

@@ -18,8 +18,10 @@ reading documentation; editing, search, and groups arrive afterwards, each with 
   on GitHub's side.
 - **Choose which repositories to track.** You can pick the repositories GrepDocs should keep an
   eye on, and the branch to follow in each.
-- **Keep tracked documentation up to date** (in progress). Ask GrepDocs to fetch the latest
-  documentation from a repository, and see whether the last update worked and when it happened.
+- **Bring in the latest documentation on demand.** Ask GrepDocs to update a tracked repository and
+  it pulls in the current Markdown documentation from the branch you follow, in the background,
+  and tells you whether it worked and when it happened — and if not, what to do about it (for
+  example, reconnect your account).
 
 ## Next
 

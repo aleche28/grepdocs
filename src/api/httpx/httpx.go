@@ -7,15 +7,16 @@ import (
 )
 
 const (
-	CodeNotAuthenticated = "not_authenticated"
-	CodeBadRequest       = "bad_request"
-	CodeForbidden        = "forbidden"
-	CodeNotFound         = "not_found"
-	CodeConflict         = "conflict"
-	CodeNotImplemented   = "not_implemented"
-	CodeInternal         = "internal"
-	CodeRateLimited      = "rate_limited"
-	CodeAppNotInstalled  = "app_not_installed"
+	CodeNotAuthenticated   = "not_authenticated"
+	CodeBadRequest         = "bad_request"
+	CodeForbidden          = "forbidden"
+	CodeNotFound           = "not_found"
+	CodeConflict           = "conflict"
+	CodeNotImplemented     = "not_implemented"
+	CodeInternal           = "internal"
+	CodeRateLimited        = "rate_limited"
+	CodeAppNotInstalled    = "app_not_installed"
+	CodeServiceUnavailable = "service_unavailable"
 )
 
 func WriteJSON(w http.ResponseWriter, status int, data any) {

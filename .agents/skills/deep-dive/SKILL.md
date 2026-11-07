@@ -52,8 +52,8 @@ the full picture:
   `git show <sha>` to find *why* something looks the way it does (a fix commit, a follow-up
   migration).
 - **Repo docs** — `AGENTS.md` records deliberate decisions and the rules behind them;
-  `docs/api.md` (target contract), `docs/code-review-checklist.md` (known open problems),
-  `docs/howto/`. Connect the code to its intended design.
+  `docs/api.md` (target contract), open `tech-debt` issues (known open problems:
+  `gh issue list --label tech-debt --state open`), `docs/howto/`. Connect the code to its intended design.
 - **Dependency and stdlib source** — find a module's source with
   `go -C src/api list -m -f '{{.Dir}}' <module>`, stdlib under `$(go env GOROOT)/src`, or
   `go doc -src <pkg>.<Symbol>`. Read the real implementation (pgx pool acquisition, chi routing,
@@ -120,7 +120,7 @@ Finish with:
 
 - **Noticed along the way** *(only if applicable)* — bugs, risky assumptions, or questionable
   design spotted during research: what it is, where (`path:line`), and why it matters, in a line or
-  two each. No fix. If it matches an open item in `docs/code-review-checklist.md`, cite it. For a
+  two each. No fix. If it matches an open `tech-debt` issue, cite it as `#NN`. For a
   proper review, point to the `implementation-review` skill.
 - **Where to go next** — 2–3 follow-up threads that build on this one (deeper, adjacent, or "what
   would change if…"). The session continues.

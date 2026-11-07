@@ -12,6 +12,54 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const claimRepositorySync = `-- name: ClaimRepositorySync :one
+UPDATE repositories
+SET sync_status = 'queued', updated_at = NOW()
+WHERE id = $1 AND user_id = $2 AND sync_status NOT IN ('queued', 'running')
+RETURNING id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at, sync_error, sync_started_at
+`
+
+type ClaimRepositorySyncParams struct {
+	ID     int64
+	UserID int64
+}
+
+// basically, the caller locks the repo for syncing
+// if it's already running, this does not return anything, so the caller
+// is not locking it, because someone else is already syncing it (either queued or running)
+// otherwise, this returns the locked row and the caller can perform the syncing.
+// the row is considered lock until the caller (or a recovery mechanism is case it gets stuck)
+// will update the row with sync status 'ok' or 'failed'
+// NOTE: there is no 'queued_at' timestamp, cause the sync shouldn't get queued element stuck:
+// if the program crashes, it should retrieve all the queued rows and start processing them
+func (q *Queries) ClaimRepositorySync(ctx context.Context, arg ClaimRepositorySyncParams) (Repository, error) {
+	row := q.db.QueryRow(ctx, claimRepositorySync, arg.ID, arg.UserID)
+	var i Repository
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AccountID,
+		&i.Provider,
+		&i.ProviderRepoID,
+		&i.Owner,
+		&i.Name,
+		&i.FullName,
+		&i.HtmlUrl,
+		&i.IsPrivate,
+		&i.DefaultBranch,
+		&i.TrackedBranch,
+		&i.SyncedCommit,
+		&i.SyncStatus,
+		&i.AutoSync,
+		&i.LastSyncAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SyncError,
+		&i.SyncStartedAt,
+	)
+	return i, err
+}
+
 const clearExternalGitAccountTokens = `-- name: ClearExternalGitAccountTokens :one
 UPDATE external_git_accounts
 SET
@@ -45,7 +93,7 @@ INSERT INTO repositories (
 	tracked_branch
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-RETURNING id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at
+RETURNING id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at, sync_error, sync_started_at
 `
 
 type CreateRepositoryParams struct {
@@ -96,8 +144,24 @@ func (q *Queries) CreateRepository(ctx context.Context, arg CreateRepositoryPara
 		&i.LastSyncAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SyncError,
+		&i.SyncStartedAt,
 	)
 	return i, err
+}
+
+const deleteDocuments = `-- name: DeleteDocuments :exec
+DELETE FROM documents WHERE repository_id = $1 AND path = ANY($2::text[])
+`
+
+type DeleteDocumentsParams struct {
+	RepositoryID int64
+	Paths        []string
+}
+
+func (q *Queries) DeleteDocuments(ctx context.Context, arg DeleteDocumentsParams) error {
+	_, err := q.db.Exec(ctx, deleteDocuments, arg.RepositoryID, arg.Paths)
+	return err
 }
 
 const deleteExternalGitAccountByIdAndUserId = `-- name: DeleteExternalGitAccountByIdAndUserId :one
@@ -154,6 +218,35 @@ WHERE id = $1
 func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, deleteUser, id)
 	return err
+}
+
+const finalizeRepositorySync = `-- name: FinalizeRepositorySync :execrows
+UPDATE repositories
+SET
+	synced_commit = $1,
+	sync_status = 'ok',
+	sync_error = NULL,
+	sync_started_at = NULL,
+	last_sync_at = NOW(),
+	updated_at = NOW()
+WHERE id = $2 AND sync_status = 'running' AND sync_started_at = $3
+`
+
+type FinalizeRepositorySyncParams struct {
+	SyncedCommit  pgtype.Text
+	ID            int64
+	SyncStartedAt *time.Time
+}
+
+// like MarkRepositorySyncAsFailed, matching sync_started_at only finalizes this run.
+// A tracked branch change clears sync_started_at (reset_sync in UpdateRepository), so
+// a run for the old branch matches 0 rows even if a new run started meanwhile.
+func (q *Queries) FinalizeRepositorySync(ctx context.Context, arg FinalizeRepositorySyncParams) (int64, error) {
+	result, err := q.db.Exec(ctx, finalizeRepositorySync, arg.SyncedCommit, arg.ID, arg.SyncStartedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getExternalGitAccountById = `-- name: GetExternalGitAccountById :one
@@ -315,7 +408,7 @@ func (q *Queries) GetExternalGitAccountsByUserIDAndProvider(ctx context.Context,
 }
 
 const getRepositoriesByUserID = `-- name: GetRepositoriesByUserID :many
-SELECT id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at FROM repositories
+SELECT id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at, sync_error, sync_started_at FROM repositories
 WHERE user_id = $1
 ORDER BY owner, name
 `
@@ -348,6 +441,8 @@ func (q *Queries) GetRepositoriesByUserID(ctx context.Context, userID int64) ([]
 			&i.LastSyncAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SyncError,
+			&i.SyncStartedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -359,8 +454,42 @@ func (q *Queries) GetRepositoriesByUserID(ctx context.Context, userID int64) ([]
 	return items, nil
 }
 
+const getRepositoryByID = `-- name: GetRepositoryByID :one
+SELECT id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at, sync_error, sync_started_at FROM repositories
+WHERE id = $1
+LIMIT 1
+`
+
+func (q *Queries) GetRepositoryByID(ctx context.Context, id int64) (Repository, error) {
+	row := q.db.QueryRow(ctx, getRepositoryByID, id)
+	var i Repository
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AccountID,
+		&i.Provider,
+		&i.ProviderRepoID,
+		&i.Owner,
+		&i.Name,
+		&i.FullName,
+		&i.HtmlUrl,
+		&i.IsPrivate,
+		&i.DefaultBranch,
+		&i.TrackedBranch,
+		&i.SyncedCommit,
+		&i.SyncStatus,
+		&i.AutoSync,
+		&i.LastSyncAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SyncError,
+		&i.SyncStartedAt,
+	)
+	return i, err
+}
+
 const getRepositoryByIDAndUserID = `-- name: GetRepositoryByIDAndUserID :one
-SELECT id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at FROM repositories
+SELECT id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at, sync_error, sync_started_at FROM repositories
 WHERE id = $1 AND user_id = $2
 LIMIT 1
 `
@@ -392,6 +521,8 @@ func (q *Queries) GetRepositoryByIDAndUserID(ctx context.Context, arg GetReposit
 		&i.LastSyncAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SyncError,
+		&i.SyncStartedAt,
 	)
 	return i, err
 }
@@ -438,6 +569,130 @@ func (q *Queries) GetUserById(ctx context.Context, id int64) (User, error) {
 	return i, err
 }
 
+const listDocumentShas = `-- name: ListDocumentShas :many
+
+SELECT path, blob_sha
+FROM documents
+WHERE repository_id = $1
+`
+
+type ListDocumentShasRow struct {
+	Path    string
+	BlobSha string
+}
+
+// return id so they can be enqueued again
+func (q *Queries) ListDocumentShas(ctx context.Context, repositoryID int64) ([]ListDocumentShasRow, error) {
+	rows, err := q.db.Query(ctx, listDocumentShas, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDocumentShasRow
+	for rows.Next() {
+		var i ListDocumentShasRow
+		if err := rows.Scan(&i.Path, &i.BlobSha); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markRepositorySyncAsFailed = `-- name: MarkRepositorySyncAsFailed :exec
+UPDATE repositories
+SET
+	sync_status = 'failed',
+	sync_error = $1,
+	sync_started_at = NULL,
+	updated_at = NOW()
+WHERE id = $2 AND sync_status = 'running' AND sync_started_at = $3
+`
+
+type MarkRepositorySyncAsFailedParams struct {
+	SyncError     pgtype.Text
+	ID            int64
+	SyncStartedAt *time.Time
+}
+
+// matching sync_started_at only marks the run that failed: if the tracked branch
+// changed and a new sync was claimed meanwhile, that newer row is left alone
+func (q *Queries) MarkRepositorySyncAsFailed(ctx context.Context, arg MarkRepositorySyncAsFailedParams) error {
+	_, err := q.db.Exec(ctx, markRepositorySyncAsFailed, arg.SyncError, arg.ID, arg.SyncStartedAt)
+	return err
+}
+
+const markRepositorySyncAsRunning = `-- name: MarkRepositorySyncAsRunning :one
+UPDATE repositories
+SET
+	sync_status = 'running',
+	sync_error = NULL,
+	sync_started_at = NOW(),
+	updated_at = NOW()
+WHERE id = $1 AND sync_status = 'queued'
+RETURNING sync_started_at
+`
+
+// returns no row for a stale job (the repository is no longer queued). The returned
+// sync_started_at identifies this run for MarkRepositorySyncAsFailed.
+func (q *Queries) MarkRepositorySyncAsRunning(ctx context.Context, id int64) (*time.Time, error) {
+	row := q.db.QueryRow(ctx, markRepositorySyncAsRunning, id)
+	var sync_started_at *time.Time
+	err := row.Scan(&sync_started_at)
+	return sync_started_at, err
+}
+
+const resetStuckRepositorySyncs = `-- name: ResetStuckRepositorySyncs :many
+UPDATE repositories
+SET
+	sync_status = 'queued',
+	sync_started_at = NULL,
+	updated_at = NOW()
+WHERE sync_status IN ('queued', 'running')
+RETURNING id
+`
+
+// NOTE: this only works fine is only one server handles the queue, otherwise
+// a server could reset a running job of another instance
+func (q *Queries) ResetStuckRepositorySyncs(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.Query(ctx, resetStuckRepositorySyncs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const unclaimRepositorySync = `-- name: UnclaimRepositorySync :exec
+UPDATE repositories
+SET
+	sync_status = CASE
+		WHEN sync_error    IS NOT NULL THEN 'failed'
+		WHEN synced_commit IS NULL THEN 'pending'
+		ELSE 'ok' END,
+	updated_at = NOW()
+WHERE id = $1 AND sync_status = 'queued'
+`
+
+func (q *Queries) UnclaimRepositorySync(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, unclaimRepositorySync, id)
+	return err
+}
+
 const updateExternalGitAccountTokens = `-- name: UpdateExternalGitAccountTokens :one
 UPDATE external_git_accounts
 SET 
@@ -481,9 +736,11 @@ SET
 	synced_commit = CASE WHEN $5::boolean THEN NULL ELSE synced_commit END,
 	sync_status = CASE WHEN $5::boolean THEN 'pending' ELSE sync_status END,
 	last_sync_at = CASE WHEN $5::boolean THEN NULL ELSE last_sync_at END,
+	sync_error = CASE WHEN $5::boolean THEN NULL ELSE sync_error END,
+	sync_started_at = CASE WHEN $5::boolean THEN NULL ELSE sync_started_at END,
 	updated_at = NOW()
 WHERE id = $1 AND user_id = $2
-RETURNING id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at
+RETURNING id, user_id, account_id, provider, provider_repo_id, owner, name, full_name, html_url, is_private, default_branch, tracked_branch, synced_commit, sync_status, auto_sync, last_sync_at, created_at, updated_at, sync_error, sync_started_at
 `
 
 type UpdateRepositoryParams struct {
@@ -525,6 +782,8 @@ func (q *Queries) UpdateRepository(ctx context.Context, arg UpdateRepositoryPara
 		&i.LastSyncAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SyncError,
+		&i.SyncStartedAt,
 	)
 	return i, err
 }

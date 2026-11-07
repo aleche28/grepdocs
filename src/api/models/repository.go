@@ -29,6 +29,7 @@ type Repository struct {
 	TrackedBranch  string     `json:"tracked_branch"`
 	SyncedCommit   *string    `json:"synced_commit"`
 	SyncStatus     string     `json:"sync_status"`
+	SyncError      *string    `json:"sync_error"`
 	AutoSync       bool       `json:"auto_sync"`
 	LastSyncAt     *time.Time `json:"last_sync_at"`
 	CreatedAt      *time.Time `json:"created_at"`

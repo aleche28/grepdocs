@@ -6,9 +6,11 @@ import (
 	"errors"
 	"grepdocs/api/credentials"
 	"grepdocs/api/providers"
+	"grepdocs/api/reposync"
 	"grepdocs/api/routers"
 	"grepdocs/api/secrets"
 	"grepdocs/api/session"
+	"grepdocs/api/syncqueue"
 	"log"
 	"net/http"
 	"os"
@@ -105,6 +107,32 @@ func main() {
 	}))
 
 	credSvc := credentials.New(pool, tokenCipher, registry)
+	syncSvc := reposync.New(pool, credSvc, registry)
+	syncPool := syncqueue.New(syncSvc)
+
+	// Graceful shutdown on SIGINT/SIGTERM
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	syncPool.Start(ctx)
+
+	ids, err := syncSvc.ResetStuck(ctx)
+	if err != nil {
+		log.Printf("reset stuck repo sync, continuing without reset: %v", err)
+	} else {
+		// in a goroutine to avoid slowing down the server start:
+		// rare scenario where queue size is decreased between restarts
+		// and it was full at shutdown, which would cause the EnqueueWait
+		// to actually wait, blocking the thread before calling ListenAndServe
+		go func() {
+			for _, id := range ids {
+				if err := syncPool.EnqueueWait(ctx, id); err != nil {
+					log.Printf("re-enqueue repo %d: %v", id, err)
+					return // ctx cancelled: the rest stay queued, the next startup resets them
+				}
+			}
+		}()
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
@@ -119,7 +147,7 @@ func main() {
 		r.Mount("/auth", routers.AuthRoutes(&AppConfig.GoogleLoginConfig, pool, sm))
 		r.Mount("/users", routers.UserRoutes(pool, sm))
 		r.Mount("/accounts", routers.ExternalAccountsRoutes(pool, sm, registry, tokenCipher, credSvc))
-		r.Mount("/repositories", routers.RepositoriesRoutes(pool, sm, registry, credSvc))
+		r.Mount("/repositories", routers.RepositoriesRoutes(pool, sm, registry, credSvc, syncPool))
 	})
 
 	// about timeouts: https://blog.cloudflare.com/the-complete-guide-to-golang-net-http-timeouts/#httplistenandserve-is-doing-it-wrong
@@ -131,10 +159,6 @@ func main() {
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-
-	// Graceful shutdown on SIGINT/SIGTERM
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -148,6 +172,8 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("Graceful shutdown failed: %v", err)
+		log.Printf("Graceful shutdown failed: %v", err)
 	}
+
+	syncPool.Shutdown()
 }

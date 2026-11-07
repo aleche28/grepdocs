@@ -1,6 +1,6 @@
 ---
 name: roadmap-next
-description: Determine the next task to tackle in the current GrepDocs roadmap phase. Use when the user asks "what's next", "what should I do next", "what's left in this phase", "where do I start", or otherwise asks for the next roadmap task. Grounds the answer in docs/roadmap.md, docs/code-review-checklist.md, docs/api.md, git history, and the actual source tree instead of inventing work.
+description: Determine the next task to tackle in the current GrepDocs roadmap phase. Use when the user asks "what's next", "what should I do next", "what's left in this phase", "where do I start", or otherwise asks for the next roadmap task. Grounds the answer in docs/roadmap.md, open tech-debt GitHub issues, docs/api.md, git history, and the actual source tree instead of inventing work.
 ---
 
 # Roadmap Next
@@ -14,8 +14,8 @@ Answer the recurring "what's next?" question with a ranked, repo-grounded recomm
    work; its `Status:` line and bullets say what is done vs. open. Some phases have no `Status:`
    line yet — infer status from the bullets and code. The phase's GitHub milestone (named like
    the heading, e.g. "Phase 3 — Sync engine") lists its tasks as issues; `gh issue list --milestone "<name>"` shows what is open.
-2. `docs/code-review-checklist.md` — open `[ ]` items. The roadmap names which phase depends on or
-   exposes each one (e.g. Phase 2 owns D3 token refresh, Phase 4 owns A7 CORS/rate limiting).
+2. Open `tech-debt` issues — `gh issue list --label tech-debt --state open`. The roadmap names
+   which phase depends on or exposes each one by `#NN` (e.g. Phase 8 owns #64 CORS/rate limiting).
 3. `docs/api.md` — the target shape for any endpoint involved. Marked **Implemented** vs.
    **Proposed**; build to the proposed shape rather than inventing one.
 4. `docs/requirements.md` / `docs/user-stories.md` — product intent, when a task's *why* is unclear.
@@ -33,9 +33,9 @@ Answer the recurring "what's next?" question with a ranked, repo-grounded recomm
 
 ### 2. Collect cross-cutting obligations
 
-- List the open `[ ]` checklist items the current phase declares as its responsibility. These are
+- List the open `tech-debt` issues the current phase declares as its responsibility. These are
   not optional extras — the roadmap interleaves them deliberately.
-- Note any *new* checklist item the phase's work would naturally close, even if the roadmap doesn't
+- Note any other open issue the phase's work would naturally close, even if the roadmap doesn't
   name it.
 
 ### 3. Rank candidate tasks
@@ -54,7 +54,7 @@ Produce a concise recommendation with these sections:
 
 - **Current phase** — name and a one-line status (what's done, what's left).
 - **Recommended next task** — the single next thing, in imperative form.
-- **Why now** — what it unblocks / which open checklist item it closes / why not something else.
+- **Why now** — what it unblocks / which open issue it closes / why not something else.
 - **Files to touch** — concrete paths (migration + `queries.sql` + `dal/` + handler, etc.), noting
   generated-vs-hand-written boundaries.
 - **Acceptance criteria** — how the user knows it's done (endpoint behavior, status codes, tests).
@@ -65,9 +65,9 @@ code disagree, say so explicitly and recommend which to trust.
 
 ## Rules
 
-- **Read-only.** Never write code or edit the roadmap/checklist here — that is
+- **Read-only.** Never write code or edit the roadmap or issues here — that is
   `phase-status-sync`'s job, and only after the work lands.
-- **Never invent tasks** not grounded in the current phase, its checklist items, or `docs/api.md`.
+- **Never invent tasks** not grounded in the current phase, its open issues, or `docs/api.md`.
 - **Never trust a status line blindly** — verify against `git` and the tree.
 - If the current phase looks complete, say so and recommend either its close-out steps
   (update `roadmap.md` + `roadmap-stakeholders.md`) or the first task of the next phase.
