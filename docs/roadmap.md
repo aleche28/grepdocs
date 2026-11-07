@@ -11,10 +11,11 @@ open), `docs/requirements.md` / `docs/user-stories.md` (product spec).
 Implemented: Google OAuth login, session management (Redis-backed), GitHub account linking
 through a GitHub App (several accounts per provider per user; tokens encrypted at rest, refreshed
 automatically, and revoked on unlink/re-link), GitHub repository discovery for a linked account,
-repository tracking (CRUD + branch listing), self-service user endpoints. No sync, tracked-file
-selection, documents, search, groups, commit-back, or UI yet. Unit tests cover sessions, auth
-middleware, providers, credentials, response envelopes, the session model, and DB-free router
-helpers; no CI.
+repository tracking (CRUD + branch listing), on-demand repository sync of Markdown files into
+stored documents, self-service user endpoints. No automatic sync, tracked-file selection, document
+endpoints, search, groups, commit-back, or UI yet. Unit tests cover sessions, auth middleware,
+providers, credentials, response envelopes, the session model, the sync worker pool, and DB-free
+router helpers; no CI.
 
 ## Phase 1 — Multi-account & provider foundation
 
@@ -66,13 +67,17 @@ tests landed, but the OAuth callback integration test (needs a DB seam) and CI a
 
 ## Phase 2 — Repository tracking
 
-Status: **tracking CRUD + branch listing + GitHub App migration + token refresh done** — the
-`repositories` table (migration `000005`) backs `POST/GET/PATCH/DELETE /api/repositories` and
-`GET /repositories/{id}/branches`; GitHub accounts link through a GitHub App with expiring tokens
-that `credentials.Service` refreshes and revokes (checklist D3 closed). Still open in this phase:
-the sync engine. Known gaps carried forward: handler and locked-refresh tests need a DB seam
-(checklist E1); a re-link racing a refresh can leave the rotated token unrevoked;
-`GET /api/accounts` does not flag accounts that need re-linking.
+Status: **tracking CRUD + branch listing + GitHub App migration + token refresh + sync engine
+done** — the `repositories` table (migration `000005`) backs `POST/GET/PATCH/DELETE
+/api/repositories` and `GET /repositories/{id}/branches`; GitHub accounts link through a GitHub App
+with expiring tokens that `credentials.Service` refreshes and revokes (checklist D3 closed);
+`POST /repositories/{id}/sync` queues a background sync (`syncqueue` + `reposync`) that stores the
+tracked branch's Markdown files in `documents` (migration `000007`). Known gaps carried forward:
+handler, locked-refresh, and `reposync` tests need a DB seam (checklist E1); a re-link racing a
+refresh can leave the rotated token unrevoked; `GET /api/accounts` does not flag accounts that need
+re-linking; `auto_sync` is stored but nothing triggers a sync from it yet; a sync can stay `running`
+until restart (checklist B5); public repositories tracked without an account sync anonymously
+(checklist C11).
 
 - `POST/GET/PATCH/DELETE /api/repositories`, `GET /repositories/{id}/branches`. **Done.**
 - Track a repo from a linked account **or** by public `owner`/`name` (no account needed for public
@@ -112,7 +117,15 @@ the sync engine. Known gaps carried forward: handler and locked-refresh tests ne
     `docs/howto/setup-github-app.md`.
 - Sync engine: clone/pull the tracked branch, record `tracked_commit`/`last_sync_at`/
   `sync_status`, `POST /repositories/{id}/sync` to trigger on demand. Uses the user's (refreshed)
-  token; GitHub push webhooks are a natural follow-up trigger for `auto_sync`.
+  token; GitHub push webhooks are a natural follow-up trigger for `auto_sync`. **Done
+  differently** — no clone: the sync reads the branch, the recursive tree, and changed blobs
+  through the provider API, and stores `*.md` files in `documents`, diffed by blob SHA and
+  committed in one transaction. `POST /repositories/{id}/sync` claims the repository in the
+  database (`queued`) and hands it to a bounded in-memory worker pool (`syncqueue`); the database
+  stays the source of truth, and repositories left `queued`/`running` are re-enqueued at startup
+  (single server only). Failures are stored as stable `sync_error` codes (see `docs/api.md`), and
+  the failure and finalize writes are scoped to their run by `sync_started_at`. Push webhooks /
+  `auto_sync` remain a follow-up.
 
 ## Phase 3 — Tracked file selection
 

@@ -18,8 +18,12 @@ use it once the interface catches up.
   instead of relying on a permanent key. Unlinking an account also cuts off GrepDocs' access to it
   on GitHub's side.
 - **Choose which repositories and files to track.** You can already pick the repositories
-  GrepDocs should keep an eye on, and the branch to follow in each. Keeping them up to date
-  automatically and choosing the specific documentation files inside them come next.
+  GrepDocs should keep an eye on, and the branch to follow in each.
+- **Bring in the latest documentation on demand.** Ask GrepDocs to update a tracked repository and
+  it pulls in the current Markdown documentation from the branch you follow, in the background,
+  and tells you whether it worked — and if not, what to do about it (for example, reconnect your
+  account). Keeping repositories up to date automatically and choosing the specific documentation
+  files inside them come next.
 
 ## Next
 

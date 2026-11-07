@@ -3,7 +3,7 @@
 Source: senior review of `src/api` (first critique). One item per checkbox, update with
 the file/commit that closed it.
 
-Legend: `[x]` done · `[ ]` open · last updated 2026-11-05
+Legend: `[x]` done · `[ ]` open · last updated 2026-11-07
 
 ## A. Security
 
@@ -45,6 +45,12 @@ Legend: `[x]` done · `[ ]` open · last updated 2026-11-05
 - [x] **B4 — Outbound GitHub/Google HTTP calls have no timeout and no request context**
       (`&http.Client{}` per call). Fixed: shared `httpClient{Timeout: 10s}` in `routers/http.go`;
       both fetchers use `r.Context()` (see C4) + the shared timed client.
+- [ ] **B5 — A sync can stay `running` until the server restarts.** A panic recovered in
+      `syncqueue` (`run`) or a failed `MarkRepositorySyncAsFailed` write leaves the row `running`,
+      and `ClaimRepositorySync` then answers `409` to every new `POST /repositories/{id}/sync`.
+      Only the startup reset (`ResetStuckRepositorySyncs`) recovers it, and that reset assumes a
+      single server. `sync_started_at` is the natural hook: treat a `running` row older than the
+      job timeout (`workerTimeout`, 5 min) as stale, in the claim or in a periodic sweep.
 
 ## C. Architecture
 
@@ -84,6 +90,12 @@ Legend: `[x]` done · `[ ]` open · last updated 2026-11-05
       Idle 60s) + `signal.NotifyContext` + `server.Shutdown` on SIGINT/SIGTERM. WriteTimeout
       (30s) is sized above the outbound OAuth timeout (B4, 10s) + DB roundtrip so slow logins
       aren't killed by the server write deadline.
+- [ ] **C11 — Public repositories tracked without an account sync anonymously**
+      (`credentials.ForRepository` returns an empty token), so they share GitHub's unauthenticated
+      limit of 60 requests/hour. A sync fetches every new or changed Markdown blob before its single
+      transaction, so a first sync with more than ~55 files fails `rate_limited` on every attempt
+      and never progresses. Documented in `docs/api.md` (Sync). Options: sync such repositories
+      with any of the user's linked accounts for the provider, or commit progress in batches.
 
 ## D. Database / DAL
 
