@@ -229,18 +229,20 @@ SET
 	sync_started_at = NULL,
 	last_sync_at = NOW(),
 	updated_at = NOW()
-WHERE id = $2
-AND tracked_branch = $3 AND sync_status = 'running'
+WHERE id = $2 AND sync_status = 'running' AND sync_started_at = $3
 `
 
 type FinalizeRepositorySyncParams struct {
 	SyncedCommit  pgtype.Text
 	ID            int64
-	TrackedBranch string
+	SyncStartedAt *time.Time
 }
 
+// like MarkRepositorySyncAsFailed, matching sync_started_at only finalizes this run.
+// A tracked branch change clears sync_started_at (reset_sync in UpdateRepository), so
+// a run for the old branch matches 0 rows even if a new run started meanwhile.
 func (q *Queries) FinalizeRepositorySync(ctx context.Context, arg FinalizeRepositorySyncParams) (int64, error) {
-	result, err := q.db.Exec(ctx, finalizeRepositorySync, arg.SyncedCommit, arg.ID, arg.TrackedBranch)
+	result, err := q.db.Exec(ctx, finalizeRepositorySync, arg.SyncedCommit, arg.ID, arg.SyncStartedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -607,20 +609,23 @@ SET
 	sync_error = $1,
 	sync_started_at = NULL,
 	updated_at = NOW()
-WHERE id = $2 AND sync_status IN ('queued', 'running')
+WHERE id = $2 AND sync_status = 'running' AND sync_started_at = $3
 `
 
 type MarkRepositorySyncAsFailedParams struct {
-	SyncError pgtype.Text
-	ID        int64
+	SyncError     pgtype.Text
+	ID            int64
+	SyncStartedAt *time.Time
 }
 
+// matching sync_started_at only marks the run that failed: if the tracked branch
+// changed and a new sync was claimed meanwhile, that newer row is left alone
 func (q *Queries) MarkRepositorySyncAsFailed(ctx context.Context, arg MarkRepositorySyncAsFailedParams) error {
-	_, err := q.db.Exec(ctx, markRepositorySyncAsFailed, arg.SyncError, arg.ID)
+	_, err := q.db.Exec(ctx, markRepositorySyncAsFailed, arg.SyncError, arg.ID, arg.SyncStartedAt)
 	return err
 }
 
-const markRepositorySyncAsRunning = `-- name: MarkRepositorySyncAsRunning :execrows
+const markRepositorySyncAsRunning = `-- name: MarkRepositorySyncAsRunning :one
 UPDATE repositories
 SET
 	sync_status = 'running',
@@ -628,14 +633,16 @@ SET
 	sync_started_at = NOW(),
 	updated_at = NOW()
 WHERE id = $1 AND sync_status = 'queued'
+RETURNING sync_started_at
 `
 
-func (q *Queries) MarkRepositorySyncAsRunning(ctx context.Context, id int64) (int64, error) {
-	result, err := q.db.Exec(ctx, markRepositorySyncAsRunning, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+// returns no row for a stale job (the repository is no longer queued). The returned
+// sync_started_at identifies this run for MarkRepositorySyncAsFailed.
+func (q *Queries) MarkRepositorySyncAsRunning(ctx context.Context, id int64) (*time.Time, error) {
+	row := q.db.QueryRow(ctx, markRepositorySyncAsRunning, id)
+	var sync_started_at *time.Time
+	err := row.Scan(&sync_started_at)
+	return sync_started_at, err
 }
 
 const resetStuckRepositorySyncs = `-- name: ResetStuckRepositorySyncs :many

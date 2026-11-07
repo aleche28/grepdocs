@@ -167,35 +167,42 @@ SET sync_status = 'queued', updated_at = NOW()
 WHERE id = $1 AND user_id = $2 AND sync_status NOT IN ('queued', 'running')
 RETURNING *;
 
--- name: MarkRepositorySyncAsRunning :execrows
+-- name: MarkRepositorySyncAsRunning :one
+-- returns no row for a stale job (the repository is no longer queued). The returned
+-- sync_started_at identifies this run for MarkRepositorySyncAsFailed.
 UPDATE repositories
 SET
 	sync_status = 'running',
 	sync_error = NULL,
 	sync_started_at = NOW(),
 	updated_at = NOW()
-WHERE id = $1 AND sync_status = 'queued';
+WHERE id = $1 AND sync_status = 'queued'
+RETURNING sync_started_at;
 
 -- name: MarkRepositorySyncAsFailed :exec
+-- matching sync_started_at only marks the run that failed: if the tracked branch
+-- changed and a new sync was claimed meanwhile, that newer row is left alone
 UPDATE repositories
 SET
 	sync_status = 'failed',
-	sync_error = $1,
+	sync_error = @sync_error,
 	sync_started_at = NULL,
 	updated_at = NOW()
-WHERE id = $2 AND sync_status IN ('queued', 'running');
+WHERE id = @id AND sync_status = 'running' AND sync_started_at = @sync_started_at;
 
 -- name: FinalizeRepositorySync :execrows
+-- like MarkRepositorySyncAsFailed, matching sync_started_at only finalizes this run.
+-- A tracked branch change clears sync_started_at (reset_sync in UpdateRepository), so
+-- a run for the old branch matches 0 rows even if a new run started meanwhile.
 UPDATE repositories
 SET
-	synced_commit = $1,
+	synced_commit = @synced_commit,
 	sync_status = 'ok',
 	sync_error = NULL,
 	sync_started_at = NULL,
 	last_sync_at = NOW(),
 	updated_at = NOW()
-WHERE id = $2
-AND tracked_branch = $3 AND sync_status = 'running';
+WHERE id = @id AND sync_status = 'running' AND sync_started_at = @sync_started_at;
 
 -- name: ResetStuckRepositorySyncs :many
 -- NOTE: this only works fine is only one server handles the queue, otherwise

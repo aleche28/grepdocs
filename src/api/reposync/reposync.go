@@ -63,15 +63,15 @@ func New(pool *pgxpool.Pool, creds *credentials.Service, registry *providers.Reg
 func (s *Service) Sync(ctx context.Context, repoID int64) error {
 	q := dal.New(s.pool)
 
-	cnt, err := q.MarkRepositorySyncAsRunning(ctx, repoID)
-	if err != nil {
+	startedAt, err := q.MarkRepositorySyncAsRunning(ctx, repoID)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return nil // stale job
+	case err != nil:
 		return fmt.Errorf("mark repo %d sync running: %w", repoID, err)
 	}
-	if cnt == 0 {
-		return nil // stale job
-	}
 
-	err = s.sync(ctx, repoID)
+	err = s.sync(ctx, repoID, startedAt)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
 			// shutdown: leave it running, ResetStuckRepositorySyncs re-queues it at startup
@@ -81,8 +81,9 @@ func (s *Service) Sync(ctx context.Context, repoID int64) error {
 		markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), markFailedTimeout)
 		defer cancel()
 		markErr := q.MarkRepositorySyncAsFailed(markCtx, dal.MarkRepositorySyncAsFailedParams{
-			ID:        repoID,
-			SyncError: pgtype.Text{String: syncErrorCode(err), Valid: true},
+			ID:            repoID,
+			SyncError:     pgtype.Text{String: syncErrorCode(err), Valid: true},
+			SyncStartedAt: startedAt,
 		})
 		if markErr != nil {
 			log.Printf("failed to mark repo %d sync as failed, state stays 'running': %v", repoID, markErr)
@@ -102,8 +103,9 @@ func (s *Service) ResetStuck(ctx context.Context) ([]int64, error) {
 	return q.ResetStuckRepositorySyncs(ctx)
 }
 
-// sync does the work; Sync records the failure
-func (s *Service) sync(ctx context.Context, repoID int64) error {
+// sync does the work; Sync records the failure. startedAt identifies this run, so
+// that finalizing cannot overwrite a newer run of the same repository.
+func (s *Service) sync(ctx context.Context, repoID int64, startedAt *time.Time) error {
 	// TODO: refactor this ugly mess of a function!
 
 	q := dal.New(s.pool)
@@ -131,13 +133,13 @@ func (s *Service) sync(ctx context.Context, repoID int64) error {
 		return fmt.Errorf("get branch: %w", err)
 	}
 
-	// Up to date: only record the check. A row count of 0 means the tracked branch
-	// changed meanwhile, which needs no handling.
+	// Up to date: only record the check. A row count of 0 means this run is stale
+	// (the tracked branch changed meanwhile), which needs no handling.
 	if repo.SyncedCommit.Valid && repo.SyncedCommit.String == branch.Commit {
 		_, err := q.FinalizeRepositorySync(ctx, dal.FinalizeRepositorySyncParams{
 			ID:            repoID,
 			SyncedCommit:  repo.SyncedCommit,
-			TrackedBranch: repo.TrackedBranch,
+			SyncStartedAt: startedAt,
 		})
 		if err != nil {
 			return fmt.Errorf("finalize repo sync: %w", err)
@@ -247,14 +249,14 @@ func (s *Service) sync(ctx context.Context, repoID int64) error {
 	cnt, err := q.FinalizeRepositorySync(ctx, dal.FinalizeRepositorySyncParams{
 		ID:            repoID,
 		SyncedCommit:  pgtype.Text{String: branch.Commit, Valid: true},
-		TrackedBranch: repo.TrackedBranch,
+		SyncStartedAt: startedAt,
 	})
 	if err != nil {
 		return fmt.Errorf("finalize repo sync: %w", err)
 	}
 
-	// 0 rows: the tracked branch changed meanwhile, so the deferred rollback discards
-	// the documents of the old branch
+	// 0 rows: this run is stale (the tracked branch changed meanwhile), so the deferred
+	// rollback discards its documents
 	if cnt > 0 {
 		err = tx.Commit(ctx)
 		if err != nil {
