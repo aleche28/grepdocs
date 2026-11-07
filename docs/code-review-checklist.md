@@ -45,8 +45,9 @@ Legend: `[x]` done · `[ ]` open · last updated 2026-11-07
 - [x] **B4 — Outbound GitHub/Google HTTP calls have no timeout and no request context**
       (`&http.Client{}` per call). Fixed: shared `httpClient{Timeout: 10s}` in `routers/http.go`;
       both fetchers use `r.Context()` (see C4) + the shared timed client.
-- [ ] **B5 — A sync can stay `running` until the server restarts.** A panic recovered in
-      `syncqueue` (`run`) or a failed `MarkRepositorySyncAsFailed` write leaves the row `running`,
+- [ ] **B5 — A sync can stay `running` until the server restarts.** A failed
+      `MarkRepositorySyncAsFailed` write leaves the row `running` (a panic in the run no longer does:
+      `reposync.syncRecover` turns it into an `internal` failure),
       and `ClaimRepositorySync` then answers `409` to every new `POST /repositories/{id}/sync`.
       Only the startup reset (`ResetStuckRepositorySyncs`) recovers it, and that reset assumes a
       single server. `sync_started_at` is the natural hook: treat a `running` row older than the

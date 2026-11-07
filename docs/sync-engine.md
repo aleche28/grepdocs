@@ -73,7 +73,7 @@ the guard matches no row, which is the case concurrency makes interesting.
 | 3   | `queued` → previous idle state | `Enqueue` fails in the same request (`503` if the queue is full, `500` otherwise) | `UnclaimRepositorySync` | `sync_status = 'queued'` | Nothing written: a branch change already moved it to `pending`                                                   |
 | 4   | `queued` → `running`          | A worker takes the job                           | `MarkRepositorySyncAsRunning`                 | `sync_status = 'queued'`                                 | Stale job: `reposync.Sync` returns `nil` without doing anything                                                 |
 | 5   | `running` → `ok`              | Run finished, or the branch is still at `synced_commit` | `FinalizeRepositorySync`               | `sync_status = 'running' AND sync_started_at = <this run>` | Stale run: the transaction rolls back, so its documents are discarded                                        |
-| 6   | `running` → `failed`          | Run returned an error (including the 5 min job timeout) | `MarkRepositorySyncAsFailed`           | same as 5                                                | Stale run: nothing written                                                                                       |
+| 6   | `running` → `failed`          | Run returned an error or panicked (including the 5 min job timeout) | `MarkRepositorySyncAsFailed`           | same as 5                                                | Stale run: nothing written                                                                                       |
 | 7   | `queued`/`running` → `queued` | Server startup, then `EnqueueWait` for each id   | `ResetStuckRepositorySyncs`                   | `sync_status IN ('queued','running')`                    | n/a                                                                                                             |
 | 8   | any → `pending`               | `PATCH` with a different `tracked_branch`        | `UpdateRepository` with `reset_sync = true`   | `id` and `user_id` only                                  | n/a                                                                                                             |
 | 9   | any → (row deleted)           | `DELETE /repositories/{id}`                      | `DeleteRepository`                            | `id` and `user_id` only                                  | n/a. A run in flight finds no row, or its final write matches none.                                             |
@@ -90,7 +90,8 @@ Notes on individual transitions:
   `UPDATE` matched a row.
 - **6 (failed)** runs on `context.WithoutCancel` with `markFailedTimeout` (5 s), so a job that hit
   its own deadline can still record the failure. `sync_error` gets a stable code from
-  `reposync.syncErrorCode`, never an error string.
+  `reposync.syncErrorCode`, never an error string. A panic in the run is recovered by
+  `syncRecover` and recorded as `internal`, with the stack in the log.
 - **7 (startup reset)** cannot tell a run interrupted by a restart from one running right now, so it
   assumes a **single server** and must run before any job does.
 - **8 (branch change)** also clears `synced_commit`, `sync_error`, `last_sync_at`, and
@@ -124,6 +125,5 @@ These cases leave a repository `queued` or `running` with no worker on it. `POST
 | --------- | ---------------------------------------------------------------------------------------------------------- |
 | `running` | Shutdown cancels the job context. Intentional: `reposync.Sync` skips 6 so the restart retries the sync.     |
 | `running` | The write in 6 fails (logged: "state stays 'running'").                                                     |
-| `running` | The job panics. `syncqueue` recovers the panic so the server survives, but nothing performs 6.              |
 | `queued`  | 4 fails with a database error (logged by the worker).                                                       |
 | `queued`  | The job was still in the channel at shutdown (the channel is in memory).                                    |

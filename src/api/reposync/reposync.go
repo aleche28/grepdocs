@@ -10,6 +10,7 @@ import (
 	"grepdocs/api/providers"
 	"grepdocs/api/syncqueue"
 	"log"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -71,7 +72,7 @@ func (s *Service) Sync(ctx context.Context, repoID int64) error {
 		return fmt.Errorf("mark repo %d sync running: %w", repoID, err)
 	}
 
-	err = s.sync(ctx, repoID, startedAt)
+	err = s.syncRecover(ctx, repoID, startedAt)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) {
 			// shutdown: leave it running, ResetStuckRepositorySyncs re-queues it at startup
@@ -101,6 +102,19 @@ func (s *Service) Sync(ctx context.Context, repoID int64) error {
 func (s *Service) ResetStuck(ctx context.Context) ([]int64, error) {
 	q := dal.New(s.pool)
 	return q.ResetStuckRepositorySyncs(ctx)
+}
+
+// syncRecover runs sync and turns a panic into an error, so that Sync marks the run
+// failed instead of leaving it running until the next restart. The stack is logged
+// here, since the returned error loses it.
+func (s *Service) syncRecover(ctx context.Context, repoID int64, startedAt *time.Time) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("sync repo %d panicked: %v\n%s", repoID, r, debug.Stack())
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return s.sync(ctx, repoID, startedAt)
 }
 
 // sync does the work; Sync records the failure. startedAt identifies this run, so
