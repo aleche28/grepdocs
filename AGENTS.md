@@ -31,6 +31,9 @@ at the repo root wraps them and handles the `cd` for you:
 | Run tests             | `make test`                        |
 | Tests + race detector | `make test-race`                   |
 | Format / vet          | `make fmt` / `make vet`            |
+| Lint / vuln scan      | `make lint` / `make vuln`          |
+| Tidy `go.mod`         | `make tidy`                        |
+| Every check CI runs   | `make ci`                          |
 | Apply migrations      | `make migrate-up`                  |
 | Roll back             | `make migrate-down [COUNT=n]`      |
 | Scaffold a migration  | `make migrate-new NAME=create_foo` |
@@ -38,14 +41,13 @@ at the repo root wraps them and handles the `cd` for you:
 
 Makefile caveats:
 
-- `make tidy` is broken — it runs `go tidy`, which is not a command. Use `cd src/api && go mod tidy`.
-- `make fmt` / `make vet` run `go fmt` / `go vet` with no package argument, so they only cover the
-  `main` package. For the whole module use `cd src/api && go vet ./...` and `gofmt -l .`.
+- `make fmt` rewrites files; `make fmt-check` and `make tidy-check` only print a diff and fail.
 - `make migrate-*` parses `DATABASE_URL` out of `src/api/.env` with `sed` and requires the
   `postgres://` URL form (golang-migrate cannot read pgx keyword/value strings). Override on the
   command line with `make migrate-up DATABASE_URL=...`.
 
-Prerequisites beyond Go and Docker: `golang-migrate` and `sqlc` on `PATH` (see README).
+Prerequisites beyond Go and Docker: `golang-migrate`, `sqlc`, and `golangci-lint` on `PATH` (see
+README). govulncheck needs no install: it is a `tool` directive in `go.mod`, run with `go tool`.
 Health check: <http://localhost:3000/api/ping> returns `pong`.
 
 Infra (`make infra-up`) starts Postgres on `5432`, Redis on `6379`, pgAdmin on `8080`. The server

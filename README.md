@@ -6,11 +6,12 @@ Currently this repository contains the **backend API** (`src/api`, Go). `src/ui`
 
 ## Prerequisites
 
-- **Go 1.25+** (modular Go toolchain, with `gomod.sh` available)
+- **Go 1.26+** — `go.mod` pins `toolchain go1.27.3`, which the `go` command downloads automatically
 - **Docker** (for Postgres, Redis, and pgAdmin via `docker-compose.yml` at the repo root)
 - **golang-migrate** — install with `go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest`
 - **sqlc** — install with `brew install sqlc` or `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`
   (if `sqlc`/`migrate` are not found, ensure `$(go env GOPATH)/bin` is on your `PATH`)
+- **golangci-lint** v2 — install with `brew install golangci-lint` (needed for `make lint`)
 
 ## Quick start
 
@@ -60,7 +61,9 @@ not a base64-encoded 32-byte key. The database/Redis state is kept in Docker (se
 | Rollback migrations   | `make migrate-down`                      |
 | New migration         | `make migrate-new NAME=create_foo`       |
 | Regenerate DAL / sqlc | `make sqlc-generate`                     |
-| Format               | `make fmt` / `make vet`                  |
+| Format / vet          | `make fmt` / `make vet`                  |
+| Lint / vuln scan      | `make lint` / `make vuln`                |
+| Every check CI runs   | `make ci`                                |
 | Tidy dependencies     | `make tidy`                              |
 
 `go vet` and `go fmt` are the only quality gates: run both before committing.
