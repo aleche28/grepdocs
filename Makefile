@@ -54,10 +54,10 @@ test-race:
 	cd $(GO_DIR) && go test -race ./...
 
 fmt:
-	cd $(GO_DIR) && gofmt -w .
+	cd $(GO_DIR) && golangci-lint fmt
 
 fmt-check:
-	cd $(GO_DIR) && gofmt -d .
+	cd $(GO_DIR) && golangci-lint fmt --diff
 
 vet:
 	cd $(GO_DIR) && go vet ./...

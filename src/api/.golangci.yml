@@ -1,0 +1,38 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - asciicheck
+    - bodyclose
+    - errorlint
+    - gocognit
+    - godoclint
+    - gosec
+    - misspell
+    - noctx
+  exclusions:
+    rules:
+      - path: '(.+)_test\.go'
+        linters:
+          - errcheck
+          - gocognit
+          - gosec
+          - noctx
+  settings:
+    errcheck:
+      exclude-functions:
+        - "(io.Closer).Close"
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - grepdocs/api
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
