@@ -246,6 +246,9 @@ them on matching requests; if yours doesn't, read the relevant file directly bef
 - `docs/api.md` — the API contract. It is a **design proposal**: much of it (repositories,
   documents, search, groups, pagination) is not implemented. Treat it as the target shape for new
   endpoints, and check it before inventing a route or response body.
+- `docs/sync-engine.md` — `sync_status` state machine: state diagrams, every transition with its
+  query and guard, the invariants that keep concurrent syncs safe, and when a repository stays busy.
+  Update it whenever a sync query or its caller changes.
 - `docs/code-review-checklist.md` — tracked findings from a senior review, with `[ ]` items marking
   known open problems (no CORS/rate limiting, config split between `main.go` and `os.Getenv` in
   router constructors, session write amplification, incomplete test coverage). Update the

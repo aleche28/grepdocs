@@ -341,9 +341,11 @@ new or changed Markdown file, so a large first sync of such a repository can fai
 | `ok`          | The last sync succeeded; `synced_commit` and `last_sync_at` are updated  |
 | `failed`      | The last sync failed; `sync_error` says why                              |
 
-`sync_error` is `null` unless `sync_status` is `failed`. It is cleared when the next sync starts and
-when the tracked branch changes. Its value is one of these stable codes, never an error message
-(details are only in the server logs):
+The state diagram and the full list of transitions are in [`sync-engine.md`](sync-engine.md).
+
+`sync_error` is set when `sync_status` is `failed`, keeps its value while a retry is `queued`, and is
+`null` otherwise: it is cleared when the retry starts `running` and when the tracked branch changes.
+Its value is one of these stable codes, never an error message (details are only in the server logs):
 
 | `sync_error`             | Cause                                                              | What the user can do        |
 | ------------------------ | ------------------------------------------------------------------ | --------------------------- |
