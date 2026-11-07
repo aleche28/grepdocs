@@ -28,8 +28,8 @@ process.
 - `AGENTS.md` — conventions, deliberate architecture decisions, known inconsistencies.
 - `REVIEW-RUBRIC.md` — the lenses and their repo-specific patterns.
 - `docs/api.md` — target shape/status for any endpoint involved.
-- `docs/code-review-checklist.md` — if a finding matches an open `[ ]` item, cite it (e.g. "this is
-  C7").
+- Open `tech-debt` issues (`gh issue list --label tech-debt --state open`) — if a finding matches
+  one, cite it (e.g. "this is #91").
 
 ### 3. Review each change against the rubric
 
@@ -78,7 +78,7 @@ gates (`make test`, whole-module `gofmt -l .` + `go vet ./...`).
   patches.
 - **Do not fabricate problems.** If the code is correct, say so — a clean review is a valid result.
 - **Respect the deliberate architecture.** See the rubric's deliberate-absences list.
-- **Cite the standard** (AGENTS.md rule, checklist item, api.md section) so the user can re-derive
+- **Cite the standard** (AGENTS.md rule, open issue, api.md section) so the user can re-derive
   the conclusion next time.
 - If the diff spans multiple concerns, review them in dependency order (schema → query → generated
   code → handler), since later mistakes are often caused by earlier ones.

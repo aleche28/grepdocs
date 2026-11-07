@@ -1,9 +1,8 @@
 # GrepDocs Implementation Review Rubric
 
 Reference for the `implementation-review` skill. Each lens lists what to look for and the
-repo-specific pattern that a correct implementation follows. Findings are classified under the
-same categories as `docs/code-review-checklist.md` (Security / Bugs / Architecture / DAL /
-Testing) so a finding can be linked to an existing open checklist item.
+repo-specific pattern that a correct implementation follows. Findings are classified as Security / Bugs /
+Architecture / DAL / Testing; if one matches an open `tech-debt` issue, link it by `#NN`.
 
 For every finding, cite `file:line`, explain **why it matters**, point at the pattern already used
 elsewhere in the repo, and describe the fix in prose. Prefer "here's the trap and how to think
@@ -36,11 +35,11 @@ about it" over "here's the corrected file".
 ## 2. Correctness / real bugs
 
 - **Errors checked before use** — e.g. `http.NewRequestWithContext` returns `(*Request, error)`;
-  check `err` before using the request (checklist B2 was exactly this).
+  check `err` before using the request (an early review found exactly this in the OAuth fetchers).
 - **Not-found vs. real error** — use `errors.Is(err, pgx.ErrNoRows)`, never treat every error as
-  "not found" (B3). Prefer `INSERT ... ON CONFLICT ... RETURNING` over check-then-insert races.
+  "not found". Prefer `INSERT ... ON CONFLICT ... RETURNING` over check-then-insert races.
 - **Context propagation** — request-scoped DB/HTTP work uses `r.Context()`; `context.Background()`
-  only for process-lifetime work (startup, GC goroutine) (C4, B4).
+  only for process-lifetime work (startup, GC goroutine).
 - **Outbound HTTP hygiene** — shared timed `httpClient` (`routers/http.go`, 10s), `io.LimitReader`
   on decodes, bounded pagination with `Link` header.
 - **Lost updates / stale writes** — a PATCH that writes fields it does not own from a previously
@@ -67,16 +66,16 @@ about it" over "here's the corrected file".
 ## 4. Architecture & conventions
 
 - **Provider isolation** — provider HTTP/OAuth logic belongs in `src/api/providers/` behind
-  `providers.Provider` + `Registry`; never inline GitHub-shaped code in a handler (C1).
+  `providers.Provider` + `Registry`; never inline GitHub-shaped code in a handler.
 - **Deliberate absences** — do **not** flag as a defect: no DI container, no general service/use-case
   layer (deferred to Phase 2 sync orchestration; `credentials.Service` is the one deliberate
   service), no token refresh, install URL or revocation on `Provider` (optional `Refresher` /
   `Installer` / `Revoker`), hand-rolled sessions instead of `scs`. A revoke failure that is only
   logged is deliberate too (best-effort, after the database change).
 - **Handler shape** — receiver methods holding `*pgxpool.Pool` and `*session.SessionManager`;
-  `dal.New(h.dbPool)` per request; no closure-with-unused-pool params (C3).
+  `dal.New(h.dbPool)` per request; no closure-with-unused-pool params.
 - **Config** — routers should not read `os.Getenv` for new settings; config belongs with
-  `main.go`'s `AppConfig` (C7 is an open item, so only flag new violations).
+  `main.go`'s `AppConfig` (#91 tracks the existing ones, so only flag new violations).
 
 ## 5. DAL / migrations / generated code
 
@@ -95,7 +94,7 @@ about it" over "here's the corrected file".
 
 - **Tests** — provider HTTP/pagination tested against `httptest` (`providers/github_test.go`);
   session/middleware/httpx/models have unit tests. `routers` tests cover only DB-free helpers;
-  handlers have no DB seam (they hold a concrete `*pgxpool.Pool`) — this is a known gap (E1), so
+  handlers have no DB seam (they hold a concrete `*pgxpool.Pool`) — this is a known gap (#94), so
   don't demand handler tests as if the seam existed; recommend the seam if tests are the goal.
 - **Gates** — `make test`, `make vet`, `make fmt` (and `go test -race`). Note `make fmt`/`make vet`
   only cover the `main` package; whole-module is `cd src/api && gofmt -l . && go vet ./...`.

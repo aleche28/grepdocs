@@ -235,11 +235,11 @@ them on matching requests; if yours doesn't, read the relevant file directly bef
 
 - `migration-generator` — scaffold new golang-migrate up/down files from a table/column description.
 - `roadmap-next` — determine the next task in the current roadmap phase (reads `docs/roadmap.md`,
-  the checklist, and `docs/api.md`; read-only, evidence-based).
+  open `tech-debt` issues, and `docs/api.md`; read-only, evidence-based).
 - `implementation-review` — teaching-first review of hand-written code (rubric in
   `REVIEW-RUBRIC.md`). Advisory by default; only applies fixes on explicit opt-in.
-- `phase-status-sync` — close out finished work across `docs/roadmap.md`,
-  `docs/code-review-checklist.md`, and `docs/roadmap-stakeholders.md`. Docs only.
+- `phase-status-sync` — close out finished work across `docs/roadmap.md` and
+  `docs/roadmap-stakeholders.md`, and name the GitHub issues it closes. Docs only.
 
 ## Documentation map
 
@@ -249,16 +249,19 @@ them on matching requests; if yours doesn't, read the relevant file directly bef
 - `docs/sync-engine.md` — `sync_status` state machine: state diagrams, every transition with its
   query and guard, the invariants that keep concurrent syncs safe, and when a repository stays busy.
   Update it whenever a sync query or its caller changes.
-- `docs/code-review-checklist.md` — tracked findings from a senior review, with `[ ]` items marking
-  known open problems (no CORS/rate limiting, config split between `main.go` and `os.Getenv` in
-  router constructors, session write amplification, incomplete test coverage). Update the
-  relevant checkbox when you close one.
 - `docs/requirements.md`, `docs/user-stories.md` — product spec.
 - `docs/howto/` — Google OAuth setup, GitHub App setup, golang-migrate workflow, sqlc usage.
 - `docs/roadmap.md` — phased build-out plan (not dated), interleaving new features with the open
-  checklist items each phase depends on or exposes. Update it as phases complete or scope shifts.
+  `tech-debt` issues each phase depends on or exposes. Update it as phases complete or scope shifts.
 - `docs/roadmap-stakeholders.md` — non-technical companion to `docs/roadmap.md`: same plan grouped
   into Now/Next/Later, feature language only. Keep the two in sync when phases change.
+
+## Tracking work
+
+Open work lives in GitHub issues, not in docs. Review findings and known problems carry the
+`tech-debt` label (`gh issue list --label tech-debt --state open`). When you find a new problem
+you are not fixing, propose an issue (title in the `type(scope): …` style, and body) to the user
+rather than adding a TODO list to a doc. Reference issues as `#NN` from docs and commits.
 
 ## Known inconsistencies
 

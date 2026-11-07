@@ -3,8 +3,8 @@
 Phased, not dated — each phase is a scope milestone, not a calendar commitment. Phases are
 intended to run roughly in order but security/architecture work is interleaved into the phase
 that needs or exposes it, rather than pushed into a separate "hardening" track. Source material:
-`docs/api.md` (target API shape), `docs/code-review-checklist.md` (tracked findings, `[ ]` =
-open), `docs/requirements.md` / `docs/user-stories.md` (product spec).
+`docs/api.md` (target API shape), GitHub issues labeled `tech-debt` (open review findings),
+`docs/requirements.md` / `docs/user-stories.md` (product spec).
 
 ## Baseline (today)
 
@@ -29,8 +29,9 @@ moves the unique key to `(user_id, provider, provider_user_id)` and adds `label`
 GitHub access now sits behind the `providers` package (`Provider` interface + `Registry`), with
 provider failures normalized to `ErrInvalidToken`/`ErrRateLimited` and mapped to `403`/`429`;
 provider tokens are encrypted at rest with AES-256-GCM behind the `secrets.Cipher` interface.
-Still open in this phase: the rest of the seed tests (E1) — the session/`RequireAuth`/provider unit
-tests landed, but the OAuth callback integration test (needs a DB seam) and CI are outstanding.
+Still open in this phase: the rest of the seed tests (#94, #100) — the
+session/`RequireAuth`/provider unit tests landed, but the OAuth callback integration test (needs a
+DB seam) and CI (#44) are outstanding.
 
 - **Schema**: `external_git_accounts` currently enforces `UNIQUE(user_id, provider)`
   (`database/migrations/000002_create_external_git_accounts_table.up.sql:12`). New migration
@@ -45,7 +46,7 @@ tests landed, but the OAuth callback integration test (needs a DB seam) and CI a
   `GET /accounts/{provider}/repositories` and `POST /repositories` already take/accept an
   `account_id` — confirm every account-scoped read is disambiguated by account, not provider.
   `DELETE /accounts/{id}` enforces ownership and cascades cleanup.
-- **Provider abstraction (checklist C1)**: extract a `providers` interface (exchange code, list
+- **Provider abstraction**: extract a `providers` interface (exchange code, list
   repositories, refresh token) out of the inline GitHub calls in
   `routers/external_git_accounts.go`. Multi-account and a future Bitbucket/GitLab provider both
   need this seam — build it once here rather than duplicating inline GitHub-shaped code per
@@ -53,14 +54,14 @@ tests landed, but the OAuth callback integration test (needs a DB seam) and CI a
   refresh is modeled as an optional `Refresher` capability rather than a method on every provider,
   since GitHub OAuth App tokens don't refresh (this changes with the Phase 2 GitHub App migration).
   GitHub implements it since that migration (Phase 2).
-- **Token encryption (checklist A2/D1)**: `access_token`/`refresh_token` are plaintext today. Add
+- **Token encryption**: `access_token`/`refresh_token` are plaintext today. Add
   at-rest encryption (app-level AEAD or KMS envelope) before the number of stored tokens grows
   with multi-account. **Done** — app-level AES-256-GCM in the `secrets` package, keyed by a
   base64 `TOKEN_ENCRYPTION_KEY` validated at startup; ciphertext is versioned (`v1:`) and
   base64-encoded for safe storage in the existing `TEXT` columns. KMS envelope remains a future
   swap behind `secrets.Cipher`.
-- **Tests (checklist E1, started here not deferred)**: first unit tests for session lifecycle and
-  `RequireAuth` are in (`session/manager_test.go`, `middleware/middleware_test.go`), alongside
+- **Tests (started here not deferred; #94, #100, CI #44)**: first unit tests for session
+  lifecycle and `RequireAuth` are in (`session/manager_test.go`, `middleware/middleware_test.go`), alongside
   provider HTTP/pagination tests against `httptest` (`providers/github_test.go`) and response
   envelope tests (`httpx`). The OAuth callback integration test with a fake provider is still open —
   it needs a DB seam (handlers hold a concrete `*pgxpool.Pool`) or a test Postgres — as is CI.
@@ -70,19 +71,19 @@ tests landed, but the OAuth callback integration test (needs a DB seam) and CI a
 Status: **tracking CRUD + branch listing + GitHub App migration + token refresh + sync engine
 done** — the `repositories` table (migration `000005`) backs `POST/GET/PATCH/DELETE
 /api/repositories` and `GET /repositories/{id}/branches`; GitHub accounts link through a GitHub App
-with expiring tokens that `credentials.Service` refreshes and revokes (checklist D3 closed);
+with expiring tokens that `credentials.Service` refreshes and revokes;
 `POST /repositories/{id}/sync` queues a background sync (`syncqueue` + `reposync`) that stores the
 tracked branch's Markdown files in `documents` (migration `000007`). Known gaps carried forward:
-handler, locked-refresh, and `reposync` tests need a DB seam (checklist E1); a re-link racing a
+handler, locked-refresh, and `reposync` tests need a DB seam (#94, #100); a re-link racing a
 refresh can leave the rotated token unrevoked; `GET /api/accounts` does not flag accounts that need
 re-linking; `auto_sync` is stored but nothing triggers a sync from it yet; a sync can stay `running`
-until restart (checklist B5); public repositories tracked without an account sync anonymously
-(checklist C11).
+until restart (#98); public repositories tracked without an account sync anonymously
+(#99).
 
 - `POST/GET/PATCH/DELETE /api/repositories`, `GET /repositories/{id}/branches`. **Done.**
 - Track a repo from a linked account **or** by public `owner`/`name` (no account needed for public
   GitHub repos, per `docs/api.md`). **Done.**
-- **GitHub App migration + token refresh (checklist D3) — before the sync engine.** **Done** — see
+- **GitHub App migration + token refresh — before the sync engine.** **Done** — see
   the per-item notes below. Replace the GitHub OAuth App with a GitHub App using expiring user
   tokens (8h access, 6-month single-use refresh token), so stored tokens stop being non-expiring,
   full-`repo`-scope credentials. The sync engine design depends on this (who owns the token, that
@@ -161,7 +162,7 @@ until restart (checklist B5); public repositories tracked without an account syn
 
 - Build the UI consuming the API surface from phases 1–7. This is the first point a real browser
   origin exists.
-- **CORS + rate limiting (checklist A7)**: currently skipped because there's no real frontend to
+- **CORS + rate limiting (#64)**: currently skipped because there's no real frontend to
   protect against; becomes mandatory at (or just before) this phase.
 
 ## Ongoing, not phase-bound
@@ -169,13 +170,13 @@ until restart (checklist B5); public repositories tracked without an account syn
 Small items that don't need their own phase — pick up opportunistically whenever touching the
 adjacent code, rather than batching into a dedicated cleanup pass:
 
-- **Config consolidation (checklist C7)** — `main.go` builds `AppConfig` but routers also read
+- **Config consolidation (#91)** — `main.go` builds `AppConfig` but routers also read
   `os.Getenv` directly; consolidate next time a router constructor changes.
-- **Session write amplification (checklist C8)** — `Handle` persists every request including
+- **Session write amplification (#92)** — `Handle` persists every request including
   anonymous ones; only persist on mutation.
-- **`username` column (checklist D5)** — defaults to `''`, never populated; decide if it's a real
+- **`username` column (#93)** — defaults to `''`, never populated; decide if it's a real
   product feature (fits naturally with Phase 1's account labels) or drop it.
-- **Test/CI coverage (checklist E1)** — grow alongside each phase above rather than as a
+- **Test/CI coverage (#94, #100, #44)** — grow alongside each phase above rather than as a
   standalone effort; Phase 1 seeds it.
 
 ## Explicitly deferred
