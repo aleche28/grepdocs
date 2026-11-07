@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -29,6 +30,8 @@ const (
 	pgUniqueViolation = "23505"
 	// retryAfterFullQueue sets a delay after which clients can retry to enqueue after a full queue error
 	retryAfterFullQueue = "30"
+	// unclaimTimeout bounds the unclaim write, which runs detached from the request context
+	unclaimTimeout = 5 * time.Second
 )
 
 type RepositoriesHandler struct {
@@ -432,9 +435,11 @@ func (h *RepositoriesHandler) syncRepository(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err = h.syncpool.Enqueue(r.Context(), id); err != nil {
-		cancelErr := q.UnclaimRepositorySync(context.WithoutCancel(r.Context()), id)
-		if cancelErr != nil {
-			log.Printf("cancel repo %d sync: %v", id, cancelErr)
+		unclaimCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), unclaimTimeout)
+		unclaimErr := q.UnclaimRepositorySync(unclaimCtx, id)
+		cancel()
+		if unclaimErr != nil {
+			log.Printf("unclaim repo %d sync: %v", id, unclaimErr)
 		}
 
 		if errors.Is(err, syncqueue.ErrQueueFull) {
