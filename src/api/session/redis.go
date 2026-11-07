@@ -3,10 +3,11 @@ package session
 import (
 	"context"
 	"encoding/json"
-	"grepdocs/api/models"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"grepdocs/api/models"
 )
 
 type RedisSessionStore struct {

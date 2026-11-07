@@ -2,13 +2,6 @@ package routers
 
 import (
 	"errors"
-	"grepdocs/api/credentials"
-	"grepdocs/api/dal"
-	"grepdocs/api/httpx"
-	"grepdocs/api/middleware"
-	"grepdocs/api/providers"
-	"grepdocs/api/secrets"
-	"grepdocs/api/session"
 	"log"
 	"net/http"
 	"os"
@@ -17,6 +10,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"grepdocs/api/credentials"
+	"grepdocs/api/dal"
+	"grepdocs/api/httpx"
+	"grepdocs/api/middleware"
+	"grepdocs/api/providers"
+	"grepdocs/api/secrets"
+	"grepdocs/api/session"
 )
 
 type ExternalAccountsHandler struct {

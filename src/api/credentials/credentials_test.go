@@ -5,12 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"grepdocs/api/dal"
-	"grepdocs/api/providers"
-	"grepdocs/api/secrets"
 	"slices"
 	"testing"
 	"time"
+
+	"grepdocs/api/dal"
+	"grepdocs/api/providers"
+	"grepdocs/api/secrets"
 )
 
 func newTestCipher(t *testing.T, fill byte) *secrets.AESGCMCipher {

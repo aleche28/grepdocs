@@ -5,10 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"grepdocs/api/credentials"
-	"grepdocs/api/dal"
-	"grepdocs/api/providers"
-	"grepdocs/api/syncqueue"
 	"log"
 	"runtime/debug"
 	"slices"
@@ -19,6 +15,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"grepdocs/api/credentials"
+	"grepdocs/api/dal"
+	"grepdocs/api/providers"
+	"grepdocs/api/syncqueue"
 )
 
 var errProviderNotSupported = errors.New("provider not supported")

@@ -3,11 +3,12 @@ package routers
 import (
 	"encoding/json"
 	"errors"
-	"grepdocs/api/httpx"
-	"grepdocs/api/providers"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"grepdocs/api/httpx"
+	"grepdocs/api/providers"
 )
 
 // plainProvider implements providers.Provider but not providers.Installer

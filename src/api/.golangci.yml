@@ -23,15 +23,23 @@ linters:
     errcheck:
       exclude-functions:
         - "(io.Closer).Close"
+    gosec:
+      excludes:
+        - G104
 
 formatters:
   enable:
+    # the order matters
     - gofumpt
-    - goimports
+    - gci
   settings:
-    goimports:
-      local-prefixes:
-        - grepdocs/api
+    gofumpt:
+      module-path: grepdocs/api
+    gci:
+      sections:
+        - standard
+        - default
+        - localmodule
 
 issues:
   max-issues-per-linter: 0

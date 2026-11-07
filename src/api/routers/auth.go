@@ -6,10 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"grepdocs/api/dal"
-	"grepdocs/api/httpx"
-	"grepdocs/api/models"
-	"grepdocs/api/session"
 	"io"
 	"log"
 	"net/http"
@@ -19,6 +15,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/oauth2"
+
+	"grepdocs/api/dal"
+	"grepdocs/api/httpx"
+	"grepdocs/api/models"
+	"grepdocs/api/session"
 )
 
 type AuthHandler struct {

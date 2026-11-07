@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"testing"
+
 	"grepdocs/api/credentials"
 	"grepdocs/api/providers"
-	"testing"
 )
 
 func TestSyncErrorCode(t *testing.T) {

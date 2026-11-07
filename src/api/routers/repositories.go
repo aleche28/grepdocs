@@ -4,14 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"grepdocs/api/credentials"
-	"grepdocs/api/dal"
-	"grepdocs/api/httpx"
-	"grepdocs/api/middleware"
-	"grepdocs/api/models"
-	"grepdocs/api/providers"
-	"grepdocs/api/session"
-	"grepdocs/api/syncqueue"
 	"log"
 	"net/http"
 	"strconv"
@@ -23,6 +15,15 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"grepdocs/api/credentials"
+	"grepdocs/api/dal"
+	"grepdocs/api/httpx"
+	"grepdocs/api/middleware"
+	"grepdocs/api/models"
+	"grepdocs/api/providers"
+	"grepdocs/api/session"
+	"grepdocs/api/syncqueue"
 )
 
 const (

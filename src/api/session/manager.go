@@ -5,11 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"grepdocs/api/models"
 	"io"
 	"log"
 	"net/http"
 	"time"
+
+	"grepdocs/api/models"
 )
 
 type SessionStore interface {

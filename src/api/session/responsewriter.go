@@ -1,9 +1,10 @@
 package session
 
 import (
-	"grepdocs/api/models"
 	"net/http"
 	"time"
+
+	"grepdocs/api/models"
 )
 
 type sessionResponseWriter struct {

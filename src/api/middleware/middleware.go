@@ -2,9 +2,10 @@ package middleware
 
 import (
 	"context"
+	"net/http"
+
 	"grepdocs/api/httpx"
 	"grepdocs/api/session"
-	"net/http"
 )
 
 type ctxKey int
