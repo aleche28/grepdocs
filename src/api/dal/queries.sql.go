@@ -602,6 +602,47 @@ func (q *Queries) ListDocumentShas(ctx context.Context, repositoryID int64) ([]L
 	return items, nil
 }
 
+const listUserDocuments = `-- name: ListUserDocuments :many
+SELECT d.id, d.path, d.blob_sha, d.synced_at, d.repository_id
+FROM documents d
+LEFT JOIN repositories r
+	ON d.repository_id = r.id AND r.user_id = $1
+`
+
+type ListUserDocumentsRow struct {
+	ID           int64
+	Path         string
+	BlobSha      string
+	SyncedAt     time.Time
+	RepositoryID int64
+}
+
+func (q *Queries) ListUserDocuments(ctx context.Context, userID int64) ([]ListUserDocumentsRow, error) {
+	rows, err := q.db.Query(ctx, listUserDocuments, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserDocumentsRow
+	for rows.Next() {
+		var i ListUserDocumentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Path,
+			&i.BlobSha,
+			&i.SyncedAt,
+			&i.RepositoryID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markRepositorySyncAsFailed = `-- name: MarkRepositorySyncAsFailed :exec
 UPDATE repositories
 SET

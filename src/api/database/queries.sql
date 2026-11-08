@@ -238,3 +238,9 @@ SET
 		ELSE 'ok' END,
 	updated_at = NOW()
 WHERE id = $1 AND sync_status = 'queued';
+
+-- name: ListUserDocuments :many
+SELECT d.id, d.path, d.blob_sha, d.synced_at, d.repository_id
+FROM documents d
+LEFT JOIN repositories r
+	ON d.repository_id = r.id AND r.user_id = $1;

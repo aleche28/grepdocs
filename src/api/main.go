@@ -4,6 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"grepdocs/api/credentials"
+	"grepdocs/api/providers"
+	"grepdocs/api/reposync"
+	"grepdocs/api/routers"
+	"grepdocs/api/secrets"
+	"grepdocs/api/session"
+	"grepdocs/api/syncqueue"
 	"log"
 	"net/http"
 	"os"
@@ -17,14 +24,6 @@ import (
 	"github.com/joho/godotenv"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
-
-	"grepdocs/api/credentials"
-	"grepdocs/api/providers"
-	"grepdocs/api/reposync"
-	"grepdocs/api/routers"
-	"grepdocs/api/secrets"
-	"grepdocs/api/session"
-	"grepdocs/api/syncqueue"
 )
 
 type Config struct {
@@ -150,6 +149,7 @@ func main() {
 		r.Mount("/users", routers.UserRoutes(pool, sm))
 		r.Mount("/accounts", routers.ExternalAccountsRoutes(pool, sm, registry, tokenCipher, credSvc))
 		r.Mount("/repositories", routers.RepositoriesRoutes(pool, sm, registry, credSvc, syncPool))
+		r.Mount("/documents", routers.DocumentsRoutes(pool, sm))
 	})
 
 	// about timeouts: https://blog.cloudflare.com/the-complete-guide-to-golang-net-http-timeouts/#httplistenandserve-is-doing-it-wrong
