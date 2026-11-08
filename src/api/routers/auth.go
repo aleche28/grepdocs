@@ -136,6 +136,7 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	if redirectURL == "" {
 		redirectURL = "http://localhost:3000" // Default for development
 	}
+	//nolint:gosec // G710: the origin is FRONTEND_URL and redirectPath passed isValidRedirectPath
 	http.Redirect(w, r, redirectURL+redirectPath, http.StatusTemporaryRedirect)
 }
 
@@ -143,7 +144,10 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) logout(w http.ResponseWriter, r *http.Request) {
 	session, ok := session.GetSession(h.sessionMgr, r)
 	if ok {
-		h.sessionMgr.Destroy(r.Context(), session)
+		if err := h.sessionMgr.Destroy(r.Context(), session); err != nil {
+			httpx.WriteInternalError(w, err)
+			return
+		}
 		http.SetCookie(w, h.sessionMgr.ClearCookie())
 	}
 

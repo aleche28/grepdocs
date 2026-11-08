@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -39,7 +40,7 @@ func NewRedisSessionStore(
 func (s *RedisSessionStore) Read(ctx context.Context, id string) (*models.Session, error) {
 	val, err := s.client.Get(ctx, id).Bytes()
 	if err != nil {
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			return nil, nil
 		}
 		return nil, err

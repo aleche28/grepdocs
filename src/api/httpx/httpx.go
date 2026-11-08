@@ -49,5 +49,7 @@ func WriteErrorWithDetails(w http.ResponseWriter, status int, code, message stri
 		body["error"]["details"] = details
 	}
 
-	json.NewEncoder(w).Encode(body)
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		log.Printf("httpx: failed to encode JSON error response: %v", err)
+	}
 }

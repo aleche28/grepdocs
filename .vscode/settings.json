@@ -1,0 +1,10 @@
+{
+  "gopls": {
+    "formatting.gofumpt": true,
+    "formatting.local": "grepdocs/api"
+  },
+  "[go]": {
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": { "source.organizeImports": "explicit" }
+  }
+}

@@ -440,6 +440,7 @@ func (h *RepositoriesHandler) syncRepository(w http.ResponseWriter, r *http.Requ
 		unclaimErr := q.UnclaimRepositorySync(unclaimCtx, id)
 		cancel()
 		if unclaimErr != nil {
+			//nolint:gosec // G706: id is a parsed int64
 			log.Printf("unclaim repo %d sync: %v", id, unclaimErr)
 		}
 

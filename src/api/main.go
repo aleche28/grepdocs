@@ -128,6 +128,7 @@ func main() {
 		go func() {
 			for _, id := range ids {
 				if err := syncPool.EnqueueWait(ctx, id); err != nil {
+					//nolint:gosec // G706: id is an int64 from the database
 					log.Printf("re-enqueue repo %d: %v", id, err)
 					return // ctx cancelled: the rest stay queued, the next startup resets them
 				}
@@ -142,7 +143,7 @@ func main() {
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("pong"))
+			_, _ = w.Write([]byte("pong")) // a failed write means the client is gone
 		})
 
 		r.Mount("/auth", routers.AuthRoutes(&AppConfig.GoogleLoginConfig, pool, sm))

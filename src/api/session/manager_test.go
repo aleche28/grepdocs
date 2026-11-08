@@ -92,7 +92,8 @@ func TestNewSession(t *testing.T) {
 }
 
 func TestGenerateSessionIdIsUnique(t *testing.T) {
-	if generateSessionId() == generateSessionId() {
+	a, b := generateSessionId(), generateSessionId()
+	if a == b {
 		t.Fatal("generateSessionId returned duplicate ids")
 	}
 }
@@ -295,7 +296,9 @@ func TestDestroy(t *testing.T) {
 	s := newSession()
 	store.sessions[s.Id] = s
 
-	sm.Destroy(context.Background(), s)
+	if err := sm.Destroy(context.Background(), s); err != nil {
+		t.Fatalf("Destroy: %v", err)
+	}
 
 	if store.has(s.Id) {
 		t.Error("Destroy left the session in the store")
@@ -317,5 +320,8 @@ func TestClearCookie(t *testing.T) {
 	}
 	if !c.HttpOnly {
 		t.Error("cookie is not HttpOnly")
+	}
+	if c.SameSite != http.SameSiteLaxMode {
+		t.Errorf("SameSite = %v, want Lax", c.SameSite)
 	}
 }

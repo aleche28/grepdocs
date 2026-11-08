@@ -120,7 +120,7 @@ func (s *Service) syncRecover(ctx context.Context, repoID int64, startedAt *time
 
 // sync does the work; Sync records the failure. startedAt identifies this run, so
 // that finalizing cannot overwrite a newer run of the same repository.
-func (s *Service) sync(ctx context.Context, repoID int64, startedAt *time.Time) error {
+func (s *Service) sync(ctx context.Context, repoID int64, startedAt *time.Time) error { //nolint:gocognit // known, see the TODO below
 	// TODO: refactor this ugly mess of a function!
 
 	q := dal.New(s.pool)

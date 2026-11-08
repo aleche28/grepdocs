@@ -1,6 +1,6 @@
 package secrets
 
-// basic interface, but it allows to change the implementation
+// Cipher interface allows to change the implementation
 // in the future with a more secure solution (e.g. KMS)
 type Cipher interface {
 	Encrypt(string) (string, error)
