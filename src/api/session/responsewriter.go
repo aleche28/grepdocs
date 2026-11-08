@@ -1,9 +1,10 @@
 package session
 
 import (
-	"grepdocs/api/models"
 	"net/http"
 	"time"
+
+	"grepdocs/api/models"
 )
 
 type sessionResponseWriter struct {
@@ -40,7 +41,7 @@ func writeCookieIfNecessary(w *sessionResponseWriter) {
 	}
 
 	secure := w.sessionMgr.secureCookie
-	cookie := &http.Cookie{
+	cookie := &http.Cookie{ //nolint:gosec // G124: Secure is configurable, HttpOnly and SameSite are set
 		Name:     w.sessionMgr.cookieName,
 		Value:    session.Id,
 		HttpOnly: true,

@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"grepdocs/api/dal"
-	"grepdocs/api/providers"
-	"grepdocs/api/secrets"
 	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"grepdocs/api/dal"
+	"grepdocs/api/providers"
+	"grepdocs/api/secrets"
 )
 
 const (

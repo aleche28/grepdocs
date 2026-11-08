@@ -8,7 +8,7 @@ MIGR_PATH   := ./database/migrations
 # the command line, e.g. `make migrate-up DATABASE_URL=...`).
 DATABASE_URL ?= $(shell sed -n 's/^[[:space:]]*DATABASE_URL[[:space:]]*=[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}[[:space:]]*$$/\1/p' $(ENV_FILE))
 
-.PHONY: help infra-up infra-down env run build test test-race fmt vet tidy sqlc-generate migrate-up migrate-down migrate-new
+.PHONY: help infra-up infra-down env run build test test-race fmt fmt-check vet tidy tidy-check lint vuln ci sqlc-generate migrate-up migrate-down migrate-new
 
 help:
 	@echo "GrepDocs targets:"
@@ -19,8 +19,14 @@ help:
 	@echo "  build           Build the API module"
 	@echo "  test            Run the test suite (go test ./...)"
 	@echo "  test-race       Run the test suite with the race detector"
-	@echo "  fmt, vet        Go formatting / vetting (quality gates)"
+	@echo "  fmt             Go format (rewrites files)"
+	@echo "  fmt-check       Fail if any file is unformatted (prints the diff)"
+	@echo "  vet             Vet Go code"
 	@echo "  tidy            Sync go.sum with go.mod"
+	@echo "  tidy-check      Fail if go.mod/go.sum are not tidy (prints the diff)"
+	@echo "  lint            Run golangci-lint"
+	@echo "  vuln            Run govulncheck (reachable vulnerabilities only)"
+	@echo "  ci              Run every check the CI workflows run"
 	@echo "  sqlc-generate   Regenerate src/api/dal from schema + queries.sql"
 	@echo "  migrate-up      Apply pending migrations"
 	@echo "  migrate-down    Roll back the last migration (COUNT=n for more)"
@@ -48,13 +54,27 @@ test-race:
 	cd $(GO_DIR) && go test -race ./...
 
 fmt:
-	cd $(GO_DIR) && go fmt
+	cd $(GO_DIR) && golangci-lint fmt
+
+fmt-check:
+	cd $(GO_DIR) && golangci-lint fmt --diff
 
 vet:
-	cd $(GO_DIR) && go vet
+	cd $(GO_DIR) && go vet ./...
 
 tidy:
-	cd $(GO_DIR) && go tidy
+	cd $(GO_DIR) && go mod tidy
+
+tidy-check:
+	cd $(GO_DIR) && go mod tidy -diff
+
+lint:
+	cd $(GO_DIR) && golangci-lint run ./...
+
+vuln:
+	cd $(GO_DIR) && go tool govulncheck ./...
+
+ci: tidy-check fmt-check vet lint vuln build test-race
 
 sqlc-generate:
 	cd $(GO_DIR) && sqlc generate

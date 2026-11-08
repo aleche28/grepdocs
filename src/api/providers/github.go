@@ -55,10 +55,8 @@ func NewGitHub(opts GitHubOptions) *GitHubProvider {
 	}
 	if opts.BaseURL == "" {
 		opts.BaseURL = "https://api.github.com"
-	} else {
-		// TODO: should validate url
-		// TODO: strip final / if present
 	}
+	// TODO: should validate url and strip final / if present
 
 	endpoint := github.Endpoint
 	if opts.TokenURL != "" {
@@ -125,7 +123,7 @@ func (ghp *GitHubProvider) FetchUser(ctx context.Context, accessToken string) (U
 	return user, nil
 }
 
-// listExternalRepositories returns all external git accounts repositories for the authenticated user
+// ListRepositories returns all external git accounts repositories for the authenticated user
 func (ghp *GitHubProvider) ListRepositories(ctx context.Context, accessToken string) ([]Repository, error) {
 	perPage := 100
 	page := 1

@@ -5,10 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"grepdocs/api/credentials"
-	"grepdocs/api/dal"
-	"grepdocs/api/providers"
-	"grepdocs/api/syncqueue"
 	"log"
 	"runtime/debug"
 	"slices"
@@ -19,6 +15,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"grepdocs/api/credentials"
+	"grepdocs/api/dal"
+	"grepdocs/api/providers"
+	"grepdocs/api/syncqueue"
 )
 
 var errProviderNotSupported = errors.New("provider not supported")
@@ -119,7 +120,7 @@ func (s *Service) syncRecover(ctx context.Context, repoID int64, startedAt *time
 
 // sync does the work; Sync records the failure. startedAt identifies this run, so
 // that finalizing cannot overwrite a newer run of the same repository.
-func (s *Service) sync(ctx context.Context, repoID int64, startedAt *time.Time) error {
+func (s *Service) sync(ctx context.Context, repoID int64, startedAt *time.Time) error { //nolint:gocognit // refactor tracked in #103
 	// TODO: refactor this ugly mess of a function!
 
 	q := dal.New(s.pool)

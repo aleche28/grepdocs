@@ -5,11 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"grepdocs/api/models"
 	"io"
 	"log"
 	"net/http"
 	"time"
+
+	"grepdocs/api/models"
 )
 
 type SessionStore interface {
@@ -134,7 +135,9 @@ func (m *SessionManager) gc(ctx context.Context, period time.Duration) {
 	ticker := time.NewTicker(period)
 
 	for range ticker.C {
-		m.store.Gc(ctx, m.idleExpiration, m.absoluteExpiration)
+		if err := m.store.Gc(ctx, m.idleExpiration, m.absoluteExpiration); err != nil {
+			log.Printf("Failed to garbage collect sessions: %v\n", err)
+		}
 	}
 }
 
@@ -186,17 +189,19 @@ func GetSession(sm *SessionManager, r *http.Request) (*models.Session, bool) {
 }
 
 // Destroy invalidates the session in the store
-func (m *SessionManager) Destroy(ctx context.Context, session *models.Session) {
-	m.store.Destroy(ctx, session.Id)
+func (m *SessionManager) Destroy(ctx context.Context, session *models.Session) error {
+	return m.store.Destroy(ctx, session.Id)
 }
 
 // ClearCookie returns a cookie that immediately expires, removing the session cookie from the browser
 func (m *SessionManager) ClearCookie() *http.Cookie {
-	return &http.Cookie{
+	return &http.Cookie{ //nolint:gosec // G124: Secure is configurable, HttpOnly and SameSite are set
 		Name:     m.cookieName,
 		Value:    "",
 		HttpOnly: true,
 		Path:     "/",
+		Secure:   m.secureCookie,
+		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
 	}

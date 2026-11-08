@@ -1,0 +1,52 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - asciicheck
+    - bodyclose
+    - errorlint
+    - gocognit
+    - godoclint
+    - gosec
+    - misspell
+    - noctx
+    - nolintlint
+  exclusions:
+    rules:
+      - path: '(.+)_test\.go'
+        linters:
+          - errcheck
+          - gocognit
+          - gosec
+          - noctx
+  settings:
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    errcheck:
+      exclude-functions:
+        - "(io.Closer).Close"
+        # `defer tx.Rollback(ctx)` is the pgx idiom; after Commit it returns ErrTxClosed
+        - "(github.com/jackc/pgx/v5.Tx).Rollback"
+    gosec:
+      excludes:
+        - G104
+
+formatters:
+  enable:
+    # golangci-lint applies formatters in a fixed order (gci always last), not in this order
+    - gofumpt
+    - gci
+  settings:
+    gofumpt:
+      module-path: grepdocs/api
+    gci:
+      sections:
+        - standard
+        - default
+        - localmodule
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

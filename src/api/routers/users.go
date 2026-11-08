@@ -1,14 +1,15 @@
 package routers
 
 import (
-	"grepdocs/api/dal"
-	"grepdocs/api/httpx"
-	"grepdocs/api/middleware"
-	"grepdocs/api/session"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"grepdocs/api/dal"
+	"grepdocs/api/httpx"
+	"grepdocs/api/middleware"
+	"grepdocs/api/session"
 )
 
 type UserHandler struct {

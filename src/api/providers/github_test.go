@@ -550,9 +550,11 @@ func TestRefresh(t *testing.T) {
 		name, contentType, body string
 		status                  int
 	}{
-		{"other error code", "application/x-www-form-urlencoded",
+		{
+			"other error code", "application/x-www-form-urlencoded",
 			"error=incorrect_client_credentials&error_description=The+client_id+and%2For+client_secret+passed+are+incorrect.",
-			http.StatusOK},
+			http.StatusOK,
+		},
 		{"server error", "text/plain", "boom", http.StatusInternalServerError},
 	}
 	for _, tc := range notInvalidToken {

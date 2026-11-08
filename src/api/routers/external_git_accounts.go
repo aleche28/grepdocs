@@ -2,13 +2,6 @@ package routers
 
 import (
 	"errors"
-	"grepdocs/api/credentials"
-	"grepdocs/api/dal"
-	"grepdocs/api/httpx"
-	"grepdocs/api/middleware"
-	"grepdocs/api/providers"
-	"grepdocs/api/secrets"
-	"grepdocs/api/session"
 	"log"
 	"net/http"
 	"os"
@@ -17,6 +10,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"grepdocs/api/credentials"
+	"grepdocs/api/dal"
+	"grepdocs/api/httpx"
+	"grepdocs/api/middleware"
+	"grepdocs/api/providers"
+	"grepdocs/api/secrets"
+	"grepdocs/api/session"
 )
 
 type ExternalAccountsHandler struct {
@@ -112,6 +113,7 @@ func (h *ExternalAccountsHandler) providerLogin(w http.ResponseWriter, r *http.R
 	sess.SetOAuthStateToken(state)
 
 	url := provider.AuthCodeURL(state)
+	//nolint:gosec // G710: the URL is built by the provider from its own config, not from input
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
@@ -222,6 +224,7 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 	if redirectURL == "" {
 		redirectURL = "http://localhost:3000"
 	}
+	//nolint:gosec // G710: the origin is FRONTEND_URL and the provider name comes from the registry
 	http.Redirect(w, r, redirectURL+"/settings/accounts?linked="+provider.Name(), http.StatusTemporaryRedirect)
 }
 

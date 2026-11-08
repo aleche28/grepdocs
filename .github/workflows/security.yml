@@ -1,0 +1,35 @@
+name: Security
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  # new vulnerabilities are published without any change to this repository
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: src/api/go.mod
+          cache-dependency-path: src/api/go.sum
+      # govulncheck is a `tool` in go.mod, so its version is pinned there and bumped by Dependabot
+      - name: govulncheck
+        run: make vuln
