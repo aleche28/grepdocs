@@ -11,7 +11,8 @@ Currently this repository contains the **backend API** (`src/api`, Go). `src/ui`
 - **golang-migrate** — install with `go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest`
 - **sqlc** — install with `brew install sqlc` or `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`
   (if `sqlc`/`migrate` are not found, ensure `$(go env GOPATH)/bin` is on your `PATH`)
-- **golangci-lint** v2 — install with `brew install golangci-lint` (needed for `make lint`)
+- **golangci-lint** v2 — install with `brew install golangci-lint` (needed for `make lint`); CI pins
+  the version in `.github/workflows/ci.yml`, so keep your local install on the same one
 
 ## Quick start
 
@@ -66,14 +67,23 @@ not a base64-encoded 32-byte key. The database/Redis state is kept in Docker (se
 | Every check CI runs   | `make ci`                                |
 | Tidy dependencies     | `make tidy`                              |
 
-`go vet` and `go fmt` are the only quality gates: run both before committing.
+`make ci` runs every check that CI runs (tidy, vet, golangci-lint with formatting, govulncheck,
+build, race-enabled tests): run it before pushing. GitHub Actions runs the same checks on every PR
+(`.github/workflows/ci.yml`, `security.yml`), and Dependabot proposes Go module and action updates
+weekly.
+
+Editors: formatting is gofumpt, so enable it in gopls (`"formatting.gofumpt": true` and
+`"formatting.local": "grepdocs/api"` in VS Code; `gofumpt = true` and `["local"] = "grepdocs/api"` in
+Neovim), or saves will disagree with `make fmt`.
 
 ## Project layout
 
 ```
 docker-compose.yml     # Postgres + Redis + pgAdmin (repo root)
 Makefile               # Wraps the common workflows
+.github/               # CI workflows (ci.yml, security.yml) + Dependabot config
 src/api/               # Backend API (Go module grepdocs/api)
+  .golangci.yml        # golangci-lint linters and formatters
   main.go              # Entry point, routes mounted under /api
   .env.example         # Template of all required env vars
   database/            # SQL migrations (src/api/database/migrations) + queries.sql

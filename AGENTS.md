@@ -9,12 +9,12 @@ GrepDocs: a centralized tool to browse, search, and edit Markdown documentation 
 multiple git repositories, committing edits back to source control. Only the backend exists today
 (`src/api`, Go module `grepdocs/api`); `src/ui` is reserved for a future frontend and is absent.
 
-There is no CI. `go test ./...`, `go vet`, and `go fmt` are the quality gates — run all three before
-committing (`make test`, `make vet`, `make fmt`). Unit tests cover sessions, auth middleware,
-providers, credentials, response envelopes, the session model, and the `syncqueue` worker pool
-(on `testing/synctest`, so its timeouts run on a fake clock). `routers` tests cover only helpers
-that need no database (`writeProviderError`, `installDetails`); handlers and `reposync` stay
-untested because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
+GitHub Actions runs the quality gates on every PR and push to `main` (see CI and code quality);
+`make ci` runs the same checks locally — run it before pushing. Unit tests cover sessions, auth
+middleware, providers, credentials, response envelopes, the session model, and the `syncqueue`
+worker pool (on `testing/synctest`, so its timeouts run on a fake clock). `routers` tests cover
+only helpers that need no database (`writeProviderError`, `installDetails`); handlers and
+`reposync` stay untested because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
 
 ## Commands
 
@@ -222,6 +222,35 @@ from a real failure. With a GitHub App token, `/user/repos` lists only repositor
 installed on, so `ListRepositories` checks `/user/installations` when the list is empty and returns
 `ErrAppNotInstalled` when there are none (`total_count` is the total, not the page size). The token
 refresh and revocation flows are described above, under `credentials`.
+
+## CI and code quality
+
+Two workflows in `.github/workflows/`, both calling `make` from the repo root (the Makefile does the
+`cd src/api`, so do not set a default `working-directory`):
+
+- `ci.yml` — job `check` (`tidy-check`, `vet`, `build`, `test-race`) and job `lint`
+  (`golangci-lint-action`, which also reports formatting, so `fmt-check` is not run separately).
+- `security.yml` — `make vuln` (govulncheck) on PRs, pushes to `main`, a weekly cron, and manually.
+
+Rules worth preserving:
+
+- Linting is configured in `src/api/.golangci.yml`. Fix findings rather than suppress them; when a
+  finding is a false positive, use `//nolint:<linter> // <reason>` on the line (or the line above).
+  `nolintlint` rejects directives without a linter or reason, and flags unused ones. Prefer a
+  per-line directive over a global exclusion, so new occurrences are still caught.
+- Formatting is gofumpt + gci (imports: standard, third-party, then `grepdocs/api`). Run `make fmt`.
+  `gofumpt.module-path` must stay set: without a dot in its first element, `grepdocs/api` looks
+  like a standard-library path to gofumpt, and it then fights gci over import groups.
+- The Go version is the `toolchain` line in `src/api/go.mod`. CI reads it via `go-version-file`
+  (setup-go sets `GOTOOLCHAIN=local`), so bumping that line is how CI's Go changes.
+- After any `go get`, check the `go` line in the diff: a dependency (or a `go tool` dependency,
+  which shares the module graph) requiring a newer Go raises it silently.
+- Versions: govulncheck is pinned by the `tool` directive in `go.mod`, and actions by commit SHA
+  with a `# vX.Y.Z` comment; Dependabot (`.github/dependabot.yml`) bumps both weekly. The
+  golangci-lint version is the `version:` input in `ci.yml`: Dependabot does not touch it, so bump
+  it by hand together with your local install.
+- Workflows get `permissions: contents: read` and `persist-credentials: false`; widen per job only
+  when a step needs it.
 
 ## Conventions
 
