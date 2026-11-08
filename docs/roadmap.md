@@ -24,7 +24,9 @@ repository tracking (CRUD + branch listing), on-demand repository sync of Markdo
 stored documents, self-service user endpoints. No automatic sync, document API, tracked-file
 selection, search, groups, commit-back, or UI yet. Unit tests cover sessions, auth middleware,
 providers, credentials, response envelopes, the session model, the sync worker pool, the sync
-error mapping, and DB-free router helpers; no CI.
+error mapping, and DB-free router helpers. CI runs on every PR and push to `main`: tidy, vet,
+build and race-enabled tests, golangci-lint (with formatting), and govulncheck (also weekly);
+Dependabot proposes Go module and action updates.
 
 ## Phase 1 — Foundation
 
@@ -39,7 +41,8 @@ GitHub access now sits behind the `providers` package (`Provider` interface + `R
 provider failures normalized to `ErrInvalidToken`/`ErrRateLimited` and mapped to `403`/`429`;
 provider tokens are encrypted at rest with AES-256-GCM behind the `secrets.Cipher` interface.
 The session/`RequireAuth`/provider unit tests landed; the rest of the seed tests (#94: the OAuth
-callback integration test, which needs a DB seam) and CI (#44) moved to "Ongoing, not phase-bound".
+callback integration test, which needs a DB seam) and CI moved to "Ongoing, not phase-bound"; CI has
+since landed.
 
 - **Schema**: `external_git_accounts` currently enforces `UNIQUE(user_id, provider)`
   (`database/migrations/000002_create_external_git_accounts_table.up.sql:12`). New migration
@@ -68,11 +71,12 @@ callback integration test, which needs a DB seam) and CI (#44) moved to "Ongoing
   base64 `TOKEN_ENCRYPTION_KEY` validated at startup; ciphertext is versioned (`v1:`) and
   base64-encoded for safe storage in the existing `TEXT` columns. KMS envelope remains a future
   swap behind `secrets.Cipher`.
-- **Tests (started here not deferred; #94, #100, CI #44)**: first unit tests for session
+- **Tests (started here not deferred; #94, #100)**: first unit tests for session
   lifecycle and `RequireAuth` are in (`session/manager_test.go`, `middleware/middleware_test.go`), alongside
   provider HTTP/pagination tests against `httptest` (`providers/github_test.go`) and response
   envelope tests (`httpx`). The OAuth callback integration test with a fake provider is still open —
-  it needs a DB seam (handlers hold a concrete `*pgxpool.Pool`) or a test Postgres — as is CI.
+  it needs a DB seam (handlers hold a concrete `*pgxpool.Pool`) or a test Postgres. CI is **Done**
+  (see "Ongoing, not phase-bound").
 
 ## Phase 2 — Repository tracking
 
@@ -164,6 +168,9 @@ exists.
 - `GET /api/accounts` flags accounts that need re-linking, so the UI can offer a "Re-link" action.
 - **CORS + rate limiting (#64)**: currently skipped because there's no real frontend to
   protect against; mandatory before the UI is used.
+- **Logout that ends the session (#102)**: `POST /auth/logout` re-sends the session cookie and
+  re-saves the session, so the user stays signed in; must be fixed before the UI's logout works.
+  Overlaps with #92.
 - **UI (`src/ui`, Angular)**: Google login with an auth guard and logout; app shell; linked
   accounts (link, unlink, re-link, install-the-app link); track a repository (pick account and
   branch, filter repositories client-side, or a public repository by `owner/name`); repositories
@@ -217,13 +224,18 @@ adjacent code, rather than batching into a dedicated cleanup pass:
 - **Config consolidation (#91)** — `main.go` builds `AppConfig` but routers also read
   `os.Getenv` directly; consolidate next time a router constructor changes.
 - **Session write amplification (#92)** — `Handle` persists every request including
-  anonymous ones; only persist on mutation.
+  anonymous ones; only persist on mutation. Likely fixed together with the logout bug (#102).
 - **`username` column (#93)** — defaults to `''`, never populated; decide if it's a real
   product feature (fits naturally with Phase 1's account labels) or drop it.
 - **Test coverage (#94, #100)** — grow alongside each phase rather than as a standalone
   effort. Still missing: a DB seam (or test Postgres) for handler tests and the OAuth callback
   integration test.
-- **CI (#44)** — `fmt`, `vet`, build and test workflows, then quality and security checks.
+- **CI** — **Done** — `ci.yml` (tidy, vet, build, race tests; golangci-lint with gofumpt/gci and
+  gosec, errorlint, noctx and others), `security.yml` (govulncheck on PRs, `main` and weekly), and
+  Dependabot for Go modules and actions. `make ci` runs the same checks locally.
+- **Split `reposync.sync` (#103)** — the function is over the cognitive-complexity limit and
+  suppressed with `nolint:gocognit`; break it into named steps when next touching the sync engine,
+  keeping the invariants in `docs/sync-engine.md`.
 
 ## Explicitly deferred
 
