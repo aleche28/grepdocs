@@ -603,11 +603,18 @@ func (q *Queries) ListDocumentShas(ctx context.Context, repositoryID int64) ([]L
 }
 
 const listUserDocuments = `-- name: ListUserDocuments :many
-SELECT d.id, d.path, d.blob_sha, d.synced_at, d.repository_id
+SELECT d.id, d.path, d.blob_sha, d.synced_at, d.repository_id, r.full_name AS repo_fullname, r.provider AS repo_provider, r.tracked_branch AS repo_branch, r.synced_commit AS repo_commit
 FROM documents d
-LEFT JOIN repositories r
+INNER JOIN repositories r
 	ON d.repository_id = r.id AND r.user_id = $1
+WHERE $2::bigint IS NULL OR d.repository_id = $2::bigint
+ORDER BY d.path, r.full_name
 `
+
+type ListUserDocumentsParams struct {
+	UserID int64
+	RepoID pgtype.Int8
+}
 
 type ListUserDocumentsRow struct {
 	ID           int64
@@ -615,10 +622,14 @@ type ListUserDocumentsRow struct {
 	BlobSha      string
 	SyncedAt     time.Time
 	RepositoryID int64
+	RepoFullname string
+	RepoProvider string
+	RepoBranch   string
+	RepoCommit   pgtype.Text
 }
 
-func (q *Queries) ListUserDocuments(ctx context.Context, userID int64) ([]ListUserDocumentsRow, error) {
-	rows, err := q.db.Query(ctx, listUserDocuments, userID)
+func (q *Queries) ListUserDocuments(ctx context.Context, arg ListUserDocumentsParams) ([]ListUserDocumentsRow, error) {
+	rows, err := q.db.Query(ctx, listUserDocuments, arg.UserID, arg.RepoID)
 	if err != nil {
 		return nil, err
 	}
@@ -632,6 +643,10 @@ func (q *Queries) ListUserDocuments(ctx context.Context, userID int64) ([]ListUs
 			&i.BlobSha,
 			&i.SyncedAt,
 			&i.RepositoryID,
+			&i.RepoFullname,
+			&i.RepoProvider,
+			&i.RepoBranch,
+			&i.RepoCommit,
 		); err != nil {
 			return nil, err
 		}

@@ -1,15 +1,18 @@
 package routers
 
 import (
+	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"grepdocs/api/dal"
 	"grepdocs/api/httpx"
 	"grepdocs/api/middleware"
 	"grepdocs/api/models"
 	"grepdocs/api/session"
-	"net/http"
-
-	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type DocumentsHandler struct {
@@ -40,7 +43,16 @@ func (h *DocumentsHandler) listDocuments(w http.ResponseWriter, r *http.Request)
 	uid, _ := middleware.CurrentUserID(r)
 	q := dal.New(h.dbPool)
 
-	docs, err := q.ListUserDocuments(r.Context(), uid)
+	repoID, err := parseRepositoryIDParam(r.URL.Query().Get("repo_id"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "invalid repo_id parameter")
+		return
+	}
+
+	docs, err := q.ListUserDocuments(r.Context(), dal.ListUserDocumentsParams{
+		UserID: uid,
+		RepoID: repoID,
+	})
 	if err != nil {
 		httpx.WriteInternalError(w, err)
 		return
@@ -55,16 +67,36 @@ func (h *DocumentsHandler) getDocumentById(w http.ResponseWriter, r *http.Reques
 func (h *DocumentsHandler) getRawDocumentById(w http.ResponseWriter, r *http.Request) {
 }
 
-func toDocumentsDTO(docs []dal.ListUserDocumentsRow) []models.Document {
-	dto := make([]models.Document, 0, len(docs))
-	for _, d := range docs {
-		dto = append(dto, models.Document{
-			ID:       d.ID,
-			SHA:      d.BlobSha,
-			Path:     d.Path,
-			SyncedAt: &d.SyncedAt,
-			RepoId:   d.RepositoryID,
-		})
+func parseRepositoryIDParam(param string) (pgtype.Int8, error) {
+	repoID := pgtype.Int8{Valid: false}
+	if len(param) > 0 {
+		idInt, err := strconv.ParseInt(param, 10, 64)
+		if err != nil {
+			return pgtype.Int8{}, err
+		}
+		repoID.Int64 = idInt
+		repoID.Valid = true
 	}
-	return dto
+	return repoID, nil
+}
+
+func toDocumentsDTO(docs []dal.ListUserDocumentsRow) []models.Document {
+	dtos := make([]models.Document, 0, len(docs))
+	for _, d := range docs {
+		dto := models.Document{
+			ID:           d.ID,
+			SHA:          d.BlobSha,
+			Path:         d.Path,
+			SyncedAt:     &d.SyncedAt,
+			RepositoryId: d.RepositoryID,
+			Repository:   d.RepoFullname,
+			Provider:     d.RepoProvider,
+			Branch:       d.RepoBranch,
+		}
+		if d.RepoCommit.Valid {
+			dto.UpstreamCommit = &d.RepoCommit.String
+		}
+		dtos = append(dtos, dto)
+	}
+	return dtos
 }
