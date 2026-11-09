@@ -1,18 +1,17 @@
 package routers
 
 import (
+	"grepdocs/api/dal"
+	"grepdocs/api/httpx"
+	"grepdocs/api/middleware"
+	"grepdocs/api/models"
+	"grepdocs/api/session"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"grepdocs/api/dal"
-	"grepdocs/api/httpx"
-	"grepdocs/api/middleware"
-	"grepdocs/api/models"
-	"grepdocs/api/session"
 )
 
 type DocumentsHandler struct {
@@ -33,7 +32,7 @@ func DocumentsRoutes(
 	r.Use(middleware.RequireAuth(sm))
 
 	r.Get("/", h.listDocuments)
-	r.Get("/{id}", h.getDocumentById)
+	r.Get("/{id}", h.getDocumentByID)
 	r.Get("/{id}/raw", h.getRawDocumentById)
 
 	return r
@@ -61,7 +60,7 @@ func (h *DocumentsHandler) listDocuments(w http.ResponseWriter, r *http.Request)
 	httpx.WriteJSON(w, http.StatusOK, toDocumentsDTO(docs))
 }
 
-func (h *DocumentsHandler) getDocumentById(w http.ResponseWriter, r *http.Request) {
+func (h *DocumentsHandler) getDocumentByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DocumentsHandler) getRawDocumentById(w http.ResponseWriter, r *http.Request) {
@@ -87,8 +86,8 @@ func toDocumentsDTO(docs []dal.ListUserDocumentsRow) []models.Document {
 			ID:           d.ID,
 			SHA:          d.BlobSha,
 			Path:         d.Path,
-			SyncedAt:     &d.SyncedAt,
-			RepositoryId: d.RepositoryID,
+			SyncedAt:     d.SyncedAt,
+			RepositoryID: d.RepositoryID,
 			Repository:   d.RepoFullname,
 			Provider:     d.RepoProvider,
 			Branch:       d.RepoBranch,
