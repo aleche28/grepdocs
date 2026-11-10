@@ -13,7 +13,7 @@ GitHub Actions runs the quality gates on every PR and push to `main` (see CI and
 `make ci` runs the same checks locally — run it before pushing. Unit tests cover sessions, auth
 middleware, providers, credentials, response envelopes, the session model, and the `syncqueue`
 worker pool (on `testing/synctest`, so its timeouts run on a fake clock). `routers` tests cover
-only code that needs no database (`writeProviderError`, `installDetails`, the docs routes); handlers and
+only code that needs no database (`writeProviderError`, `installDetails`, ID parsing, the docs routes); handlers and
 `reposync` stay untested because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
 
 ## Commands

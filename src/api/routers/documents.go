@@ -3,7 +3,6 @@ package routers
 import (
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -108,20 +107,16 @@ func (h *DocumentsHandler) loadDocument(w http.ResponseWriter, r *http.Request) 
 	return doc, true
 }
 
+// parseRepositoryIDParam parses the optional repo_id filter; an empty param means no filter.
 func parseRepositoryIDParam(param string) (pgtype.Int8, error) {
-	repoID := pgtype.Int8{Valid: false}
-	if len(param) > 0 {
-		idInt, err := strconv.ParseInt(param, 10, 64)
-		if err != nil {
-			return pgtype.Int8{}, err
-		}
-		if idInt <= 0 {
-			return pgtype.Int8{}, errors.New("repo_id must be positive")
-		}
-		repoID.Int64 = idInt
-		repoID.Valid = true
+	if param == "" {
+		return pgtype.Int8{}, nil
 	}
-	return repoID, nil
+	id, err := parsePositiveID(param)
+	if err != nil {
+		return pgtype.Int8{}, err
+	}
+	return pgtype.Int8{Int64: id, Valid: true}, nil
 }
 
 func toDocumentListDTO(docs []dal.ListUserDocumentsRow) []models.Document {

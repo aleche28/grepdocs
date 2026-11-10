@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -499,16 +498,6 @@ func branchExists(branches []providers.Branch, name string) bool {
 		}
 	}
 	return false
-}
-
-// parseIDParam reads and parses the {id} URL param, writing a 400 on failure.
-func parseIDParam(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
-		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "invalid id param")
-		return 0, false
-	}
-	return id, true
 }
 
 func toRepositoryDTO(repo dal.Repository) models.Repository {
