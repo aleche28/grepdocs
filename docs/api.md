@@ -414,7 +414,7 @@ diffs are not. Every route is scoped to the caller: another user's document `id`
 | ------ | -------------------------------- | ---- | --------------------------------------- | --------------------------------------------------------------------- |
 | GET    | `/documents`                     | Y    | Implemented (`repo_id` filter only, no pagination) | List docs across tracked repos (filters: `repo_id`, `group`, `provider`, `has_draft`) |
 | GET    | `/documents/{id}`                | Y    | Implemented (no drafts)                 | Doc metadata + current content (draft if present, else upstream)      |
-| GET    | `/documents/{id}/raw`            | Y    | Proposed                                | Raw Markdown source                                                    |
+| GET    | `/documents/{id}/raw`            | Y    | Implemented (no drafts)                 | Raw Markdown source                                                    |
 | GET    | `/documents/{id}/rendered`       | Y    | Proposed                                | Rendered HTML (server-side Markdown render)                            |
 | GET    | `/documents/{id}/diff`           | Y    | Proposed                                | Unified diff: draft vs upstream (empty if no draft)                    |
 | PUT    | `/documents/{id}`                | Y    | Proposed                                | Save/edit draft content                                                |
@@ -423,6 +423,12 @@ diffs are not. Every route is scoped to the caller: another user's document `id`
 `GET /api/documents` returns documents without `content`, sorted by repository full name, then
 path. `repo_id` must be a positive integer (`400 bad_request` otherwise); an ID that is not one of
 the caller's tracked repositories returns an empty list, not `404`.
+
+`GET /api/documents/{id}/raw` returns the same `content` as `GET /api/documents/{id}`, unchanged, as
+`text/markdown; charset=utf-8` (errors are still the JSON envelope). The content comes from the
+repository and is untrusted, so the response always carries `X-Content-Type-Options: nosniff` and
+`Content-Security-Policy: sandbox`: a browser never sniffs it as HTML or runs it as a page.
+**Proposed**: once drafts exist, it returns the draft if one exists, like `content` above.
 
 Editing a document writes a **draft** that is never pushed on its own; the commit endpoint above
 pushes selected drafts back to the repository with a user-provided message.
