@@ -2,13 +2,21 @@ GO_DIR      := src/api
 ENV_FILE    := $(GO_DIR)/.env
 ENV_EXAMPLE := $(GO_DIR)/.env.example
 MIGR_PATH   := ./database/migrations
+SPEC        := $(GO_DIR)/openapi/openapi.yaml
+
+# OpenAPI linter, run with `go run` rather than a go.mod tool directive: it requires a newer go
+# line than the API's and would add its dependencies to the API's module graph. Go caches the
+# binary after the first (slow) build. CI downloads the release binary instead and passes
+# VACUUM=vacuum; bump VACUUM_VERSION together with VACUUM_SHA256 in .github/workflows/ci.yml.
+VACUUM_VERSION := v0.39.3
+VACUUM         ?= go run github.com/daveshanley/vacuum@$(VACUUM_VERSION)
 
 # The migration CLI needs a postgres:// URL, so it cannot consume the pgx
 # keyword/value format. Extract DATABASE_URL from the env file (overridable on
 # the command line, e.g. `make migrate-up DATABASE_URL=...`).
 DATABASE_URL ?= $(shell sed -n 's/^[[:space:]]*DATABASE_URL[[:space:]]*=[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}[[:space:]]*$$/\1/p' $(ENV_FILE))
 
-.PHONY: help infra-up infra-down env run build test test-race fmt fmt-check vet tidy tidy-check lint vuln ci sqlc-generate migrate-up migrate-down migrate-new
+.PHONY: help infra-up infra-down env run build test test-race fmt fmt-check vet tidy tidy-check lint openapi-lint vuln ci sqlc-generate migrate-up migrate-down migrate-new
 
 help:
 	@echo "GrepDocs targets:"
@@ -25,6 +33,7 @@ help:
 	@echo "  tidy            Sync go.sum with go.mod"
 	@echo "  tidy-check      Fail if go.mod/go.sum are not tidy (prints the diff)"
 	@echo "  lint            Run golangci-lint"
+	@echo "  openapi-lint    Lint the OpenAPI spec with vacuum"
 	@echo "  vuln            Run govulncheck (reachable vulnerabilities only)"
 	@echo "  ci              Run every check the CI workflows run"
 	@echo "  sqlc-generate   Regenerate src/api/dal from schema + queries.sql"
@@ -71,10 +80,13 @@ tidy-check:
 lint:
 	cd $(GO_DIR) && golangci-lint run ./...
 
+openapi-lint:
+	$(VACUUM) lint --details --fail-severity warn --ruleset $(GO_DIR)/openapi/vacuum.yaml $(SPEC)
+
 vuln:
 	cd $(GO_DIR) && go tool govulncheck ./...
 
-ci: tidy-check fmt-check vet lint vuln build test-race
+ci: tidy-check fmt-check vet lint openapi-lint vuln build test-race
 
 sqlc-generate:
 	cd $(GO_DIR) && sqlc generate

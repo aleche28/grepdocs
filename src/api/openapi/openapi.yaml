@@ -1,0 +1,917 @@
+openapi: 3.1.0
+
+info:
+  title: GrepDocs API
+  version: 0.1.0
+  description: |
+    Browse, search, and edit Markdown documentation living across multiple git repositories.
+
+    This spec describes only the endpoints that are implemented. `docs/api.md` is the design
+    proposal for the rest (documents, search, groups, pagination).
+
+    **Authentication.** Every route requires a session cookie except `GET /ping` and the routes
+    under `/auth`. To use "Try it out" from Swagger UI, open `/api/auth/google/login` in a browser
+    tab on the same origin first: the browser then sends the `session` cookie with every request.
+    Swagger UI cannot set the cookie itself (browsers forbid scripts from setting `Cookie`).
+
+    **Errors.** Every error body is the `Error` envelope. HTTP status is the coarse signal;
+    `error.code` is the stable, machine-readable discriminator.
+
+servers:
+  - url: /api
+
+tags:
+  - name: health
+  - name: auth
+    description: Google sign-in and logout.
+  - name: users
+  - name: accounts
+    description: Linked git provider accounts (GitHub today).
+  - name: repositories
+    description: Tracked repositories and their sync.
+
+security:
+  - sessionCookie: []
+
+paths:
+  /ping:
+    get:
+      tags: [health]
+      operationId: ping
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: The server is up.
+          content:
+            text/plain:
+              schema:
+                type: string
+                const: pong
+
+  /auth/google/login:
+    get:
+      tags: [auth]
+      operationId: googleLogin
+      summary: Start Google sign-in
+      description: |
+        Stores a single-use OAuth state token in the session and redirects to Google's consent
+        screen. Open it in a browser tab: "Try it out" cannot follow a cross-origin redirect.
+      security: []
+      responses:
+        "307":
+          $ref: "#/components/responses/Redirect"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /auth/google/callback:
+    get:
+      tags: [auth]
+      operationId: googleCallback
+      summary: Google OAuth callback
+      description: |
+        Called by Google, not by clients. Verifies the state token, exchanges the code, upserts
+        the user, regenerates the session ID, and redirects to `FRONTEND_URL`.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OAuthState"
+        - $ref: "#/components/parameters/OAuthCode"
+      responses:
+        "307":
+          $ref: "#/components/responses/Redirect"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Log out
+      description: Destroys the session, if any, and clears the session cookie.
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /users/me:
+    get:
+      tags: [users]
+      operationId: getAuthenticatedUser
+      summary: Get the signed-in user
+      responses:
+        "200":
+          description: The signed-in user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /accounts:
+    get:
+      tags: [accounts]
+      operationId: listExternalAccounts
+      summary: List linked provider accounts
+      responses:
+        "200":
+          description: The user's linked accounts. Tokens are never returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExternalAccount"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /accounts/{id}:
+    delete:
+      tags: [accounts]
+      operationId: deleteExternalAccount
+      summary: Unlink a provider account
+      description: |
+        Deletes the account, then revokes its tokens at the provider. Revocation is best-effort:
+        a failure is logged and does not fail the request. Another user's account is a `404`.
+      parameters:
+        - $ref: "#/components/parameters/AccountID"
+      responses:
+        "200":
+          $ref: "#/components/responses/Message"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /accounts/{provider}/login:
+    get:
+      tags: [accounts]
+      operationId: providerLogin
+      summary: Start linking a provider account
+      description: |
+        Stores a single-use OAuth state token in the session and redirects to the provider's
+        authorization page. Open it in a browser tab: "Try it out" cannot follow a cross-origin
+        redirect.
+      parameters:
+        - $ref: "#/components/parameters/Provider"
+      responses:
+        "307":
+          $ref: "#/components/responses/Redirect"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+  /accounts/{provider}/callback:
+    get:
+      tags: [accounts]
+      operationId: providerCallback
+      summary: Provider OAuth callback
+      description: |
+        Called by the provider, not by clients. Links the account (or re-links it, revoking the
+        replaced token) and redirects to `FRONTEND_URL/settings/accounts?linked={provider}`.
+      parameters:
+        - $ref: "#/components/parameters/Provider"
+        - $ref: "#/components/parameters/OAuthState"
+        - $ref: "#/components/parameters/OAuthCode"
+      responses:
+        "307":
+          $ref: "#/components/responses/Redirect"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+  /accounts/{provider}/repositories:
+    get:
+      tags: [accounts]
+      operationId: listExternalRepositories
+      summary: List repositories visible to a linked account
+      description: |
+        Lists the repositories the linked account can access at the provider. With a GitHub App
+        token, that is only the repositories the app is installed on. Not paginated.
+      parameters:
+        - $ref: "#/components/parameters/Provider"
+        - name: account_id
+          in: query
+          required: false
+          description: Linked account to use. Required when the user has several accounts for the provider.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Repositories at the provider.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProviderRepository"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "403":
+          $ref: "#/components/responses/ForbiddenOrAppNotInstalled"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+  /repositories:
+    get:
+      tags: [repositories]
+      operationId: listRepositories
+      summary: List tracked repositories
+      responses:
+        "200":
+          description: The user's tracked repositories. Not paginated.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Repository"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      tags: [repositories]
+      operationId: trackNewRepository
+      summary: Track a repository
+      description: |
+        Looks the repository up at the provider and starts tracking it, in `pending` sync status.
+        Without `account_id` the request is anonymous, so only public repositories can be tracked.
+      requestBody:
+        description: The repository to track, and the linked account to read it with.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRepositoryRequest"
+      responses:
+        "201":
+          description: The repository is now tracked, in `pending` sync status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+  /repositories/{id}:
+    parameters:
+      - $ref: "#/components/parameters/RepositoryID"
+    get:
+      tags: [repositories]
+      operationId: getRepository
+      summary: Get a tracked repository
+      responses:
+        "200":
+          description: The tracked repository.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+    patch:
+      tags: [repositories]
+      operationId: updateRepository
+      summary: Update a tracked repository
+      description: |
+        Omitted fields keep their value. Changing `tracked_branch` checks that the branch exists
+        at the provider and resets the sync status to `pending`.
+      requestBody:
+        description: The fields to change.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRepositoryRequest"
+      responses:
+        "200":
+          description: The updated repository.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+    delete:
+      tags: [repositories]
+      operationId: deleteRepository
+      summary: Stop tracking a repository
+      responses:
+        "204":
+          description: The repository is no longer tracked.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /repositories/{id}/branches:
+    parameters:
+      - $ref: "#/components/parameters/RepositoryID"
+    get:
+      tags: [repositories]
+      operationId: listRepositoryBranches
+      summary: List a tracked repository's branches
+      description: Fetched live from the provider. Not paginated.
+      responses:
+        "200":
+          description: The repository's branches.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Branch"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+  /repositories/{id}/sync:
+    parameters:
+      - $ref: "#/components/parameters/RepositoryID"
+    post:
+      tags: [repositories]
+      operationId: syncRepository
+      summary: Start a sync
+      description: |
+        Claims the repository (status `queued`) and enqueues it for a worker. Only an idle
+        repository (`pending`, `ok`, `failed`) can be claimed; poll `GET /repositories/{id}` for
+        the outcome. See `docs/sync-engine.md` for the state machine.
+      responses:
+        "202":
+          description: The sync is queued. The body is the repository in `queued` status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: session
+      description: |
+        Set by the server after Google sign-in (`GET /auth/google/login`). HttpOnly, SameSite=Lax;
+        idle timeout 1h, absolute timeout 12h.
+
+  parameters:
+    AccountID:
+      name: id
+      in: path
+      required: true
+      description: Linked account ID.
+      schema:
+        type: integer
+        format: int64
+    RepositoryID:
+      name: id
+      in: path
+      required: true
+      description: Tracked repository ID.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    Provider:
+      name: provider
+      in: path
+      required: true
+      description: Git provider. Any value other than an implemented provider returns `501`.
+      schema:
+        type: string
+        examples: [github]
+    OAuthState:
+      name: state
+      in: query
+      required: true
+      description: The state token stored in the session at login, for CSRF protection.
+      schema:
+        type: string
+    OAuthCode:
+      name: code
+      in: query
+      required: true
+      description: The authorization code to exchange for tokens.
+      schema:
+        type: string
+
+  headers:
+    Location:
+      description: The redirect target.
+      schema:
+        type: string
+        format: uri
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema:
+        type: integer
+        examples: [30]
+
+  responses:
+    Redirect:
+      description: Redirect to the next step of the OAuth flow.
+      headers:
+        Location:
+          $ref: "#/components/headers/Location"
+    Message:
+      description: The operation succeeded.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Message"
+    BadRequest:
+      description: Malformed input (`bad_request`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: bad_request
+              message: invalid id param
+    NotAuthenticated:
+      description: No valid session (`not_authenticated`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: not_authenticated
+              message: You must be signed in
+    Forbidden:
+      description: |
+        The linked account's token is invalid, revoked, or expired, or no linked account is
+        available (`forbidden`); re-link the account.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: forbidden
+              message: Invalid or expired token, re-link your account
+    ForbiddenOrAppNotInstalled:
+      description: |
+        `forbidden`: the linked account's token is invalid, revoked, or expired; re-link the
+        account.
+        `app_not_installed`: the provider app is not installed on any of the user's accounts;
+        `details.install_url`, when present, links to the installation page.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            reauth:
+              value:
+                error:
+                  code: forbidden
+                  message: Invalid or expired token, re-link your account
+            appNotInstalled:
+              value:
+                error:
+                  code: app_not_installed
+                  message: The app is not installed on any of your accounts, install it to grant repository access
+                  details:
+                    install_url: https://github.com/apps/grepdocs/installations/new
+    NotFound:
+      description: |
+        The resource does not exist or belongs to another user (`not_found`). For a repository
+        looked up at the provider with a linked account, `details.install_url` may be present:
+        a private repository the app is not installed on is also a `404`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: not_found
+              message: repository not found for current user
+    Conflict:
+      description: |
+        Conflicts with the current state (`conflict`): repository already tracked, sync already
+        queued or running, or several linked accounts match.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: conflict
+              message: repository is already queued or running
+    RateLimited:
+      description: Provider rate limit hit (`rate_limited`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: rate_limited
+              message: Provider rate limit exceeded, try again later
+    Internal:
+      description: Server error (`internal`). The message is always generic.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: internal
+              message: An internal error occurred
+    NotImplemented:
+      description: Provider not implemented (`not_implemented`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: not_implemented
+              message: "Provider not supported: bitbucket"
+    ServiceUnavailable:
+      description: The sync queue is full (`service_unavailable`); retry after `Retry-After` seconds.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: service_unavailable
+              message: sync service unavailable
+
+  schemas:
+    Error:
+      type: object
+      description: The envelope of every error response.
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              $ref: "#/components/schemas/ErrorCode"
+            message:
+              type: string
+              description: Human-readable; never contains internal error strings.
+            details:
+              $ref: "#/components/schemas/ErrorDetails"
+
+    ErrorCode:
+      type: string
+      description: Stable, machine-readable error discriminator (`httpx.Code*`).
+      enum:
+        - bad_request
+        - not_authenticated
+        - forbidden
+        - app_not_installed
+        - not_found
+        - conflict
+        - rate_limited
+        - internal
+        - not_implemented
+        - service_unavailable
+
+    ErrorDetails:
+      type: object
+      description: Optional data the client can act on. Omitted when there is nothing to add.
+      properties:
+        install_url:
+          type: string
+          format: uri
+          description: Where to install the provider app to grant repository access.
+
+    Message:
+      type: object
+      description: Confirmation of an operation that returns no resource.
+      required: [message]
+      properties:
+        message:
+          type: string
+          examples: [Logged out successfully]
+
+    User:
+      type: object
+      description: A GrepDocs user, signed in with Google.
+      required: [id, fullname, username, email, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        fullname:
+          type: string
+        username:
+          type: string
+          description: Not populated yet; always empty (see #93).
+        email:
+          type: string
+          format: email
+        created_at:
+          type: [string, "null"]
+          format: date-time
+
+    ExternalAccount:
+      type: object
+      description: A git provider account linked to the user. Tokens are never exposed.
+      required:
+        - id
+        - provider
+        - provider_user_id
+        - linked_at
+        - last_refreshed_at
+        - token_expires_at
+        - refresh_token_expires_at
+        - label
+      properties:
+        id:
+          type: integer
+          format: int64
+        provider:
+          type: string
+          examples: [github]
+        provider_user_id:
+          type: string
+        linked_at:
+          type: [string, "null"]
+          format: date-time
+        last_refreshed_at:
+          type: [string, "null"]
+          format: date-time
+        token_expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: Null when the token does not expire.
+        refresh_token_expires_at:
+          type: [string, "null"]
+          format: date-time
+        label:
+          type: string
+          description: User-chosen name to tell accounts apart; empty by default.
+
+    ProviderRepository:
+      type: object
+      description: A repository as the provider reports it (not tracked yet).
+      required:
+        - provider
+        - provider_repo_id
+        - owner
+        - name
+        - full_name
+        - is_private
+        - html_url
+        - default_branch
+      properties:
+        provider:
+          type: string
+          examples: [github]
+        provider_repo_id:
+          type: string
+        owner:
+          type: string
+        name:
+          type: string
+        full_name:
+          type: string
+          examples: [octocat/Hello-World]
+        is_private:
+          type: boolean
+        html_url:
+          type: string
+          format: uri
+        default_branch:
+          type: string
+
+    Branch:
+      type: object
+      description: A branch as the provider reports it.
+      required: [name, commit, protected]
+      properties:
+        name:
+          type: string
+        commit:
+          type: string
+          description: SHA of the branch head.
+        protected:
+          type: boolean
+
+    SyncStatus:
+      type: string
+      description: |
+        `pending`, `ok`, and `failed` are idle (a sync can start); `queued` and `running` are busy.
+      enum: [pending, queued, running, ok, failed]
+
+    Repository:
+      type: object
+      description: A repository tracked by the user, with its sync state.
+      required:
+        - id
+        - account_id
+        - provider
+        - provider_repo_id
+        - owner
+        - name
+        - full_name
+        - html_url
+        - is_private
+        - default_branch
+        - tracked_branch
+        - synced_commit
+        - sync_status
+        - sync_error
+        - auto_sync
+        - last_sync_at
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+          format: int64
+        account_id:
+          type: [integer, "null"]
+          format: int64
+          description: Linked account used for provider calls; null for an anonymous (public) repository.
+        provider:
+          type: string
+          examples: [github]
+        provider_repo_id:
+          type: string
+        owner:
+          type: string
+        name:
+          type: string
+        full_name:
+          type: string
+          examples: [octocat/Hello-World]
+        html_url:
+          type: string
+          format: uri
+        is_private:
+          type: boolean
+        default_branch:
+          type: string
+        tracked_branch:
+          type: string
+        synced_commit:
+          type: [string, "null"]
+          description: Commit SHA of the last successful sync.
+        sync_status:
+          $ref: "#/components/schemas/SyncStatus"
+        sync_error:
+          type: [string, "null"]
+          description: Stable code of the last failed sync (`reposync.Code*`), set when `sync_status` is `failed`.
+          enum:
+            - reauth_required
+            - resource_not_found
+            - app_not_installed
+            - rate_limited
+            - truncated_tree
+            - provider_not_supported
+            - internal
+            - null
+        auto_sync:
+          type: boolean
+          description: Stored and returned, but does not trigger syncs yet.
+        last_sync_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: [string, "null"]
+          format: date-time
+        updated_at:
+          type: [string, "null"]
+          format: date-time
+
+    CreateRepositoryRequest:
+      type: object
+      description: Body of `POST /repositories`.
+      required: [provider, owner, name]
+      properties:
+        provider:
+          type: string
+          minLength: 1
+          examples: [github]
+        account_id:
+          type: integer
+          format: int64
+          description: Linked account to use. Omit (or 0) for an anonymous lookup of a public repository.
+        owner:
+          type: string
+          minLength: 1
+          examples: [octocat]
+        name:
+          type: string
+          minLength: 1
+          examples: [Hello-World]
+        tracked_branch:
+          type: string
+          description: Must exist at the provider. Defaults to the repository's default branch.
+
+    UpdateRepositoryRequest:
+      type: object
+      description: Body of `PATCH /repositories/{id}`. Omitted fields keep their value.
+      properties:
+        tracked_branch:
+          type: string
+          description: Must exist at the provider. Empty or omitted keeps the current branch.
+        auto_sync:
+          type: boolean
