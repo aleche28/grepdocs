@@ -53,5 +53,17 @@ jobs:
         with:
           version: v2.15.0 # golangci-lint version
           working-directory: src/api
+      # the release binary, not `go run`: compiling vacuum takes minutes on every run
+      - name: install vacuum
+        env:
+          VACUUM_SHA256: fd08ed9bb27f84c740008029ba992681046479ea5f745108ea3fd87d3988fd47 # linux_x86_64
+        run: |
+          version=$(sed -n 's/^VACUUM_VERSION *:= *v//p' Makefile)
+          archive="vacuum_${version}_linux_x86_64.tar.gz"
+          curl -fsSLo "$archive" "https://github.com/daveshanley/vacuum/releases/download/v${version}/${archive}"
+          echo "${VACUUM_SHA256}  ${archive}" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/bin" vacuum
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: openapi-lint
-        run: make openapi-lint
+        run: make openapi-lint VACUUM=vacuum

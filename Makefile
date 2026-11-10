@@ -5,8 +5,11 @@ MIGR_PATH   := ./database/migrations
 SPEC        := $(GO_DIR)/openapi/openapi.yaml
 
 # OpenAPI linter, run with `go run` rather than a go.mod tool directive: it requires a newer go
-# line than the API's and would add its dependencies to the API's module graph. Bump by hand.
+# line than the API's and would add its dependencies to the API's module graph. Go caches the
+# binary after the first (slow) build. CI downloads the release binary instead and passes
+# VACUUM=vacuum; bump VACUUM_VERSION together with VACUUM_SHA256 in .github/workflows/ci.yml.
 VACUUM_VERSION := v0.39.3
+VACUUM         ?= go run github.com/daveshanley/vacuum@$(VACUUM_VERSION)
 
 # The migration CLI needs a postgres:// URL, so it cannot consume the pgx
 # keyword/value format. Extract DATABASE_URL from the env file (overridable on
@@ -78,7 +81,7 @@ lint:
 	cd $(GO_DIR) && golangci-lint run ./...
 
 openapi-lint:
-	go run github.com/daveshanley/vacuum@$(VACUUM_VERSION) lint --details --fail-severity warn --ruleset $(GO_DIR)/openapi/vacuum.yaml $(SPEC)
+	$(VACUUM) lint --details --fail-severity warn --ruleset $(GO_DIR)/openapi/vacuum.yaml $(SPEC)
 
 vuln:
 	cd $(GO_DIR) && go tool govulncheck ./...

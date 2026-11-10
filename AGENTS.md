@@ -260,11 +260,14 @@ Rules worth preserving:
   it by hand together with your local install.
 - The OpenAPI linter is vacuum, run with `go run …@$(VACUUM_VERSION)` from the Makefile (no install
   needed). It is not a `tool` directive on purpose: it requires a newer `go` line than the API's
-  and would add its dependencies to the API's module graph. Dependabot does not touch it; bump
-  `VACUUM_VERSION` by hand. Warnings fail the build (`--fail-severity warn`): fix the spec rather
+  and would add its dependencies to the API's module graph. CI downloads the release binary
+  instead (compiling it took ~5 min per run), checks it against `VACUUM_SHA256` in `ci.yml`, and
+  calls `make openapi-lint VACUUM=vacuum`. Dependabot does not touch it: bump `VACUUM_VERSION` in
+  the Makefile and `VACUUM_SHA256` (the `linux_x86_64` line of the release's `checksums.txt`)
+  together; a mismatch fails the install step. Warnings fail the build (`--fail-severity warn`): fix the spec rather
   than disabling a rule. The ruleset is `src/api/openapi/vacuum.yaml` (recommended rules); it turns
-  off only rules that conflict with a project convention, each with its reason. The first run
-  downloads and compiles vacuum (slow); Go caches the binary, so later runs are fast.
+  off only rules that conflict with a project convention, each with its reason. Locally, the first
+  run downloads and compiles vacuum (slow); Go caches the binary, so later runs are fast.
 - Workflows get `permissions: contents: read` and `persist-credentials: false`; widen per job only
   when a step needs it.
 
