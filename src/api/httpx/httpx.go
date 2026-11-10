@@ -27,6 +27,17 @@ func WriteJSON(w http.ResponseWriter, status int, data any) {
 	}
 }
 
+// WriteRaw writes body unchanged as contentType. The body may be untrusted (e.g. a repository's
+// file), so it always forbids content sniffing and sandboxes the response: a browser never runs
+// it as a page, whatever it contains.
+func WriteRaw(w http.ResponseWriter, status int, contentType string, body []byte) {
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox")
+	w.WriteHeader(status)
+	_, _ = w.Write(body) // a failed write means the client is gone
+}
+
 func WriteError(w http.ResponseWriter, status int, code, message string) {
 	WriteErrorWithDetails(w, status, code, message, nil)
 }

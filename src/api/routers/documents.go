@@ -64,24 +64,8 @@ func (h *DocumentsHandler) listDocuments(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *DocumentsHandler) getDocumentByID(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseIDParam(w, r)
+	doc, ok := h.loadDocument(w, r)
 	if !ok {
-		return
-	}
-
-	uid, _ := middleware.CurrentUserID(r)
-	q := dal.New(h.dbPool)
-
-	doc, err := q.GetDocumentByIDAndUserID(r.Context(), dal.GetDocumentByIDAndUserIDParams{
-		ID:     id,
-		UserID: uid,
-	})
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "document not found")
-		return
-	case err != nil:
-		httpx.WriteInternalError(w, err)
 		return
 	}
 
@@ -89,9 +73,20 @@ func (h *DocumentsHandler) getDocumentByID(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *DocumentsHandler) getRawDocumentByID(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseIDParam(w, r)
+	doc, ok := h.loadDocument(w, r)
 	if !ok {
 		return
+	}
+
+	httpx.WriteRaw(w, http.StatusOK, "text/markdown; charset=utf-8", []byte(doc.Content))
+}
+
+// loadDocument fetches the caller's document named by the {id} URL param. When it returns false,
+// it has already written the error response.
+func (h *DocumentsHandler) loadDocument(w http.ResponseWriter, r *http.Request) (dal.GetDocumentByIDAndUserIDRow, bool) {
+	id, ok := parseIDParam(w, r)
+	if !ok {
+		return dal.GetDocumentByIDAndUserIDRow{}, false
 	}
 
 	uid, _ := middleware.CurrentUserID(r)
@@ -104,17 +99,13 @@ func (h *DocumentsHandler) getRawDocumentByID(w http.ResponseWriter, r *http.Req
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "document not found")
-		return
+		return dal.GetDocumentByIDAndUserIDRow{}, false
 	case err != nil:
 		httpx.WriteInternalError(w, err)
-		return
+		return dal.GetDocumentByIDAndUserIDRow{}, false
 	}
 
-	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Security-Policy", "sandbox")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(doc.Content)) // a failed write means the client is gone
+	return doc, true
 }
 
 func parseRepositoryIDParam(param string) (pgtype.Int8, error) {
