@@ -36,7 +36,7 @@ func DocumentsRoutes(
 
 	r.Get("/", h.listDocuments)
 	r.Get("/{id}", h.getDocumentByID)
-	r.Get("/{id}/raw", h.getRawDocumentById)
+	r.Get("/{id}/raw", h.getRawDocumentByID)
 
 	return r
 }
@@ -88,7 +88,33 @@ func (h *DocumentsHandler) getDocumentByID(w http.ResponseWriter, r *http.Reques
 	httpx.WriteJSON(w, http.StatusOK, toDocumentDetailsDTO(doc))
 }
 
-func (h *DocumentsHandler) getRawDocumentById(w http.ResponseWriter, r *http.Request) {
+func (h *DocumentsHandler) getRawDocumentByID(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+
+	uid, _ := middleware.CurrentUserID(r)
+	q := dal.New(h.dbPool)
+
+	doc, err := q.GetDocumentByIDAndUserID(r.Context(), dal.GetDocumentByIDAndUserIDParams{
+		ID:     id,
+		UserID: uid,
+	})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "document not found")
+		return
+	case err != nil:
+		httpx.WriteInternalError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(doc.Content)) // a failed write means the client is gone
 }
 
 func parseRepositoryIDParam(param string) (pgtype.Int8, error) {
