@@ -13,7 +13,7 @@ GitHub Actions runs the quality gates on every PR and push to `main` (see CI and
 `make ci` runs the same checks locally — run it before pushing. Unit tests cover sessions, auth
 middleware, providers, credentials, response envelopes, the session model, and the `syncqueue`
 worker pool (on `testing/synctest`, so its timeouts run on a fake clock). `routers` tests cover
-only helpers that need no database (`writeProviderError`, `installDetails`); handlers and
+only code that needs no database (`writeProviderError`, `installDetails`, the docs routes); handlers and
 `reposync` stay untested because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
 
 ## Commands
@@ -50,6 +50,10 @@ Prerequisites beyond Go and Docker: `golang-migrate`, `sqlc`, and `golangci-lint
 README). govulncheck needs no install: it is a `tool` directive in `go.mod`, run with `go tool`.
 Health check: <http://localhost:3000/api/ping> returns `pong`.
 
+Interactive API docs (Swagger UI) are at <http://localhost:3000/api/docs>, mounted only when `ENV`
+is not `production`. Sign in first at <http://localhost:3000/api/auth/google/login>: requests from
+the page carry the browser's session cookie, so no cookie copying is needed.
+
 Infra (`make infra-up`) starts Postgres on `5432`, Redis on `6379`, pgAdmin on `8080`. The server
 needs both Postgres and Redis, and exits at startup if `DATABASE_URL` is unset.
 
@@ -65,15 +69,18 @@ http.Server (explicit timeouts, graceful shutdown on SIGINT/SIGTERM)
   └─ sm.Handle          session middleware — loads/creates session, writes cookie, saves on the way out
       └─ chi router      middleware.Logger / RequestID / Recoverer
           └─ /api
-              ├─ GET /ping                      (public)
-              ├─ /auth      routers.AuthRoutes             (public: Google OAuth login/callback, logout)
-              ├─ /users     routers.UserRoutes             (RequireAuth)
-              └─ /accounts  routers.ExternalAccountsRoutes (RequireAuth)
+              ├─ GET /ping                          (public)
+              ├─ /auth          routers.AuthRoutes             (public: Google OAuth login/callback, logout)
+              ├─ /users         routers.UserRoutes             (RequireAuth)
+              ├─ /accounts      routers.ExternalAccountsRoutes (RequireAuth)
+              ├─ /repositories  routers.RepositoriesRoutes     (RequireAuth)
+              └─ /docs          routers.DocsRoutes             (public; not mounted in production)
 ```
 
 Each `routers.*Routes(...)` constructor builds a handler struct holding `*pgxpool.Pool` and
-`*session.SessionManager`, then returns a `chi.Router`. Handlers are receiver methods; they open a
-`dal.New(h.dbPool)` query set per request and always pass `r.Context()` to DB and outbound calls.
+`*session.SessionManager`, then returns a `chi.Router` (`DocsRoutes` has no dependencies). Handlers
+are receiver methods; they open a `dal.New(h.dbPool)` query set per request and always pass
+`r.Context()` to DB and outbound calls.
 
 ### Sessions (`src/api/session`, `src/api/models/session.go`)
 
@@ -278,6 +285,11 @@ under `.agents/skills`, never inside `.claude/skills`.
 
 ## Documentation map
 
+- `src/api/openapi/openapi.yaml` — OpenAPI 3.1 spec of the **implemented** endpoints, hand-written
+  (spec-first), embedded with `go:embed` and served with Swagger UI at `/api/docs`. Nothing checks
+  it against the handlers yet (#107 will generate the server from it with oapi-codegen), so update
+  it in the same change as any route, status code, or request/response field. Keep every
+  `operationId` equal to its handler's name.
 - `docs/api.md` — the API contract. It is a **design proposal**: much of it (repositories,
   documents, search, groups, pagination) is not implemented. Treat it as the target shape for new
   endpoints, and check it before inventing a route or response body.
