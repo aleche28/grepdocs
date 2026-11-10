@@ -608,7 +608,7 @@ FROM documents d
 INNER JOIN repositories r
 	ON d.repository_id = r.id AND r.user_id = $1
 WHERE $2::bigint IS NULL OR d.repository_id = $2::bigint
-ORDER BY d.path, r.full_name
+ORDER BY r.full_name, d.path, r.id
 `
 
 type ListUserDocumentsParams struct {
