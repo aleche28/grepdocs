@@ -89,15 +89,16 @@ func main() {
 		12*time.Hour,
 	)
 
+	isProduction := os.Getenv("ENV") == "production"
+
 	// Credits: https://themsaid.com/building-secure-session-manager-in-go
-	secureCookie := os.Getenv("ENV") == "production"
 	sm := session.NewSessionManager(
 		rss,
 		30*time.Hour,
 		1*time.Hour,
 		12*time.Hour,
 		"session",
-		secureCookie,
+		isProduction, // Secure cookie only in production, where the API is served over HTTPS
 	)
 
 	registry := providers.NewRegistry(providers.NewGitHub(providers.GitHubOptions{
@@ -150,6 +151,11 @@ func main() {
 		r.Mount("/users", routers.UserRoutes(pool, sm))
 		r.Mount("/accounts", routers.ExternalAccountsRoutes(pool, sm, registry, tokenCipher, credSvc))
 		r.Mount("/repositories", routers.RepositoriesRoutes(pool, sm, registry, credSvc, syncPool))
+
+		// Swagger UI for local testing; it calls the API with the browser's session cookie
+		if !isProduction {
+			r.Mount("/docs", routers.DocsRoutes())
+		}
 	})
 
 	// about timeouts: https://blog.cloudflare.com/the-complete-guide-to-golang-net-http-timeouts/#httplistenandserve-is-doing-it-wrong
