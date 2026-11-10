@@ -96,8 +96,9 @@ about it" over "here's the corrected file".
   session/middleware/httpx/models have unit tests. `routers` tests cover only DB-free helpers;
   handlers have no DB seam (they hold a concrete `*pgxpool.Pool`) — this is a known gap (#94), so
   don't demand handler tests as if the seam existed; recommend the seam if tests are the goal.
-- **Gates** — `make test`, `make vet`, `make fmt` (and `go test -race`). Note `make fmt`/`make vet`
-  only cover the `main` package; whole-module is `cd src/api && gofmt -l . && go vet ./...`.
+- **Gates** — `make ci` runs what CI runs (tidy, gofumpt/gci, vet, golangci-lint, govulncheck,
+  build, race tests), all on the whole module. Plain `gofmt` is not enough: import grouping is
+  gci's, so check with `make fmt-check` or `make lint`.
 - **Commit style** — conventional commits (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`,
   `feat!:`).
 
