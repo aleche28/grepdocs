@@ -53,3 +53,5 @@ jobs:
         with:
           version: v2.15.0 # golangci-lint version
           working-directory: src/api
+      - name: openapi-lint
+        run: make openapi-lint

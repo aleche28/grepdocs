@@ -78,11 +78,12 @@ not a base64-encoded 32-byte key. The database/Redis state is kept in Docker (se
 | Regenerate DAL / sqlc | `make sqlc-generate`                     |
 | Format / vet          | `make fmt` / `make vet`                  |
 | Lint / vuln scan      | `make lint` / `make vuln`                |
+| Lint the OpenAPI spec | `make openapi-lint`                      |
 | Every check CI runs   | `make ci`                                |
 | Tidy dependencies     | `make tidy`                              |
 
-`make ci` runs every check that CI runs (tidy, vet, golangci-lint with formatting, govulncheck,
-build, race-enabled tests): run it before pushing. GitHub Actions runs the same checks on every PR
+`make ci` runs every check that CI runs (tidy, vet, golangci-lint with formatting, the OpenAPI
+linter, govulncheck, build, race-enabled tests): run it before pushing. GitHub Actions runs the same checks on every PR
 (`.github/workflows/ci.yml`, `security.yml`), and Dependabot proposes Go module and action updates
 weekly.
 

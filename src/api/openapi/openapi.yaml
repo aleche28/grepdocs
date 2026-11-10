@@ -270,6 +270,7 @@ paths:
         Looks the repository up at the provider and starts tracking it, in `pending` sync status.
         Without `account_id` the request is anonymous, so only public repositories can be tracked.
       requestBody:
+        description: The repository to track, and the linked account to read it with.
         required: true
         content:
           application/json:
@@ -277,7 +278,7 @@ paths:
               $ref: "#/components/schemas/CreateRepositoryRequest"
       responses:
         "201":
-          description: The tracked repository.
+          description: The repository is now tracked, in `pending` sync status.
           content:
             application/json:
               schema:
@@ -329,6 +330,7 @@ paths:
         Omitted fields keep their value. Changing `tracked_branch` checks that the branch exists
         at the provider and resets the sync status to `pending`.
       requestBody:
+        description: The fields to change.
         required: true
         content:
           application/json:
@@ -640,6 +642,7 @@ components:
   schemas:
     Error:
       type: object
+      description: The envelope of every error response.
       required: [error]
       properties:
         error:
@@ -680,6 +683,7 @@ components:
 
     Message:
       type: object
+      description: Confirmation of an operation that returns no resource.
       required: [message]
       properties:
         message:
@@ -688,6 +692,7 @@ components:
 
     User:
       type: object
+      description: A GrepDocs user, signed in with Google.
       required: [id, fullname, username, email, created_at]
       properties:
         id:
@@ -707,6 +712,7 @@ components:
 
     ExternalAccount:
       type: object
+      description: A git provider account linked to the user. Tokens are never exposed.
       required:
         - id
         - provider
@@ -777,6 +783,7 @@ components:
 
     Branch:
       type: object
+      description: A branch as the provider reports it.
       required: [name, commit, protected]
       properties:
         name:
@@ -795,6 +802,7 @@ components:
 
     Repository:
       type: object
+      description: A repository tracked by the user, with its sync state.
       required:
         - id
         - account_id
@@ -875,6 +883,7 @@ components:
 
     CreateRepositoryRequest:
       type: object
+      description: Body of `POST /repositories`.
       required: [provider, owner, name]
       properties:
         provider:
@@ -899,6 +908,7 @@ components:
 
     UpdateRepositoryRequest:
       type: object
+      description: Body of `PATCH /repositories/{id}`. Omitted fields keep their value.
       properties:
         tracked_branch:
           type: string

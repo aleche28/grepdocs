@@ -32,6 +32,7 @@ at the repo root wraps them and handles the `cd` for you:
 | Tests + race detector | `make test-race`                   |
 | Format / vet          | `make fmt` / `make vet`            |
 | Lint / vuln scan      | `make lint` / `make vuln`          |
+| Lint the OpenAPI spec | `make openapi-lint`                |
 | Tidy `go.mod`         | `make tidy`                        |
 | Every check CI runs   | `make ci`                          |
 | Apply migrations      | `make migrate-up`                  |
@@ -236,7 +237,8 @@ Two workflows in `.github/workflows/`, both calling `make` from the repo root (t
 `cd src/api`, so do not set a default `working-directory`):
 
 - `ci.yml` — job `check` (`tidy-check`, `vet`, `build`, `test-race`) and job `lint`
-  (`golangci-lint-action`, which also reports formatting, so `fmt-check` is not run separately).
+  (`golangci-lint-action`, which also reports formatting, so `fmt-check` is not run separately,
+  then `make openapi-lint`).
 - `security.yml` — `make vuln` (govulncheck) on PRs, pushes to `main`, a weekly cron, and manually.
 
 Rules worth preserving:
@@ -256,6 +258,13 @@ Rules worth preserving:
   with a `# vX.Y.Z` comment; Dependabot (`.github/dependabot.yml`) bumps both weekly. The
   golangci-lint version is the `version:` input in `ci.yml`: Dependabot does not touch it, so bump
   it by hand together with your local install.
+- The OpenAPI linter is vacuum, run with `go run …@$(VACUUM_VERSION)` from the Makefile (no install
+  needed). It is not a `tool` directive on purpose: it requires a newer `go` line than the API's
+  and would add its dependencies to the API's module graph. Dependabot does not touch it; bump
+  `VACUUM_VERSION` by hand. Warnings fail the build (`--fail-severity warn`): fix the spec rather
+  than disabling a rule. The ruleset is `src/api/openapi/vacuum.yaml` (recommended rules); it turns
+  off only rules that conflict with a project convention, each with its reason. The first run
+  downloads and compiles vacuum (slow); Go caches the binary, so later runs are fast.
 - Workflows get `permissions: contents: read` and `persist-credentials: false`; widen per job only
   when a step needs it.
 

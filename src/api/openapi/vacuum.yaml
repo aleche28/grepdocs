@@ -1,0 +1,10 @@
+# vacuum ruleset for openapi.yaml (`make openapi-lint`). Turn a rule off only when it conflicts
+# with a project convention, and say which one.
+extends: [[vacuum:oas, recommended]]
+
+rules:
+  # JSON fields are snake_case across the API (see AGENTS.md, Conventions).
+  camel-case-properties: off
+  # Swagger UI builds examples from the schemas; hand-written ones on every media type and
+  # property would drift the same way the spec can. Add examples where a schema alone is unclear.
+  oas3-missing-example: off
