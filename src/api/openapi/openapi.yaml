@@ -558,6 +558,7 @@ components:
       schema:
         type: integer
         format: int64
+        minimum: 1
     RepositoryID:
       name: id
       in: path
