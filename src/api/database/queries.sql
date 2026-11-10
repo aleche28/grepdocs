@@ -72,7 +72,7 @@ RETURNING *;
 
 -- name: UpdateExternalGitAccountTokens :one
 UPDATE external_git_accounts
-SET 
+SET
 	access_token = $2,
 	refresh_token = COALESCE(NULLIF(sqlc.arg(refresh_token)::text, ''), refresh_token),
 	token_expires_at = $3,
@@ -240,9 +240,35 @@ SET
 WHERE id = $1 AND sync_status = 'queued';
 
 -- name: ListUserDocuments :many
-SELECT d.id, d.path, d.blob_sha, d.synced_at, d.repository_id, r.full_name AS repo_fullname, r.provider AS repo_provider, r.tracked_branch AS repo_branch, r.synced_commit AS repo_commit
+SELECT
+	d.id,
+	d.path,
+	d.blob_sha,
+	d.synced_at,
+	d.repository_id,
+	r.full_name AS repo_fullname,
+	r.provider AS repo_provider,
+	r.tracked_branch AS repo_branch,
+	r.synced_commit AS repo_commit
 FROM documents d
 INNER JOIN repositories r
 	ON d.repository_id = r.id AND r.user_id = @user_id
 WHERE sqlc.narg(repo_id)::bigint IS NULL OR d.repository_id = sqlc.narg(repo_id)::bigint
 ORDER BY r.full_name, d.path, r.id;
+
+-- name: GetDocumentByIDAndUserID :one
+SELECT
+	d.id,
+	d.path,
+	d.blob_sha,
+	d.synced_at,
+	d.content,
+	d.repository_id,
+	r.full_name AS repo_fullname,
+	r.provider AS repo_provider,
+	r.tracked_branch AS repo_branch,
+	r.synced_commit AS repo_commit
+FROM documents d
+INNER JOIN repositories r
+	ON d.repository_id = r.id AND r.user_id = @user_id
+WHERE d.id = @id;

@@ -1,10 +1,12 @@
 package routers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -58,10 +60,32 @@ func (h *DocumentsHandler) listDocuments(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, toDocumentsDTO(docs))
+	httpx.WriteJSON(w, http.StatusOK, toDocumentListDTO(docs))
 }
 
 func (h *DocumentsHandler) getDocumentByID(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDParam(w, r)
+	if !ok {
+		return
+	}
+
+	uid, _ := middleware.CurrentUserID(r)
+	q := dal.New(h.dbPool)
+
+	doc, err := q.GetDocumentByIDAndUserID(r.Context(), dal.GetDocumentByIDAndUserIDParams{
+		ID:     id,
+		UserID: uid,
+	})
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "document not found")
+		return
+	case err != nil:
+		httpx.WriteInternalError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, toDocumentDetailsDTO(doc))
 }
 
 func (h *DocumentsHandler) getRawDocumentById(w http.ResponseWriter, r *http.Request) {
@@ -74,13 +98,16 @@ func parseRepositoryIDParam(param string) (pgtype.Int8, error) {
 		if err != nil {
 			return pgtype.Int8{}, err
 		}
+		if idInt <= 0 {
+			return pgtype.Int8{}, errors.New("repo_id must be positive")
+		}
 		repoID.Int64 = idInt
 		repoID.Valid = true
 	}
 	return repoID, nil
 }
 
-func toDocumentsDTO(docs []dal.ListUserDocumentsRow) []models.Document {
+func toDocumentListDTO(docs []dal.ListUserDocumentsRow) []models.Document {
 	dtos := make([]models.Document, 0, len(docs))
 	for _, d := range docs {
 		dto := models.Document{
@@ -99,4 +126,21 @@ func toDocumentsDTO(docs []dal.ListUserDocumentsRow) []models.Document {
 		dtos = append(dtos, dto)
 	}
 	return dtos
+}
+
+func toDocumentDetailsDTO(d dal.GetDocumentByIDAndUserIDRow) models.DocumentDetails {
+	doc := models.Document{
+		ID:           d.ID,
+		SHA:          d.BlobSha,
+		Path:         d.Path,
+		SyncedAt:     d.SyncedAt,
+		RepositoryID: d.RepositoryID,
+		Repository:   d.RepoFullname,
+		Provider:     d.RepoProvider,
+		Branch:       d.RepoBranch,
+	}
+	if d.RepoCommit.Valid {
+		doc.UpstreamCommit = &d.RepoCommit.String
+	}
+	return models.DocumentDetails{Document: doc, Content: d.Content}
 }

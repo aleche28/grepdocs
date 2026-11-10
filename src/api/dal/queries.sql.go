@@ -249,6 +249,60 @@ func (q *Queries) FinalizeRepositorySync(ctx context.Context, arg FinalizeReposi
 	return result.RowsAffected(), nil
 }
 
+const getDocumentByIDAndUserID = `-- name: GetDocumentByIDAndUserID :one
+SELECT
+	d.id,
+	d.path,
+	d.blob_sha,
+	d.synced_at,
+	d.content,
+	d.repository_id,
+	r.full_name AS repo_fullname,
+	r.provider AS repo_provider,
+	r.tracked_branch AS repo_branch,
+	r.synced_commit AS repo_commit
+FROM documents d
+INNER JOIN repositories r
+	ON d.repository_id = r.id AND r.user_id = $1
+WHERE d.id = $2
+`
+
+type GetDocumentByIDAndUserIDParams struct {
+	UserID int64
+	ID     int64
+}
+
+type GetDocumentByIDAndUserIDRow struct {
+	ID           int64
+	Path         string
+	BlobSha      string
+	SyncedAt     time.Time
+	Content      string
+	RepositoryID int64
+	RepoFullname string
+	RepoProvider string
+	RepoBranch   string
+	RepoCommit   pgtype.Text
+}
+
+func (q *Queries) GetDocumentByIDAndUserID(ctx context.Context, arg GetDocumentByIDAndUserIDParams) (GetDocumentByIDAndUserIDRow, error) {
+	row := q.db.QueryRow(ctx, getDocumentByIDAndUserID, arg.UserID, arg.ID)
+	var i GetDocumentByIDAndUserIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Path,
+		&i.BlobSha,
+		&i.SyncedAt,
+		&i.Content,
+		&i.RepositoryID,
+		&i.RepoFullname,
+		&i.RepoProvider,
+		&i.RepoBranch,
+		&i.RepoCommit,
+	)
+	return i, err
+}
+
 const getExternalGitAccountById = `-- name: GetExternalGitAccountById :one
 SELECT id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, linked_at, last_refreshed_at, label, refresh_token_expires_at FROM external_git_accounts
 WHERE id = $1 LIMIT 1
@@ -603,7 +657,16 @@ func (q *Queries) ListDocumentShas(ctx context.Context, repositoryID int64) ([]L
 }
 
 const listUserDocuments = `-- name: ListUserDocuments :many
-SELECT d.id, d.path, d.blob_sha, d.synced_at, d.repository_id, r.full_name AS repo_fullname, r.provider AS repo_provider, r.tracked_branch AS repo_branch, r.synced_commit AS repo_commit
+SELECT
+	d.id,
+	d.path,
+	d.blob_sha,
+	d.synced_at,
+	d.repository_id,
+	r.full_name AS repo_fullname,
+	r.provider AS repo_provider,
+	r.tracked_branch AS repo_branch,
+	r.synced_commit AS repo_commit
 FROM documents d
 INNER JOIN repositories r
 	ON d.repository_id = r.id AND r.user_id = $1
@@ -751,7 +814,7 @@ func (q *Queries) UnclaimRepositorySync(ctx context.Context, id int64) error {
 
 const updateExternalGitAccountTokens = `-- name: UpdateExternalGitAccountTokens :one
 UPDATE external_git_accounts
-SET 
+SET
 	access_token = $2,
 	refresh_token = COALESCE(NULLIF($4::text, ''), refresh_token),
 	token_expires_at = $3,

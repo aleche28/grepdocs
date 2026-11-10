@@ -13,3 +13,8 @@ type Document struct {
 	Branch         string    `json:"branch"`
 	UpstreamCommit *string   `json:"upstream_commit"`
 }
+
+type DocumentDetails struct {
+	Document        // no json tag so this gets flattened
+	Content  string `json:"content"`
+}
