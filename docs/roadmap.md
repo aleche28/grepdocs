@@ -236,6 +236,10 @@ adjacent code, rather than batching into a dedicated cleanup pass:
 - **Split `reposync.sync` (#103)** — the function is over the cognitive-complexity limit and
   suppressed with `nolint:gocognit`; break it into named steps when next touching the sync engine,
   keeping the invariants in `docs/sync-engine.md`.
+- **Spec-first API (#107)** — a hand-written `openapi.yaml` served with Swagger UI at
+  `/api/docs` outside production comes first; then generate the chi server from it with
+  oapi-codegen so handlers can't drift from the spec. Best done before Phase 5 and 6 add most of
+  the new endpoints, so they are written against the generated interfaces from the start.
 
 ## Explicitly deferred
 
