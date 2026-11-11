@@ -7,7 +7,7 @@ info:
     Browse, search, and edit Markdown documentation living across multiple git repositories.
 
     This spec describes only the endpoints that are implemented. `docs/api.md` is the design
-    proposal for the rest (documents, search, groups, pagination).
+    proposal for the rest (document drafts and rendering, search, groups, pagination).
 
     **Authentication.** Every route requires a session cookie except `GET /ping` and the routes
     under `/auth`. To use "Try it out" from Swagger UI, open `/api/auth/google/login` in a browser
@@ -29,6 +29,8 @@ tags:
     description: Linked git provider accounts (GitHub today).
   - name: repositories
     description: Tracked repositories and their sync.
+  - name: documents
+    description: Markdown files stored by the last successful sync of each tracked repository.
 
 security:
   - sessionCookie: []
@@ -440,6 +442,103 @@ paths:
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
 
+  /documents:
+    get:
+      tags: [documents]
+      operationId: listDocuments
+      summary: List documents
+      description: |
+        Metadata of the documents in the user's tracked repositories, without content. Sorted by
+        repository full name, then path. Not paginated.
+      parameters:
+        - name: repo_id
+          in: query
+          required: false
+          description: |
+            Only documents of this tracked repository. An ID that is not one of the user's tracked
+            repositories returns an empty list, not `404`.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The user's documents.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Document"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /documents/{id}:
+    parameters:
+      - $ref: "#/components/parameters/DocumentID"
+    get:
+      tags: [documents]
+      operationId: getDocumentByID
+      summary: Get a document
+      description: The document's metadata and its Markdown content as of the last successful sync.
+      responses:
+        "200":
+          description: The document, with content.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentDetails"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /documents/{id}/raw:
+    parameters:
+      - $ref: "#/components/parameters/DocumentID"
+    get:
+      tags: [documents]
+      operationId: getRawDocumentByID
+      summary: Get a document's Markdown source
+      description: |
+        The document's content as of the last successful sync, unchanged. The content comes from
+        the repository, so it is untrusted: the response forbids content sniffing and is
+        sandboxed, so a browser never runs it as a page. Errors are still the JSON `Error` envelope.
+      responses:
+        "200":
+          description: The Markdown source.
+          headers:
+            X-Content-Type-Options:
+              description: Always `nosniff`.
+              schema:
+                type: string
+                const: nosniff
+            Content-Security-Policy:
+              description: Always `sandbox`.
+              schema:
+                type: string
+                const: sandbox
+          content:
+            text/markdown:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -459,11 +558,21 @@ components:
       schema:
         type: integer
         format: int64
+        minimum: 1
     RepositoryID:
       name: id
       in: path
       required: true
       description: Tracked repository ID.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    DocumentID:
+      name: id
+      in: path
+      required: true
+      description: Document ID.
       schema:
         type: integer
         format: int64
@@ -880,6 +989,62 @@ components:
         updated_at:
           type: [string, "null"]
           format: date-time
+
+    Document:
+      type: object
+      description: A Markdown file of a tracked repository, stored by its last successful sync.
+      required:
+        - id
+        - sha
+        - path
+        - synced_at
+        - repository_id
+        - repository
+        - provider
+        - branch
+        - upstream_commit
+      properties:
+        id:
+          type: integer
+          format: int64
+        sha:
+          type: string
+          description: Git blob SHA of the file's content.
+        path:
+          type: string
+          description: Path of the file in the repository.
+          examples: [docs/README.md]
+        synced_at:
+          type: string
+          format: date-time
+          description: When a sync last stored this file's content.
+        repository_id:
+          type: integer
+          format: int64
+        repository:
+          type: string
+          description: Full name of the repository.
+          examples: [octocat/Hello-World]
+        provider:
+          type: string
+          examples: [github]
+        branch:
+          type: string
+          description: The repository's tracked branch.
+        upstream_commit:
+          type: [string, "null"]
+          description: The repository's `synced_commit`, the commit of its last successful sync.
+
+    DocumentDetails:
+      description: A document with its content.
+      allOf:
+        - $ref: "#/components/schemas/Document"
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: string
+              description: Markdown source as of the last successful sync.
 
     CreateRepositoryRequest:
       type: object

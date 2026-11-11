@@ -151,6 +151,7 @@ func main() {
 		r.Mount("/users", routers.UserRoutes(pool, sm))
 		r.Mount("/accounts", routers.ExternalAccountsRoutes(pool, sm, registry, tokenCipher, credSvc))
 		r.Mount("/repositories", routers.RepositoriesRoutes(pool, sm, registry, credSvc, syncPool))
+		r.Mount("/documents", routers.DocumentsRoutes(pool, sm))
 
 		// Swagger UI for local testing; it calls the API with the browser's session cookie
 		if !isProduction {

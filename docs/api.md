@@ -4,7 +4,7 @@ Version: v1 (proposal — expected to change during development)
 Base path: `/api`
 
 This document is the API contract for GrepDocs. Most of it is a **design proposal**: many
-resources below (documents, search, groups, and most repository sub-resources) have no route,
+resources below (document drafts, search, groups, and most repository sub-resources) have no route,
 handler, or database table yet. Every endpoint and DTO field is marked **Implemented** or **Proposed** so it's clear
 what exists today versus what new work should target. Check this file before inventing a route or
 response shape — if something is marked Proposed, build it to match this shape rather than
@@ -28,7 +28,8 @@ improvising a new one.
   `size` `100`) and respond with `{ "items": [...], "page": 1, "size": 50, "total": 123 }`. This is
   **Proposed** — the list endpoints implemented today (`GET /api/accounts`,
   `GET /api/accounts/{provider}/repositories`, `GET /api/repositories`,
-  `GET /api/repositories/{id}/branches`) return a bare JSON array with no pagination envelope.
+  `GET /api/repositories/{id}/branches`, `GET /api/documents`) return a bare JSON array with no
+  pagination envelope.
 - **Errors**: every error body has the shape below. HTTP status is the coarse signal; `code` is
   the stable, machine-readable discriminator, and error bodies never leak internal error strings
   (`httpx.WriteInternalError` logs the real error server-side and returns a generic message).
@@ -403,41 +404,68 @@ Responses:
 
 ## Documents (tracked doc files)
 
-**Proposed** — no route, handler, or database table exists yet. First-class top-level resource
-(`/api/documents`) so cross-repository operations aren't buried under repository routes.
+First-class top-level resource (`/api/documents`) so cross-repository operations aren't buried
+under repository routes. Listing and reading are implemented over the `documents` table (migration
+`000007`), which a sync fills with the tracked branch's Markdown files; drafts, rendering, and
+diffs are not. Every route is scoped to the caller: another user's document `id` returns
+`404 not_found`, never `403`.
 
-| Method | Path                            | Auth | Description                                                        |
-| ------ | -------------------------------- | ---- | --------------------------------------------------------------------- |
-| GET    | `/documents`                     | Y    | List docs across tracked repos (filters: `repo_id`, `group`, `provider`, `has_draft`) |
-| GET    | `/documents/{id}`                | Y    | Doc metadata + current content (draft if present, else upstream)      |
-| GET    | `/documents/{id}/raw`            | Y    | Raw Markdown source                                                    |
-| GET    | `/documents/{id}/rendered`       | Y    | Rendered HTML (server-side Markdown render)                            |
-| GET    | `/documents/{id}/diff`           | Y    | Unified diff: draft vs upstream (empty if no draft)                    |
-| PUT    | `/documents/{id}`                | Y    | Save/edit draft content                                                |
-| DELETE | `/documents/{id}/draft`          | Y    | Discard draft, revert to upstream content                              |
+| Method | Path                            | Auth | Status                                  | Description                                                        |
+| ------ | -------------------------------- | ---- | --------------------------------------- | --------------------------------------------------------------------- |
+| GET    | `/documents`                     | Y    | Implemented (`repo_id` filter only, no pagination) | List docs across tracked repos (filters: `repo_id`, `group`, `provider`, `has_draft`) |
+| GET    | `/documents/{id}`                | Y    | Implemented (no drafts)                 | Doc metadata + current content (draft if present, else upstream)      |
+| GET    | `/documents/{id}/raw`            | Y    | Implemented (no drafts)                 | Raw Markdown source                                                    |
+| GET    | `/documents/{id}/rendered`       | Y    | Proposed                                | Rendered HTML (server-side Markdown render)                            |
+| GET    | `/documents/{id}/diff`           | Y    | Proposed                                | Unified diff: draft vs upstream (empty if no draft)                    |
+| PUT    | `/documents/{id}`                | Y    | Proposed                                | Save/edit draft content                                                |
+| DELETE | `/documents/{id}/draft`          | Y    | Proposed                                | Discard draft, revert to upstream content                              |
+
+`GET /api/documents` returns documents without `content`, sorted by repository full name, then
+path. `repo_id` must be a positive integer (`400 bad_request` otherwise); an ID that is not one of
+the caller's tracked repositories returns an empty list, not `404`.
+
+`GET /api/documents/{id}/raw` returns the same `content` as `GET /api/documents/{id}`, unchanged, as
+`text/markdown; charset=utf-8` (errors are still the JSON envelope). The content comes from the
+repository and is untrusted, so the response always carries `X-Content-Type-Options: nosniff` and
+`Content-Security-Policy: sandbox`: a browser never sniffs it as HTML or runs it as a page.
+**Proposed**: once drafts exist, it returns the draft if one exists, like `content` above.
 
 Editing a document writes a **draft** that is never pushed on its own; the commit endpoint above
 pushes selected drafts back to the repository with a user-provided message.
 
-Document DTO:
+`GET /api/documents` item (implemented shape):
 
 ```json
 {
   "id": 9,
+  "sha": "3b18e512dba79e4c8300dd08aeb37f8e728b8dad",
+  "path": "docs/README.md",
+  "synced_at": "2026-03-02T10:11:12Z",
   "repository_id": 2,
   "repository": "acme/docs",
   "provider": "github",
   "branch": "main",
-  "path": "docs/README.md",
-  "has_draft": true,
-  "synced_at": "2026-03-02T10:11:12Z",
-  "upstream_commit": "abcd123...",
-  "content": "# GrepDocs\n...",
-  "draft_message": "typo fix"
+  "upstream_commit": "abcd123..."
 }
 ```
 
-`content` is the draft if one exists, else the upstream content.
+`GET /api/documents/{id}` returns the same fields plus `content` (implemented shape, flat):
+
+```json
+{
+  "id": 9,
+  "...": "same fields as the list item",
+  "content": "# GrepDocs\n..."
+}
+```
+
+- `sha` is the git blob SHA of the stored content.
+- `branch` is the repository's tracked branch, and `upstream_commit` its `synced_commit` (the
+  commit of the last successful sync, `null` before the first one).
+- `content` is the upstream content as of the last successful sync. **Proposed**: once drafts
+  exist, `content` is the draft if one exists, else the upstream content.
+- **Proposed** fields: `has_draft` (boolean) and `draft_message` (the draft's commit message), on
+  both the list item and the detail.
 
 `PUT /api/documents/{id}` body:
 

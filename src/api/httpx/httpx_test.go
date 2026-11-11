@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,6 +37,40 @@ func TestWriteJSON(t *testing.T) {
 	}
 	if got["hello"] != "world" {
 		t.Errorf("body = %v, want hello=world", got)
+	}
+}
+
+func TestWriteRaw(t *testing.T) {
+	rr := httptest.NewRecorder()
+
+	// Looks like HTML, so net/http would sniff it as text/html without an explicit type.
+	body := "<html><script>alert(1)</script>\n# Title\n"
+	WriteRaw(rr, http.StatusOK, "text/markdown; charset=utf-8", []byte(body))
+
+	res := rr.Result()
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, want %d", res.StatusCode, http.StatusOK)
+	}
+
+	wantHeaders := map[string]string{
+		"Content-Type":            "text/markdown; charset=utf-8",
+		"X-Content-Type-Options":  "nosniff",
+		"Content-Security-Policy": "sandbox",
+	}
+	for name, want := range wantHeaders {
+		if got := res.Header.Get(name); got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
+	}
+
+	got, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if string(got) != body {
+		t.Errorf("body = %q, want %q", got, body)
 	}
 }
 

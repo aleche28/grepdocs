@@ -69,7 +69,7 @@ Order the output:
 
 End by asking whether to apply any fixes. Do not edit files until the user opts in with an explicit
 "apply"/"fix it"/"go ahead". When applying, change only the agreed findings, then run the quality
-gates (`make test`, whole-module `gofmt -l .` + `go vet ./...`).
+gates (`make ci`).
 
 ## Rules
 

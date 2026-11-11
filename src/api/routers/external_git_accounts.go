@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -232,10 +231,8 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 func (h *ExternalAccountsHandler) deleteExternalAccount(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.CurrentUserID(r)
 
-	accountIDStr := chi.URLParam(r, "id")
-	accountID, err := strconv.ParseInt(accountIDStr, 10, 64)
-	if err != nil {
-		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Invalid account ID")
+	accountID, ok := parseIDParam(w, r)
+	if !ok {
 		return
 	}
 
@@ -282,8 +279,8 @@ func (h *ExternalAccountsHandler) listExternalRepositories(w http.ResponseWriter
 	accountIDParam := r.URL.Query().Get("account_id")
 	var accountID int64
 	if accountIDParam != "" {
-		parsed, err := strconv.ParseInt(accountIDParam, 10, 64)
-		if err != nil || parsed <= 0 {
+		parsed, err := parsePositiveID(accountIDParam)
+		if err != nil {
 			httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Invalid account_id param: should be a positive int")
 			return
 		}
