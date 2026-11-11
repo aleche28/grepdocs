@@ -171,7 +171,7 @@ exists.
 - **Logout that ends the session (#102)**: `POST /auth/logout` re-sends the session cookie and
   re-saves the session, so the user stays signed in; must be fixed before the UI's logout works.
   Overlaps with #92.
-- **UI (`src/ui`, Angular)**: Google login with an auth guard and logout; app shell; linked
+- **UI (`src/ui`, React)**: Google login with an auth guard and logout; app shell; linked
   accounts (link, unlink, re-link, install-the-app link); track a repository (pick account and
   branch, filter repositories client-side, or a public repository by `owner/name`); repositories
   page with sync status, trigger and polling, branch and `auto_sync` changes, untrack; a
