@@ -221,7 +221,7 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 	// Redirect to frontend success page
 	redirectURL := os.Getenv("FRONTEND_URL")
 	if redirectURL == "" {
-		redirectURL = "http://localhost:3000"
+		redirectURL = "http://localhost:5173"
 	}
 	//nolint:gosec // G710: the origin is FRONTEND_URL and the provider name comes from the registry
 	http.Redirect(w, r, redirectURL+"/settings/accounts?linked="+provider.Name(), http.StatusTemporaryRedirect)
