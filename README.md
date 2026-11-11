@@ -6,7 +6,7 @@ Currently this repository contains the **backend API** (`src/api`, Go). `src/ui`
 
 ## Prerequisites
 
-- **Go 1.26+** — `go.mod` pins `toolchain go1.27.3`, which the `go` command downloads automatically
+- **Go 1.26+** — `go.mod` pins `toolchain go1.27.4`, which the `go` command downloads automatically
 - **Docker** (for Postgres, Redis, and pgAdmin via `docker-compose.yml` at the repo root)
 - **golang-migrate** — install with `go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest`
 - **sqlc** — install with `brew install sqlc` or `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`
