@@ -162,10 +162,17 @@ Goal: the first usable product. A user signs in, links GitHub, tracks repositori
 browses and reads their documentation in a browser. This is the first point a real browser origin
 exists.
 
+Status: **document API + UI project setup done** — `GET /documents`, `GET /documents/{id}` and
+`/raw` are implemented. `src/ui` is a Vite + React + TypeScript app with routing (placeholder
+pages), an API client that reads the error envelope, a shared TanStack Query client, and its own CI
+job; locally it runs beside the API through the Vite dev-server proxy. Still open in this phase:
+the re-link flag (#63), CORS + rate limiting (#64), logout (#102), and the UI screens (#65–#71).
+
 - **Document API (read only)**: `GET /documents` (metadata, filter by `repo_id`) and
   `GET /documents/{id}` + `/raw`, with the repository and branch the document comes from. No
-  draft fields yet.
-- `GET /api/accounts` flags accounts that need re-linking, so the UI can offer a "Re-link" action.
+  draft fields yet. **Done.**
+- `GET /api/accounts` flags accounts that need re-linking, so the UI can offer a "Re-link" action
+  (#63).
 - **CORS + rate limiting (#64)**: currently skipped because there's no real frontend to
   protect against; mandatory before the UI is used.
 - **Logout that ends the session (#102)**: `POST /auth/logout` re-sends the session cookie and
@@ -176,9 +183,11 @@ exists.
   branch, filter repositories client-side, or a public repository by `owner/name`); repositories
   page with sync status, trigger and polling, branch and `auto_sync` changes, untrack; a
   repository's document tree built from `GET /documents`; a document viewer with rendered
-  (client-side, sanitized) and raw modes.
+  (client-side, sanitized) and raw modes. The project itself is **done** (routing, API client,
+  query client, lint/format, CI); the screens are not.
 - A documented way to run the API and the UI together locally (dev-server proxy, so the session
-  cookie stays same-origin).
+  cookie stays same-origin). **Done** — `make run` + `make ui-dev`, README "Run the API and the UI
+  together".
 - Not in this phase: deployment, a server-side `GET /documents/{id}/rendered`, filters and
   pagination on `GET /accounts/{provider}/repositories`.
 
