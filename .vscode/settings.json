@@ -1,8 +1,14 @@
 {
   "gopls": {
-    "formatting.gofumpt": true,
+    // Used by organizeImports, which adds and removes imports on save.
     "formatting.local": "grepdocs/api"
   },
+  // Format with golangci-lint and src/api/.golangci.yml (gofumpt + gci), the
+  // same formatters `make fmt` and CI run. The extension runs it from the
+  // file's directory, so golangci-lint finds the config by searching upwards.
+  "go.formatTool": "custom",
+  "go.alternateTools": { "customFormatter": "golangci-lint" },
+  "go.formatFlags": ["fmt", "--stdin"],
   "[go]": {
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": { "source.organizeImports": "explicit" }

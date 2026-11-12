@@ -148,7 +148,6 @@ func (h *AuthHandler) logout(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteInternalError(w, err)
 			return
 		}
-		http.SetCookie(w, h.sessionMgr.ClearCookie())
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{

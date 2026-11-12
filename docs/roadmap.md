@@ -162,11 +162,12 @@ Goal: the first usable product. A user signs in, links GitHub, tracks repositori
 browses and reads their documentation in a browser. This is the first point a real browser origin
 exists.
 
-Status: **document API + UI project setup done** — `GET /documents`, `GET /documents/{id}` and
-`/raw` are implemented. `src/ui` is a Vite + React + TypeScript app with routing (placeholder
-pages), an API client that reads the error envelope, a shared TanStack Query client, and its own CI
-job; locally it runs beside the API through the Vite dev-server proxy. Still open in this phase:
-the re-link flag (#63), CORS + rate limiting (#64), logout (#102), and the UI screens (#65–#71).
+Status: **document API + UI project setup + logout fix done** — `GET /documents`,
+`GET /documents/{id}` and `/raw` are implemented, and `POST /auth/logout` ends the session. `src/ui`
+is a Vite + React + TypeScript app with routing (placeholder pages), an API client that reads the
+error envelope, a shared TanStack Query client, and its own CI job; locally it runs beside the API
+through the Vite dev-server proxy. Still open in this phase:
+the re-link flag (#63), CORS + rate limiting (#64), and the UI screens (#65–#71).
 
 - **Document API (read only)**: `GET /documents` (metadata, filter by `repo_id`) and
   `GET /documents/{id}` + `/raw`, with the repository and branch the document comes from. No
@@ -175,9 +176,9 @@ the re-link flag (#63), CORS + rate limiting (#64), logout (#102), and the UI sc
   (#63).
 - **CORS + rate limiting (#64)**: currently skipped because there's no real frontend to
   protect against; mandatory before the UI is used.
-- **Logout that ends the session (#102)**: `POST /auth/logout` re-sends the session cookie and
-  re-saves the session, so the user stays signed in; must be fixed before the UI's logout works.
-  Overlaps with #92.
+- **Logout that ends the session**: `POST /auth/logout` deletes the session from Redis and sends
+  only the clearing cookie; a request-scoped `Destroyed` flag stops `Handle` from saving the
+  session again or re-sending its cookie. **Done.**
 - **UI (`src/ui`, React)**: Google login with an auth guard and logout; app shell; linked
   accounts (link, unlink, re-link, install-the-app link); track a repository (pick account and
   branch, filter repositories client-side, or a public repository by `owner/name`); repositories
@@ -233,7 +234,8 @@ adjacent code, rather than batching into a dedicated cleanup pass:
 - **Config consolidation (#91)** — `main.go` builds `AppConfig` but routers also read
   `os.Getenv` directly; consolidate next time a router constructor changes.
 - **Session write amplification (#92)** — `Handle` persists every request including
-  anonymous ones; only persist on mutation. Likely fixed together with the logout bug (#102).
+  anonymous ones; only persist on mutation. The logout fix already skips saving a destroyed
+  session; a "changed" flag next to it would cover the rest.
 - **`username` column (#93)** — defaults to `''`, never populated; decide if it's a real
   product feature (fits naturally with Phase 1's account labels) or drop it.
 - **Test coverage (#94, #100)** — grow alongside each phase rather than as a standalone
