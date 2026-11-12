@@ -9,6 +9,7 @@ type Session struct {
 	UserID         int64
 	Authenticated  bool
 	Data           map[string]any
+	Destroyed      bool `json:"-"` // request-scoped, set by SessionManager.Destroy: never stored
 }
 
 func (s *Session) Get(key string) any {

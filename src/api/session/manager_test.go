@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -12,11 +13,12 @@ import (
 )
 
 type fakeStore struct {
-	mu       sync.Mutex
-	sessions map[string]*models.Session
-	writes   int
-	destroys int
-	needsGC  bool
+	mu         sync.Mutex
+	sessions   map[string]*models.Session
+	writes     int
+	destroys   int
+	needsGC    bool
+	destroyErr error
 }
 
 func newFakeStore() *fakeStore {
@@ -40,6 +42,9 @@ func (s *fakeStore) Write(_ context.Context, session *models.Session) error {
 func (s *fakeStore) Destroy(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.destroyErr != nil {
+		return s.destroyErr
+	}
 	delete(s.sessions, id)
 	s.destroys++
 	return nil
@@ -60,6 +65,12 @@ func (s *fakeStore) destroyCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.destroys
+}
+
+func (s *fakeStore) writeCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.writes
 }
 
 func newTestManager(store SessionStore) *SessionManager {
@@ -303,12 +314,122 @@ func TestDestroy(t *testing.T) {
 	if store.has(s.Id) {
 		t.Error("Destroy left the session in the store")
 	}
+	if !s.Destroyed {
+		t.Error("Destroy did not mark the session as destroyed")
+	}
+
+	// A second call is a no-op: it must not reach the store again.
+	if err := sm.Destroy(context.Background(), s); err != nil {
+		t.Fatalf("second Destroy: %v", err)
+	}
+	if got := store.destroyCount(); got != 1 {
+		t.Errorf("store destroys = %d, want 1", got)
+	}
+}
+
+func TestDestroyStoreError(t *testing.T) {
+	store := newFakeStore()
+	store.destroyErr = errors.New("store down")
+	sm := newTestManager(store)
+
+	s := newSession()
+
+	if err := sm.Destroy(context.Background(), s); err == nil {
+		t.Fatal("Destroy returned nil, want the store error")
+	}
+	// The session is only marked once the store delete succeeded, so a failed
+	// logout leaves the user signed in rather than half logged out.
+	if s.Destroyed {
+		t.Error("session marked as destroyed although the store delete failed")
+	}
+}
+
+func TestSaveSkipsDestroyedSession(t *testing.T) {
+	store := newFakeStore()
+	sm := newTestManager(store)
+
+	s := newSession()
+	s.Destroyed = true
+
+	if err := sm.save(context.Background(), s); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	if store.has(s.Id) || store.writeCount() != 0 {
+		t.Error("save wrote a destroyed session to the store")
+	}
+}
+
+// Regression test for #102: logout used to re-send the old session cookie
+// after the clearing one, and Handle wrote the session back to the store.
+func TestHandleDestroyEndsSession(t *testing.T) {
+	tests := []struct {
+		name  string
+		write func(w http.ResponseWriter)
+	}{
+		// The cookie is sent by WriteHeader, from inside the handler.
+		{name: "handler writes a response", write: func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("ok"))
+		}},
+		// The cookie is sent by Handle, after the handler returns.
+		{name: "handler writes nothing", write: func(http.ResponseWriter) {}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakeStore()
+			existing := &models.Session{
+				Id:             "existing-id",
+				Data:           map[string]any{},
+				CreatedAt:      time.Now(),
+				LastActivityAt: time.Now(),
+				UserID:         42,
+				Authenticated:  true,
+			}
+			store.sessions[existing.Id] = existing
+
+			sm := newTestManager(store)
+
+			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				s, _ := sm.GetSession(r)
+				if err := sm.Destroy(r.Context(), s); err != nil {
+					t.Fatalf("Destroy: %v", err)
+				}
+				tc.write(w)
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.AddCookie(&http.Cookie{Name: "session", Value: existing.Id})
+
+			rr := httptest.NewRecorder()
+			sm.Handle(next).ServeHTTP(rr, req)
+
+			var cookies []*http.Cookie
+			for _, c := range rr.Result().Cookies() {
+				if c.Name == "session" {
+					cookies = append(cookies, c)
+				}
+			}
+			if len(cookies) != 1 {
+				t.Fatalf("got %d session cookies, want exactly 1 (the clearing one)", len(cookies))
+			}
+			// The parser turns "Max-Age=0" into MaxAge -1.
+			if cookies[0].Value != "" || cookies[0].MaxAge >= 0 {
+				t.Errorf("session cookie = %q (MaxAge %d), want an empty, expired cookie",
+					cookies[0].Value, cookies[0].MaxAge)
+			}
+			if store.has(existing.Id) {
+				t.Error("session is back in the store after Destroy")
+			}
+		})
+	}
 }
 
 func TestClearCookie(t *testing.T) {
 	sm := newTestManager(newFakeStore())
 
-	c := sm.ClearCookie()
+	c := sm.clearCookie()
 	if c.Name != "session" {
 		t.Errorf("Name = %q, want session", c.Name)
 	}

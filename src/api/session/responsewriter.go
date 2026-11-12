@@ -40,19 +40,23 @@ func writeCookieIfNecessary(w *sessionResponseWriter) {
 		return
 	}
 
-	secure := w.sessionMgr.secureCookie
-	cookie := &http.Cookie{ //nolint:gosec // G124: Secure is configurable, HttpOnly and SameSite are set
-		Name:     w.sessionMgr.cookieName,
-		Value:    session.Id,
-		HttpOnly: true,
-		Path:     "/",
-		Secure:   secure,
-		SameSite: http.SameSiteLaxMode,
-		Expires:  time.Now().Add(w.sessionMgr.idleExpiration),
-		MaxAge:   int(w.sessionMgr.idleExpiration / time.Second),
-	}
+	if session.Destroyed {
+		http.SetCookie(w.ResponseWriter, w.sessionMgr.clearCookie())
+	} else {
+		secure := w.sessionMgr.secureCookie
+		cookie := &http.Cookie{ //nolint:gosec // G124: Secure is configurable, HttpOnly and SameSite are set
+			Name:     w.sessionMgr.cookieName,
+			Value:    session.Id,
+			HttpOnly: true,
+			Path:     "/",
+			Secure:   secure,
+			SameSite: http.SameSiteLaxMode,
+			Expires:  time.Now().Add(w.sessionMgr.idleExpiration),
+			MaxAge:   int(w.sessionMgr.idleExpiration / time.Second),
+		}
 
-	http.SetCookie(w.ResponseWriter, cookie)
+		http.SetCookie(w.ResponseWriter, cookie)
+	}
 
 	w.done = true
 }

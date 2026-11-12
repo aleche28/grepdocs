@@ -109,6 +109,10 @@ func (m *SessionManager) start(ctx context.Context, r *http.Request) (*models.Se
 }
 
 func (m *SessionManager) save(ctx context.Context, session *models.Session) error {
+	if session.Destroyed {
+		return nil
+	}
+
 	session.LastActivityAt = time.Now()
 
 	if err := m.store.Write(ctx, session); err != nil {
@@ -188,13 +192,22 @@ func GetSession(sm *SessionManager, r *http.Request) (*models.Session, bool) {
 	return sm.GetSession(r)
 }
 
-// Destroy invalidates the session in the store
+// Destroy deletes the session from the store and, only once that succeeds, marks it as destroyed:
+// the session is then not saved again, and the response clears the session cookie instead of
+// re-sending it. Call it before writing the response, or the cookie cannot change. Idempotent.
 func (m *SessionManager) Destroy(ctx context.Context, session *models.Session) error {
-	return m.store.Destroy(ctx, session.Id)
+	if session.Destroyed {
+		return nil
+	}
+	if err := m.store.Destroy(ctx, session.Id); err != nil {
+		return err
+	}
+	session.Destroyed = true
+	return nil
 }
 
-// ClearCookie returns a cookie that immediately expires, removing the session cookie from the browser
-func (m *SessionManager) ClearCookie() *http.Cookie {
+// clearCookie returns a cookie that immediately expires, removing the session cookie from the browser
+func (m *SessionManager) clearCookie() *http.Cookie {
 	return &http.Cookie{ //nolint:gosec // G124: Secure is configurable, HttpOnly and SameSite are set
 		Name:     m.cookieName,
 		Value:    "",
