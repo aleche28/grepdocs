@@ -27,7 +27,9 @@ export const router = createBrowserRouter([
         // The document tree stays on screen while the viewer changes.
         path: 'repositories/:repoId',
         element: <RepositoryPage />,
-        children: [{ path: 'documents/:documentId', element: <DocumentPage /> }],
+        children: [
+          { path: 'documents/:documentId', element: <DocumentPage /> },
+        ],
       },
       // Fixed by the API: it redirects here after linking an account, with
       // ?linked={provider}.

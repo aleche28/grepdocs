@@ -10,7 +10,11 @@ export const queryClient = new QueryClient({
       // GitHub token) and retrying only delays the message the user needs.
       // Network errors and 5xx may be transient, so those are retried.
       retry: (failureCount, error) => {
-        if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+        if (
+          error instanceof ApiError &&
+          error.status >= 400 &&
+          error.status < 500
+        ) {
           return false
         }
         return failureCount < maxRetries
