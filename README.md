@@ -2,7 +2,8 @@
 
 GrepDocs is a centralized tool to search, browse, and edit documentation across multiple git repositories, with rendered Markdown, full-text search, and direct commits back to source control.
 
-Currently this repository contains the **backend API** (`src/api`, Go). `src/ui` is reserved for a future frontend.
+This repository contains the **backend API** (`src/api`, Go) and the **web UI** (`src/ui`, React +
+TypeScript, built with Vite). The UI is being built in Phase 4 of `docs/roadmap.md`.
 
 ## Prerequisites
 
@@ -11,6 +12,7 @@ Currently this repository contains the **backend API** (`src/api`, Go). `src/ui`
 - **golang-migrate** — install with `go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest`
 - **sqlc** — install with `brew install sqlc` or `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`
   (if `sqlc`/`migrate` are not found, ensure `$(go env GOPATH)/bin` is on your `PATH`)
+- **Node.js 26** (the version in `src/ui/.nvmrc`; `nvm use` picks it up) and npm — for the UI
 - **golangci-lint** v2 — install with `brew install golangci-lint` (needed for `make lint`); CI pins
   the version in `.github/workflows/ci.yml`, so keep your local install on the same one
 
@@ -33,9 +35,25 @@ make sqlc-generate
 
 # 5. Run the API server (listen on :3000, routes under /api)
 make run
+
+# 6. In a second terminal: install the UI dependencies, then run the UI dev server on :5173
+make ui-install
+make ui-dev
 ```
 
 Check the server is up: <http://localhost:3000/api/ping> should return `pong`.
+
+### Run the API and the UI together
+
+Open the UI at <http://localhost:5173>. The Vite dev server proxies `/api` to the API on `:3000`
+(`src/ui/vite.config.ts`), so the browser only ever talks to one origin: the session cookie works
+and no CORS is involved. Sign in at <http://localhost:5173/api/auth/google/login>.
+
+- The OAuth callbacks (`GOOGLE_REDIRECT_URL`, `GITHUB_REDIRECT_URL`) stay on `:3000`. The cookie the
+  callback sets on `localhost:3000` is also sent to `localhost:5173`, because cookies are not
+  separated by port.
+- After login and after linking an account, the API redirects to `FRONTEND_URL`, which defaults to
+  `http://localhost:5173`. The dev server refuses to start on another port, so the two stay in step.
 
 ### Try the API in the browser
 
@@ -44,7 +62,7 @@ Outside production (`ENV` is not `production`), the API serves Swagger UI at
 `src/api/openapi/openapi.yaml`.
 
 1. Sign in at <http://localhost:3000/api/auth/google/login>. After Google, you are redirected to
-   `FRONTEND_URL`; the session cookie is already set even if nothing is served there.
+   `FRONTEND_URL` (the UI); the session cookie is set even if the UI is not running.
 2. Open <http://localhost:3000/api/docs> and use "Try it out": requests go to the same origin, so
    the browser sends the session cookie with them.
 
@@ -65,27 +83,33 @@ not a base64-encoded 32-byte key. The database/Redis state is kept in Docker (se
 
 ## Daily development
 
-| Task                  | Command                                  |
-| --------------------- | ---------------------------------------- |
-| Start infra           | `make infra-up`                          |
-| Stop infra            | `make infra-down`                        |
-| Create `.env`         | `make env`                               |
-| Run the API           | `make run`                               |
-| Build the module      | `make build`                             |
-| Apply migrations      | `make migrate-up`                        |
-| Rollback migrations   | `make migrate-down`                      |
-| New migration         | `make migrate-new NAME=create_foo`       |
-| Regenerate DAL / sqlc | `make sqlc-generate`                     |
-| Format / vet          | `make fmt` / `make vet`                  |
-| Lint / vuln scan      | `make lint` / `make vuln`                |
-| Lint the OpenAPI spec | `make openapi-lint`                      |
-| Every check CI runs   | `make ci`                                |
-| Tidy dependencies     | `make tidy`                              |
+| Task                  | Command                            |
+| --------------------- | ---------------------------------- |
+| Start infra           | `make infra-up`                    |
+| Stop infra            | `make infra-down`                  |
+| Create `.env`         | `make env`                         |
+| Run the API           | `make run`                         |
+| Build the module      | `make build`                       |
+| Apply migrations      | `make migrate-up`                  |
+| Rollback migrations   | `make migrate-down`                |
+| New migration         | `make migrate-new NAME=create_foo` |
+| Regenerate DAL / sqlc | `make sqlc-generate`               |
+| Format / vet          | `make fmt` / `make vet`            |
+| Lint / vuln scan      | `make lint` / `make vuln`          |
+| Lint the OpenAPI spec | `make openapi-lint`                |
+| Every check CI runs   | `make ci`                          |
+| Tidy dependencies     | `make tidy`                        |
+| Install UI deps       | `make ui-install`                  |
+| Run the UI (`:5173`)  | `make ui-dev`                      |
+| Build the UI          | `make ui-build`                    |
+| UI format / lint      | `make ui-fmt` / `make ui-lint`     |
+| UI checks CI runs     | `make ui-ci`                       |
 
 `make ci` runs every check that CI runs (tidy, vet, golangci-lint with formatting, the OpenAPI
-linter, govulncheck, build, race-enabled tests): run it before pushing. GitHub Actions runs the same checks on every PR
-(`.github/workflows/ci.yml`, `security.yml`), and Dependabot proposes Go module and action updates
-weekly.
+linter, govulncheck, build, race-enabled tests, and for the UI Prettier, ESLint, `npm audit` and the
+build): run it before pushing, after `make ui-install` once. GitHub Actions runs the same checks on every PR
+(`.github/workflows/ci.yml`, `security.yml`), and Dependabot proposes Go module, npm and action
+updates weekly.
 
 Editors: formatting is gofumpt, so enable it in gopls (`"formatting.gofumpt": true` and
 `"formatting.local": "grepdocs/api"` in VS Code; `gofumpt = true` and `["local"] = "grepdocs/api"` in
@@ -108,7 +132,11 @@ src/api/               # Backend API (Go module grepdocs/api)
   session/             # Custom Redis-backed session management
   secrets/             # At-rest token encryption (AES-256-GCM)
   models/              # Domain models
-src/ui/                # (empty) — future frontend
+src/ui/                # Web UI (React + TypeScript, Vite)
+  vite.config.ts       # Dev server on :5173, proxies /api to the API
+  src/api/             # apiFetch (API client, error envelope) + the shared TanStack Query client
+  src/pages/           # One component per route
+  src/router.tsx       # Route table (React Router)
 docs/                  # Requirements, user stories, how-to guides
 ```
 
