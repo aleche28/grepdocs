@@ -285,7 +285,9 @@ Rules worth preserving:
   per-line directive over a global exclusion, so new occurrences are still caught.
 - Formatting is gofumpt + gci (imports: standard, third-party, then `grepdocs/api`). Run `make fmt`.
   `gofumpt.module-path` must stay set: without a dot in its first element, `grepdocs/api` looks
-  like a standard-library path to gofumpt, and it then fights gci over import groups.
+  like a standard-library path to gofumpt, and it then fights gci over import groups. Editors hit
+  the same trap (gofumpt on stdin cannot see `go.mod`), so `.vscode/settings.json` and `.nvim.lua`
+  format Go with `golangci-lint fmt` and this config instead; `.nvim.lua` needs `'exrc'` and `:trust`.
 - The Go version is the `toolchain` line in `src/api/go.mod`. CI reads it via `go-version-file`
   (setup-go sets `GOTOOLCHAIN=local`), so bumping that line is how CI's Go changes.
 - The UI's Node version is `src/ui/.nvmrc`, which CI reads via `node-version-file`, so bumping it
