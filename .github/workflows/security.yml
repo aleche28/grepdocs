@@ -33,3 +33,18 @@ jobs:
       # govulncheck is a `tool` in go.mod, so its version is pinned there and bumped by Dependabot
       - name: govulncheck
         run: make vuln
+
+  npm-audit:
+    name: npm-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: src/ui/.nvmrc
+      # reads package-lock.json only, so no install; runtime dependencies only (see the Makefile)
+      - name: npm audit
+        run: make ui-audit

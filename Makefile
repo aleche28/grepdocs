@@ -1,4 +1,5 @@
 GO_DIR      := src/api
+UI_DIR      := src/ui
 ENV_FILE    := $(GO_DIR)/.env
 ENV_EXAMPLE := $(GO_DIR)/.env.example
 MIGR_PATH   := ./database/migrations
@@ -16,7 +17,8 @@ VACUUM         ?= go run github.com/daveshanley/vacuum@$(VACUUM_VERSION)
 # the command line, e.g. `make migrate-up DATABASE_URL=...`).
 DATABASE_URL ?= $(shell sed -n 's/^[[:space:]]*DATABASE_URL[[:space:]]*=[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}[[:space:]]*$$/\1/p' $(ENV_FILE))
 
-.PHONY: help infra-up infra-down env run build test test-race fmt fmt-check vet tidy tidy-check lint openapi-lint vuln ci sqlc-generate migrate-up migrate-down migrate-new
+.PHONY: help infra-up infra-down env run build test test-race fmt fmt-check vet tidy tidy-check lint openapi-lint vuln ci sqlc-generate migrate-up migrate-down migrate-new \
+	ui-install ui-dev ui-build ui-typecheck ui-lint ui-fmt ui-fmt-check ui-audit ui-ci
 
 help:
 	@echo "GrepDocs targets:"
@@ -40,6 +42,15 @@ help:
 	@echo "  migrate-up      Apply pending migrations"
 	@echo "  migrate-down    Roll back the last migration (COUNT=n for more)"
 	@echo "  migrate-new     Scaffold a migration: make migrate-new NAME=create_foo"
+	@echo "  ui-install      Install the UI dependencies from package-lock.json (npm ci)"
+	@echo "  ui-dev          Run the UI dev server on :5173, proxying /api to :3000"
+	@echo "  ui-build        Type-check and build the UI into src/ui/dist"
+	@echo "  ui-typecheck    Type-check the UI"
+	@echo "  ui-lint         Run ESLint on the UI"
+	@echo "  ui-fmt          Prettier format the UI (rewrites files)"
+	@echo "  ui-fmt-check    Fail if any UI file is unformatted"
+	@echo "  ui-audit        npm audit of the UI's runtime dependencies"
+	@echo "  ui-ci           Every UI check CI runs (needs ui-install first)"
 
 infra-up:
 	docker compose up -d
@@ -86,7 +97,35 @@ openapi-lint:
 vuln:
 	cd $(GO_DIR) && go tool govulncheck ./...
 
-ci: tidy-check fmt-check vet lint openapi-lint vuln build test-race
+# The ui-* checks need node_modules: run `make ui-install` once first.
+ci: tidy-check fmt-check vet lint openapi-lint vuln build test-race ui-ci
+
+ui-install:
+	cd $(UI_DIR) && npm ci
+
+ui-dev:
+	cd $(UI_DIR) && npm run dev
+
+ui-build:
+	cd $(UI_DIR) && npm run build
+
+ui-typecheck:
+	cd $(UI_DIR) && npm run typecheck
+
+ui-lint:
+	cd $(UI_DIR) && npm run lint
+
+ui-fmt:
+	cd $(UI_DIR) && npm run format
+
+ui-fmt-check:
+	cd $(UI_DIR) && npm run format:check
+
+# runtime dependencies only, like govulncheck's reachable-only report: dev tooling never ships
+ui-audit:
+	cd $(UI_DIR) && npm audit --omit=dev
+
+ui-ci: ui-fmt-check ui-lint ui-audit ui-build
 
 sqlc-generate:
 	cd $(GO_DIR) && sqlc generate

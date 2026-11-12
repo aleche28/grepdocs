@@ -6,8 +6,9 @@ that picks up an `AGENTS.md` (or is pointed at one) should be able to work from 
 ## Project
 
 GrepDocs: a centralized tool to browse, search, and edit Markdown documentation living across
-multiple git repositories, committing edits back to source control. Only the backend exists today
-(`src/api`, Go module `grepdocs/api`); `src/ui` is reserved for a future frontend and is absent.
+multiple git repositories, committing edits back to source control. The backend is `src/api` (Go
+module `grepdocs/api`); the web UI is `src/ui` (React + TypeScript, built with Vite), being built in
+Phase 4 of `docs/roadmap.md`.
 
 GitHub Actions runs the quality gates on every PR and push to `main` (see CI and code quality);
 `make ci` runs the same checks locally — run it before pushing. Unit tests cover sessions, auth
@@ -15,40 +16,50 @@ middleware, providers, credentials, response envelopes, the session model, and t
 worker pool (on `testing/synctest`, so its timeouts run on a fake clock). `routers` tests cover
 only code that needs no database (`writeProviderError`, `installDetails`, ID parsing, the docs routes); handlers and
 `reposync` stay untested because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
+The UI has no tests yet.
 
 ## Commands
 
-All Go commands run from `src/api` (godotenv loads `.env` from the working directory). The Makefile
-at the repo root wraps them and handles the `cd` for you:
+All Go commands run from `src/api` (godotenv loads `.env` from the working directory), and npm
+commands from `src/ui`. The Makefile at the repo root wraps them and handles the `cd` for you:
 
-| Task                  | Command                            |
-| --------------------- | ---------------------------------- |
-| Start infra           | `make infra-up`                    |
-| Stop infra            | `make infra-down`                  |
-| Create `.env`         | `make env`                         |
-| Run the API (`:3000`) | `make run`                         |
-| Build                 | `make build`                       |
-| Run tests             | `make test`                        |
-| Tests + race detector | `make test-race`                   |
-| Format / vet          | `make fmt` / `make vet`            |
-| Lint / vuln scan      | `make lint` / `make vuln`          |
-| Lint the OpenAPI spec | `make openapi-lint`                |
-| Tidy `go.mod`         | `make tidy`                        |
-| Every check CI runs   | `make ci`                          |
-| Apply migrations      | `make migrate-up`                  |
-| Roll back             | `make migrate-down [COUNT=n]`      |
-| Scaffold a migration  | `make migrate-new NAME=create_foo` |
-| Regenerate the DAL    | `make sqlc-generate`               |
+| Task                   | Command                              |
+| ---------------------- | ------------------------------------ |
+| Start infra            | `make infra-up`                      |
+| Stop infra             | `make infra-down`                    |
+| Create `.env`          | `make env`                           |
+| Run the API (`:3000`)  | `make run`                           |
+| Build                  | `make build`                         |
+| Run tests              | `make test`                          |
+| Tests + race detector  | `make test-race`                     |
+| Format / vet           | `make fmt` / `make vet`              |
+| Lint / vuln scan       | `make lint` / `make vuln`            |
+| Lint the OpenAPI spec  | `make openapi-lint`                  |
+| Tidy `go.mod`          | `make tidy`                          |
+| Every check CI runs    | `make ci`                            |
+| Apply migrations       | `make migrate-up`                    |
+| Roll back              | `make migrate-down [COUNT=n]`        |
+| Scaffold a migration   | `make migrate-new NAME=create_foo`   |
+| Regenerate the DAL     | `make sqlc-generate`                 |
+| Install UI deps        | `make ui-install` (`npm ci`)         |
+| Run the UI (`:5173`)   | `make ui-dev`                        |
+| Build the UI           | `make ui-build`                      |
+| UI typecheck / lint    | `make ui-typecheck` / `make ui-lint` |
+| UI format / check      | `make ui-fmt` / `make ui-fmt-check`  |
+| UI dependency audit    | `make ui-audit`                      |
+| Every UI check CI runs | `make ui-ci`                         |
 
 Makefile caveats:
 
 - `make fmt` rewrites files; `make fmt-check` and `make tidy-check` only print a diff and fail.
+- The `ui-*` targets need `node_modules`, and so does `make ci` (it runs `ui-ci`): run
+  `make ui-install` once, and again after `package-lock.json` changes. Only CI installs on its own.
 - `make migrate-*` parses `DATABASE_URL` out of `src/api/.env` with `sed` and requires the
   `postgres://` URL form (golang-migrate cannot read pgx keyword/value strings). Override on the
   command line with `make migrate-up DATABASE_URL=...`.
 
 Prerequisites beyond Go and Docker: `golang-migrate`, `sqlc`, and `golangci-lint` on `PATH` (see
-README). govulncheck needs no install: it is a `tool` directive in `go.mod`, run with `go tool`.
+README), and Node.js at the version in `src/ui/.nvmrc` for the UI. govulncheck needs no install: it is a `tool` directive in `go.mod`, run with `go tool`.
 Health check: <http://localhost:3000/api/ping> returns `pong`.
 
 Interactive API docs (Swagger UI) are at <http://localhost:3000/api/docs>, mounted only when `ENV`
@@ -144,7 +155,8 @@ Every response goes through `httpx`. Never use `http.Error` or hand-rolled JSON 
 
 - `WriteJSON(w, status, data)`
 - `WriteError(w, status, code, message)` — emits `{"error":{"code","message"}}`, where `code` is one
-  of the stable `httpx.Code*` constants and is the machine-readable discriminator.
+  of the stable `httpx.Code*` constants and is the machine-readable discriminator. The UI mirrors
+  them by hand in `ApiErrorCode` (`src/ui/src/api/client.ts`): add a code to both in one change.
 - `WriteErrorWithDetails(w, status, code, message, details)` — same envelope plus an optional
   `details` object, omitted when `details` is empty. `WriteError` calls it with `nil`.
 - `WriteInternalError(w, err)` — logs the real error server-side and returns a generic `internal`
@@ -152,6 +164,28 @@ Every response goes through `httpx`. Never use `http.Error` or hand-rolled JSON 
 
 Handlers build response DTOs explicitly (inline `map[string]any` today). Token fields from
 `external_git_accounts` must be stripped at the DTO layer — see `listExternalAccounts`.
+
+### Web UI (`src/ui`)
+
+React + TypeScript, built with Vite, React Router for routes, TanStack Query for data from the API.
+
+- Locally, the browser only talks to the Vite dev server on `:5173`, which proxies `/api` to the API
+  on `:3000` (`vite.config.ts`), so API calls are same-origin and need no CORS. The API redirects to
+  `FRONTEND_URL` (default `http://localhost:5173`) after login and after linking an account, so the
+  dev server uses `strictPort`. The OAuth callbacks stay on `:3000`: browsers do not separate
+  cookies by port, so the cookie set there reaches `:5173`.
+- Every API call goes through `apiFetch` / `apiFetchText` (`src/api/client.ts`), never `fetch`
+  directly, the same way every API response goes through `httpx`. Paths omit the `/api` prefix.
+  Non-2xx responses become an `ApiError` with the envelope's `code`, `message`, `details`, and
+  `retryAfter`; `network_error` (status 0) and `unexpected_response` (no envelope, such as the
+  proxy's `502` with the API down) are client-only codes.
+- Data from the API lives in TanStack Query, through the shared `queryClient`
+  (`src/api/queryClient.ts`), not in component state. Queries retry on network errors and 5xx,
+  never on 4xx.
+- Routes are in `src/router.tsx`, one component per route in `src/pages/`. Pages that need a
+  signed-in user sit under the `AppLayout` route. `/settings/accounts` is fixed by the API, which
+  redirects there after linking an account.
+- Formatting is Prettier (no semicolons, single quotes), linting ESLint. Run `make ui-fmt`.
 
 ### Git providers
 
@@ -236,10 +270,12 @@ refresh and revocation flows are described above, under `credentials`.
 Two workflows in `.github/workflows/`, both calling `make` from the repo root (the Makefile does the
 `cd src/api`, so do not set a default `working-directory`):
 
-- `ci.yml` — job `check` (`tidy-check`, `vet`, `build`, `test-race`) and job `lint`
+- `ci.yml` — job `check` (`tidy-check`, `vet`, `build`, `test-race`), job `lint`
   (`golangci-lint-action`, which also reports formatting, so `fmt-check` is not run separately,
-  then `make openapi-lint`).
-- `security.yml` — `make vuln` (govulncheck) on PRs, pushes to `main`, a weekly cron, and manually.
+  then `make openapi-lint`), and job `ui` (`ui-install`, `ui-fmt-check`, `ui-lint`, `ui-build`,
+  which also type-checks).
+- `security.yml` — `make vuln` (govulncheck) and `make ui-audit` (`npm audit`) on PRs, pushes to
+  `main`, a weekly cron, and manually.
 
 Rules worth preserving:
 
@@ -252,10 +288,17 @@ Rules worth preserving:
   like a standard-library path to gofumpt, and it then fights gci over import groups.
 - The Go version is the `toolchain` line in `src/api/go.mod`. CI reads it via `go-version-file`
   (setup-go sets `GOTOOLCHAIN=local`), so bumping that line is how CI's Go changes.
+- The UI's Node version is `src/ui/.nvmrc`, which CI reads via `node-version-file`, so bumping it
+  is how CI's Node changes. `engines` in `package.json` is the minimum the dependencies need, not
+  the version to use.
+- `make ui-audit` is `npm audit --omit=dev`: runtime dependencies only, like govulncheck's
+  reachable-only report. Dev tooling (ESLint, Vite) never ships to the browser, and a finding there
+  would fail the build with no runtime impact.
 - After any `go get`, check the `go` line in the diff: a dependency (or a `go tool` dependency,
   which shares the module graph) requiring a newer Go raises it silently.
-- Versions: govulncheck is pinned by the `tool` directive in `go.mod`, and actions by commit SHA
-  with a `# vX.Y.Z` comment; Dependabot (`.github/dependabot.yml`) bumps both weekly. The
+- Versions: govulncheck is pinned by the `tool` directive in `go.mod`, UI packages by
+  `package-lock.json`, and actions by commit SHA with a `# vX.Y.Z` comment; Dependabot
+  (`.github/dependabot.yml`) bumps all three weekly. The
   golangci-lint version is the `version:` input in `ci.yml`: Dependabot does not touch it, so bump
   it by hand together with your local install.
 - The OpenAPI linter is vacuum, run with `go run …@$(VACUUM_VERSION)` from the Makefile (no install
