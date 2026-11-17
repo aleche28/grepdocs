@@ -19,7 +19,8 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     errorElement: <RouteErrorPage />,
     children: [
-      // The API sends the user to "/" after login.
+      // Where the API sends the user after login when no other page was
+      // requested.
       { index: true, element: <Navigate to="/repositories" replace /> },
       { path: 'repositories', element: <RepositoriesPage /> },
       { path: 'repositories/track', element: <TrackRepositoryPage /> },

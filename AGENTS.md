@@ -14,7 +14,7 @@ GitHub Actions runs the quality gates on every PR and push to `main` (see CI and
 `make ci` runs the same checks locally — run it before pushing. Unit tests cover sessions, auth
 middleware, providers, credentials, response envelopes, the session model, and the `syncqueue`
 worker pool (on `testing/synctest`, so its timeouts run on a fake clock). `routers` tests cover
-only code that needs no database (`writeProviderError`, `installDetails`, ID parsing, the docs routes); handlers and
+only code that needs no database (`writeProviderError`, `installDetails`, ID parsing, `isValidRedirectPath`, the docs routes); handlers and
 `reposync` stay untested because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
 The UI has no tests yet.
 
@@ -185,6 +185,15 @@ React + TypeScript, built with Vite, React Router for routes, TanStack Query for
 - Routes are in `src/router.tsx`, one component per route in `src/pages/`. Pages that need a
   signed-in user sit under the `AppLayout` route. `/settings/accounts` is fixed by the API, which
   redirects there after linking an account.
+- Auth (`src/api/auth.ts`): `AppLayout` is the guard. It renders nothing until the shared
+  `useCurrentUser()` query (`GET /users/me`) resolves, and sends a `not_authenticated` user to
+  `/login?redirect=<path>`; any other error shows a retry, never the login page. Any query or
+  mutation that fails with `not_authenticated` refetches that query (`queryClient.ts`), so a
+  session that expires mid-use also ends on the login page. Signing in is a plain link to
+  `apiUrl('/auth/google/login')`, the one deliberate exception to `apiFetch`: only a full-page
+  navigation can follow the redirect to Google. Logout calls `queryClient.clear()` so the next user
+  in the tab sees none of the previous one's data. A redirect path read from the URL goes through
+  `safeRedirectPath` before any client-side navigation.
 - Formatting is Prettier (no semicolons, single quotes), linting ESLint. Run `make ui-fmt`.
 
 ### Git providers

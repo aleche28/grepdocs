@@ -76,23 +76,29 @@ improvising a new one.
 
 | Method | Path                     | Auth | Status                          | Description                    |
 | ------ | ------------------------ | ---- | -------------------------------- | ------------------------------ |
-| GET    | `/auth/google/login`     | N    | Implemented (`redirect` Proposed) | Start Google OAuth login       |
+| GET    | `/auth/google/login`     | N    | Implemented                      | Start Google OAuth login       |
 | GET    | `/auth/google/callback`  | N    | Implemented                      | Google OAuth callback          |
 | POST   | `/auth/logout`           | N    | Implemented                      | Destroy session                |
 
 **`GET /api/auth/google/login`** redirects the browser to Google's consent screen. It generates a
 one-time `state`, stores it in the session, and requests `AccessTypeOffline`.
 
-- **Proposed**: an optional `?redirect=/some/path` query parameter, validated against a
-  server-side whitelist of relative paths (must start with `/`, no `//`, on the whitelist) and
-  stored alongside `state`, so the callback can bounce back to where the user started instead of
-  always to `/`. Never allow arbitrary URLs (open-redirect risk).
-- Today the redirect target is hardcoded to `/`, and the existing `isValidRedirectPath` check only
-  enforces "starts with `/`, no `//`" — there is no whitelist yet.
+| Query      | Description                                                              |
+| ---------- | ------------------------------------------------------------------------- |
+| `redirect` | Optional UI path to land on after sign-in, e.g. `/repositories/3?x=1`     |
+
+`redirect` is stored in the session alongside `state`, so the callback returns the user to the
+page they wanted. It must start with `/`, contain no `//`, and be at most 2048 bytes. A missing or
+invalid value falls back to `/` instead of failing: the endpoint is a full-page navigation, so an
+error body would strand the user on a JSON page. There is deliberately no whitelist of UI paths:
+the origin always comes from `FRONTEND_URL`, so a path that passes the check cannot leave it, and a
+server-side copy of the UI routes would drift. Arbitrary URLs are never accepted (open-redirect
+risk).
 
 **`GET /api/auth/google/callback`** exchanges `code`, verifies `state` (single-use — read once
 from the session, which clears it), loads-or-creates the user by Google ID, regenerates the
-session ID (anti-fixation), and redirects to `FRONTEND_URL` + the stored redirect path.
+session ID (anti-fixation), and redirects to `FRONTEND_URL` + the stored redirect path (`/` when
+none was stored). The path is checked again here as a backstop.
 
 | Query   | Description                          |
 | ------- | ------------------------------------- |

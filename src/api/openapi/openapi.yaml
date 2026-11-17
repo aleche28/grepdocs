@@ -57,9 +57,24 @@ paths:
       operationId: googleLogin
       summary: Start Google sign-in
       description: |
-        Stores a single-use OAuth state token in the session and redirects to Google's consent
-        screen. Open it in a browser tab: "Try it out" cannot follow a cross-origin redirect.
+        Stores a single-use OAuth state token and the UI path to return to in the session, and
+        redirects to Google's consent screen. After sign-in, the callback redirects to
+        `FRONTEND_URL` + that path. Open it in a browser tab: "Try it out" cannot follow a
+        cross-origin redirect.
       security: []
+      parameters:
+        - name: redirect
+          in: query
+          required: false
+          description: |
+            UI path to land on after sign-in, such as `/repositories/3`. It must start with `/`,
+            contain no `//`, and be at most 2048 bytes; a missing or invalid value falls back to
+            `/` rather than failing the sign-in.
+          schema:
+            type: string
+            default: /
+            maxLength: 2048
+          example: /settings/accounts?linked=github
       responses:
         "307":
           $ref: "#/components/responses/Redirect"
@@ -73,7 +88,8 @@ paths:
       summary: Google OAuth callback
       description: |
         Called by Google, not by clients. Verifies the state token, exchanges the code, upserts
-        the user, regenerates the session ID, and redirects to `FRONTEND_URL`.
+        the user, regenerates the session ID, and redirects to `FRONTEND_URL` + the path stored
+        at login (`/` by default).
       security: []
       parameters:
         - $ref: "#/components/parameters/OAuthState"
@@ -115,6 +131,8 @@ paths:
           $ref: "#/components/responses/NotAuthenticated"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
 
   /accounts:
     get:
