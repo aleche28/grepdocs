@@ -194,6 +194,11 @@ React + TypeScript, built with Vite, React Router for routes, TanStack Query for
   navigation can follow the redirect to Google. Logout calls `queryClient.clear()` so the next user
   in the tab sees none of the previous one's data. A redirect path read from the URL goes through
   `safeRedirectPath` before any client-side navigation.
+- `AppLayout` is also the app shell (navigation, current user, sign out). Pages show a failed API
+  call with `ApiErrorMessage` (`src/components/`), never by hand: it shows the envelope's message,
+  offers a retry, and renders nothing for `not_authenticated`, which the guard handles. Errors that
+  need a page-specific action (`app_not_installed`'s `install_url`, `rate_limited`'s
+  `retryAfter`) are handled by that page.
 - Formatting is Prettier (no semicolons, single quotes), linting ESLint. Run `make ui-fmt`.
 
 ### Git providers
