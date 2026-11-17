@@ -1,9 +1,11 @@
 package routers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"grepdocs/api/dal"
@@ -40,8 +42,12 @@ func (h *UserHandler) getAuthenticatedUser(w http.ResponseWriter, r *http.Reques
 	q := dal.New(h.dbPool)
 
 	user, err := q.GetUserById(r.Context(), uid)
-	if err != nil {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
 		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "User not found")
+		return
+	case err != nil:
+		httpx.WriteInternalError(w, err)
 		return
 	}
 

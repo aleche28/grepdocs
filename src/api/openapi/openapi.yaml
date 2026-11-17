@@ -131,6 +131,8 @@ paths:
           $ref: "#/components/responses/NotAuthenticated"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
 
   /accounts:
     get:
