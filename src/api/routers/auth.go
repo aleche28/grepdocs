@@ -47,8 +47,11 @@ func AuthRoutes(config *oauth2.Config, pool *pgxpool.Pool, sm *session.SessionMa
 
 // googleLogin initiates the Google OAuth flow
 func (h *AuthHandler) googleLogin(w http.ResponseWriter, r *http.Request) {
-	// TODO: here add the option to specify the redirect URL as a query parameter,
-	// and validate it against a whitelist of allowed URLs to prevent open redirect vulnerabilities
+	redirectPath := r.URL.Query().Get("redirect")
+	if !isValidRedirectPath(redirectPath) {
+		redirectPath = "/"
+	}
+
 	// Generate a random state token for CSRF protection
 	state, err := generateStateToken()
 	if err != nil {
@@ -59,7 +62,7 @@ func (h *AuthHandler) googleLogin(w http.ResponseWriter, r *http.Request) {
 	// Store state in session for verification in callback
 	sess, _ := session.GetSession(h.sessionMgr, r)
 	sess.SetOAuthStateToken(state)
-	sess.SetUIRedirectPage("/")
+	sess.SetUIRedirectPage(redirectPath)
 
 	// offline to get a refresh token for long-term access
 	url := h.oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline)
@@ -128,7 +131,7 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 
 	redirectPath := sess.GetUIRedirectPage()
 	if !isValidRedirectPath(redirectPath) {
-		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Invalid UI redirect path: "+redirectPath)
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeBadRequest, "Invalid UI redirect path")
 		return
 	}
 
@@ -199,7 +202,12 @@ func fetchGoogleUserInfo(ctx context.Context, accessToken string) (*models.Googl
 	return &userInfo, nil
 }
 
+// maxRedirectPathLen bounds the path stored in the session, which any anonymous visitor can set.
+const maxRedirectPathLen = 2048
+
+// isValidRedirectPath reports whether path is safe to append to FRONTEND_URL. No whitelist is
+// needed: the origin always comes from FRONTEND_URL, and a path that starts with / and has no //
+// cannot replace it.
 func isValidRedirectPath(path string) bool {
-	// Must start with / and not contain //
-	return strings.HasPrefix(path, "/") && !strings.Contains(path, "//")
+	return len(path) <= maxRedirectPathLen && strings.HasPrefix(path, "/") && !strings.Contains(path, "//")
 }
