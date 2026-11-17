@@ -1,7 +1,8 @@
 import { isRouteErrorResponse, Link, useRouteError } from 'react-router'
 
 // Shown when rendering a page throws, instead of a blank screen. API errors
-// are handled by the pages themselves (#66); this is the last resort.
+// are shown by the pages themselves, with ApiErrorMessage; this is the last
+// resort.
 export function RouteErrorPage() {
   const error = useRouteError()
   console.error(error)

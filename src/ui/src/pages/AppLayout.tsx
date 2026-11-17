@@ -1,15 +1,22 @@
-import { createPath, Navigate, Outlet, useLocation } from 'react-router'
+import {
+  createPath,
+  Link,
+  Navigate,
+  NavLink,
+  Outlet,
+  useLocation,
+} from 'react-router'
 import {
   isNotAuthenticated,
   loginPath,
   useCurrentUser,
   useLogout,
 } from '../api/auth.ts'
+import { ApiErrorMessage } from '../components/ApiErrorMessage.tsx'
 
-// The auth guard for every page under it: nothing renders until
+// The auth guard and app shell for every page under it: nothing renders until
 // GET /users/me says who is signed in, and a signed-out user goes to the login
-// page, which brings them back here afterwards. The navigation shell (#66)
-// replaces the minimal header.
+// page, which brings them back here afterwards.
 export function AppLayout() {
   const location = useLocation()
   const { data: user, error, refetch } = useCurrentUser()
@@ -25,10 +32,11 @@ export function AppLayout() {
     if (error) {
       return (
         <main>
-          <p role="alert">Could not load your session: {error.message}</p>
-          <button type="button" onClick={() => void refetch()}>
-            Try again
-          </button>
+          <ApiErrorMessage
+            error={error}
+            title="Could not load your session"
+            onRetry={() => void refetch()}
+          />
         </main>
       )
     }
@@ -41,20 +49,31 @@ export function AppLayout() {
 
   return (
     <>
-      <header>
-        <span>{user.fullname || user.email}</span>{' '}
-        <button
-          type="button"
-          onClick={() => logout.mutate()}
-          disabled={logout.isPending}
-        >
-          Sign out
-        </button>
-        {logout.error && (
-          <p role="alert">Could not sign out: {logout.error.message}</p>
-        )}
+      <header className="app-header">
+        <Link to="/" className="app-name">
+          GrepDocs
+        </Link>
+        {/* No `end`: a NavLink is also active below its path, so Repositories
+            stays highlighted on a repository's documents and the track page. */}
+        <nav aria-label="Main">
+          <NavLink to="/repositories">Repositories</NavLink>
+          <NavLink to="/settings/accounts">Accounts</NavLink>
+        </nav>
+        <div className="app-user">
+          <span>{user.fullname || user.email}</span>
+          <button
+            type="button"
+            onClick={() => logout.mutate()}
+            disabled={logout.isPending}
+          >
+            Sign out
+          </button>
+        </div>
       </header>
       <main>
+        {logout.error && (
+          <ApiErrorMessage error={logout.error} title="Could not sign out" />
+        )}
         <Outlet />
       </main>
     </>
