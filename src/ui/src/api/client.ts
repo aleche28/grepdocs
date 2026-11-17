@@ -46,6 +46,12 @@ export interface ApiRequestInit extends Omit<RequestInit, 'body'> {
   json?: unknown
 }
 
+// The URL of an API path, for the few places that cannot use apiFetch, such
+// as a link the browser follows to start a redirect flow.
+export function apiUrl(path: string): string {
+  return `/api${path}`
+}
+
 // Fetches a JSON endpoint under /api. Resolves to undefined on 204.
 export async function apiFetch<T>(
   path: string,
@@ -81,7 +87,7 @@ async function request(
 
   let res: Response
   try {
-    res = await fetch(`/api${path}`, {
+    res = await fetch(apiUrl(path), {
       ...init,
       headers: reqHeaders,
       body: json === undefined ? undefined : JSON.stringify(json),

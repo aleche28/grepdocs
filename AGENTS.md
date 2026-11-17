@@ -185,6 +185,15 @@ React + TypeScript, built with Vite, React Router for routes, TanStack Query for
 - Routes are in `src/router.tsx`, one component per route in `src/pages/`. Pages that need a
   signed-in user sit under the `AppLayout` route. `/settings/accounts` is fixed by the API, which
   redirects there after linking an account.
+- Auth (`src/api/auth.ts`): `AppLayout` is the guard. It renders nothing until the shared
+  `useCurrentUser()` query (`GET /users/me`) resolves, and sends a `not_authenticated` user to
+  `/login?redirect=<path>`; any other error shows a retry, never the login page. Any query or
+  mutation that fails with `not_authenticated` refetches that query (`queryClient.ts`), so a
+  session that expires mid-use also ends on the login page. Signing in is a plain link to
+  `apiUrl('/auth/google/login')`, the one deliberate exception to `apiFetch`: only a full-page
+  navigation can follow the redirect to Google. Logout calls `queryClient.clear()` so the next user
+  in the tab sees none of the previous one's data. A redirect path read from the URL goes through
+  `safeRedirectPath` before any client-side navigation.
 - Formatting is Prettier (no semicolons, single quotes), linting ESLint. Run `make ui-fmt`.
 
 ### Git providers
