@@ -162,12 +162,14 @@ Goal: the first usable product. A user signs in, links GitHub, tracks repositori
 browses and reads their documentation in a browser. This is the first point a real browser origin
 exists.
 
-Status: **document API + UI project setup + logout fix done** — `GET /documents`,
+Status: **document API + UI project setup + logout fix + UI sign-in done** — `GET /documents`,
 `GET /documents/{id}` and `/raw` are implemented, and `POST /auth/logout` ends the session. `src/ui`
 is a Vite + React + TypeScript app with routing (placeholder pages), an API client that reads the
 error envelope, a shared TanStack Query client, and its own CI job; locally it runs beside the API
-through the Vite dev-server proxy. Still open in this phase:
-the re-link flag (#63), CORS + rate limiting (#64), and the UI screens (#65–#71).
+through the Vite dev-server proxy. Signing in with Google returns the user to the page they wanted
+(`?redirect=` on `/auth/google/login`), an auth guard protects every signed-in page, and logout
+clears the client cache. Still open in this phase: the re-link flag (#63), CORS + rate limiting
+(#64), sending OAuth callback failures back to the UI (#119), and the UI screens (#66–#71).
 
 - **Document API (read only)**: `GET /documents` (metadata, filter by `repo_id`) and
   `GET /documents/{id}` + `/raw`, with the repository and branch the document comes from. No
@@ -179,7 +181,7 @@ the re-link flag (#63), CORS + rate limiting (#64), and the UI screens (#65–#7
 - **Logout that ends the session**: `POST /auth/logout` deletes the session from Redis and sends
   only the clearing cookie; a request-scoped `Destroyed` flag stops `Handle` from saving the
   session again or re-sending its cookie. **Done.**
-- **UI (`src/ui`, React)**: Google login with an auth guard and logout; app shell; linked
+- **UI (`src/ui`, React)**: Google login with an auth guard and logout (**done**); app shell; linked
   accounts (link, unlink, re-link, install-the-app link); track a repository (pick account and
   branch, filter repositories client-side, or a public repository by `owner/name`); repositories
   page with sync status, trigger and polling, branch and `auto_sync` changes, untrack; a
