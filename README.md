@@ -24,8 +24,9 @@ and `FRONTEND_URL` name them; if either is taken locally, forwarding fails inste
 another port. Postgres, Redis and pgAdmin are published by compose as usual. Do not also run
 `make run` or `make ui-dev` on the host at the same time.
 
-Run `claude` in the container's terminal and sign in once: its login and settings live in the
-`claude-config` volume, so rebuilding the container keeps them.
+Claude Code is available both as `claude` in the container's terminal and as the VS Code extension.
+Sign in once in either: they share their login and settings, which live in the `claude-config`
+volume, so rebuilding the container keeps them.
 
 The container and `make infra-up` share one compose project (`grepdocs`), so they use the same
 containers and the same database. GitHub Codespaces works through VS Code desktop, which forwards to

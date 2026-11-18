@@ -55,8 +55,9 @@ Below, `<host>` is the remote machine's name (with Tailscale's MagicDNS, its mac
 2. **Dev Containers: Reopen in Container**. The container is built and runs on the remote machine;
    compose starts Postgres, Redis, and pgAdmin there too, since the `dev` service depends on them.
 3. In the container's terminal, as usual: `make migrate-up`, `make run`, and `make ui-dev`.
-4. For Claude Code, run `claude` in the container's terminal (`post-create.sh` installs it). A
-   session started on your local machine only sees the local checkout, not the remote one.
+4. For Claude Code, run `claude` in the container's terminal or use the Claude Code extension; the
+   container installs both, and they share one login. A session started on your local machine only
+   sees the local checkout, not the remote one.
 
 ## What to know
 

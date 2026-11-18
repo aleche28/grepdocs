@@ -27,7 +27,12 @@
   "customizations": {
     "vscode": {
       // formatting settings come from .vscode/settings.json, shared with the host
-      "extensions": ["golang.go", "dbaeumer.vscode-eslint", "esbenp.prettier-vscode"]
+      "extensions": [
+        "golang.go",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "anthropic.claude-code"
+      ]
     }
   }
 }

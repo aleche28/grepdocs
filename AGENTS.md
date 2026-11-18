@@ -77,7 +77,10 @@ Dev container rules worth preserving:
 - `devcontainer-lock.json` pins the features by digest; Dependabot updates it with the features.
 - Claude Code is installed by `post-create.sh` and keeps its state in the `claude-config` volume
   through `CLAUDE_CONFIG_DIR`; the Dockerfile creates `/home/vscode/.claude` so the volume starts
-  owned by `vscode`, like the Go cache volumes.
+  owned by `vscode`, like the Go cache volumes. The `anthropic.claude-code` extension shares that
+  directory, so its login survives a rebuild too. Keep the native installer rather than the
+  `claude-code` dev container feature: the feature needs npm at build time, when the image has
+  only nvm, and would install a second, outdated Node (details in `post-create.sh`).
 - The image has no Docker CLI or socket on purpose: it keeps agents running inside the container away
   from the host's Docker daemon. Run `make infra-*` on the host.
 Health check: <http://localhost:3000/api/ping> returns `pong`.
