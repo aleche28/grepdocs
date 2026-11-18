@@ -9,7 +9,7 @@
 
   "features": {
     // nvm only: post-create.sh installs the Node version in src/ui/.nvmrc, the file CI reads
-    "ghcr.io/devcontainers/features/node:1": { "version": "none" },
+    "ghcr.io/devcontainers/features/node:2": { "version": "none" },
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
 
