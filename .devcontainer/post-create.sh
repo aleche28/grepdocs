@@ -17,3 +17,7 @@ set -u
 make env
 (cd src/api && go mod download)
 make ui-install
+
+# Claude Code, from the native installer: it needs no Node and updates itself, so it is not pinned
+# like the Dockerfile's tools. A rebuild reinstalls it; the login survives in the claude-config volume.
+curl -fsSL https://claude.ai/install.sh | bash

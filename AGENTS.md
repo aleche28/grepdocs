@@ -75,6 +75,9 @@ Dev container rules worth preserving:
   `::1`, and the forwarded port connects over IPv4, so the UI hangs. Servers in the container must
   listen on IPv4 loopback or on all addresses (the API listens on `:3000`).
 - `devcontainer-lock.json` pins the features by digest; Dependabot updates it with the features.
+- Claude Code is installed by `post-create.sh` and keeps its state in the `claude-config` volume
+  through `CLAUDE_CONFIG_DIR`; the Dockerfile creates `/home/vscode/.claude` so the volume starts
+  owned by `vscode`, like the Go cache volumes.
 - The image has no Docker CLI or socket on purpose: it keeps agents running inside the container away
   from the host's Docker daemon. Run `make infra-*` on the host.
 Health check: <http://localhost:3000/api/ping> returns `pong`.

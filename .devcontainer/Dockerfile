@@ -19,8 +19,11 @@ ENV GOPATH=/home/vscode/go
 ENV PATH=/usr/local/go/bin:${GOPATH}/bin:${PATH}
 
 # Created here, owned by the user, so the named volumes mounted on them start with that owner.
-RUN mkdir -p /home/vscode/go/pkg/mod /home/vscode/.cache/go-build \
-    && chown -R vscode:vscode /home/vscode/go /home/vscode/.cache
+RUN mkdir -p /home/vscode/go/pkg/mod /home/vscode/.cache/go-build /home/vscode/.claude \
+    && chown -R vscode:vscode /home/vscode/go /home/vscode/.cache /home/vscode/.claude
+
+# Claude Code's native installer (post-create.sh) puts the binary here
+ENV PATH=/home/vscode/.local/bin:${PATH}
 
 # Release binaries, checked against the sha256 of each linux archive. Bump a version together with
 # both of its checksums. This is the single place these versions live: CI reads the golangci-lint

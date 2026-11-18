@@ -13,7 +13,7 @@ Containers extension (or any client that reads `devcontainer.json`).
 
 1. Open the repo in VS Code and run **Dev Containers: Reopen in Container**. The first build takes a
    few minutes; `.devcontainer/post-create.sh` then installs Node (from `src/ui/.nvmrc`), creates
-   `src/api/.env` if missing, and installs the Go and UI dependencies.
+   `src/api/.env` if missing, installs the Go and UI dependencies, and installs Claude Code.
 2. Fill in `src/api/.env` (see step 2 of the quick start below). Leave `DATABASE_URL` and
    `REDIS_ADDR` as they are: inside the container they are overridden to reach the `postgres` and
    `redis` services by name.
@@ -23,6 +23,9 @@ Ports 3000 and 5173 are forwarded to the same ports on your machine, because the
 and `FRONTEND_URL` name them; if either is taken locally, forwarding fails instead of picking
 another port. Postgres, Redis and pgAdmin are published by compose as usual. Do not also run
 `make run` or `make ui-dev` on the host at the same time.
+
+Run `claude` in the container's terminal and sign in once: its login and settings live in the
+`claude-config` volume, so rebuilding the container keeps them.
 
 The container and `make infra-up` share one compose project (`grepdocs`), so they use the same
 containers and the same database. GitHub Codespaces works through VS Code desktop, which forwards to
