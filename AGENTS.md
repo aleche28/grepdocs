@@ -71,6 +71,10 @@ Dev container rules worth preserving:
   `redis`). This relies on `godotenv.Load` not overriding set variables and on the Makefile's
   `DATABASE_URL ?=`; switching to `godotenv.Overload` would break it.
 - Ports 3000 and 5173 use `requireLocalPort`: the OAuth redirect URLs and `FRONTEND_URL` name them.
+- Vite binds `127.0.0.1` (`vite.config.ts`), not the default `localhost`: Node resolves that to
+  `::1`, and the forwarded port connects over IPv4, so the UI hangs. Servers in the container must
+  listen on IPv4 loopback or on all addresses (the API listens on `:3000`).
+- `devcontainer-lock.json` pins the features by digest; Dependabot updates it with the features.
 - The image has no Docker CLI or socket on purpose: it keeps agents running inside the container away
   from the host's Docker daemon. Run `make infra-*` on the host.
 Health check: <http://localhost:3000/api/ping> returns `pong`.
