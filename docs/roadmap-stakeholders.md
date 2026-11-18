@@ -46,6 +46,9 @@ reading documentation; editing, search, and groups arrive afterwards, each with 
   later; GitHub is the only one supported for now.
 - **Automatic updates.** Keeping documentation up to date without asking, for example whenever the
   repository changes.
+- **Ready-to-deploy package.** GrepDocs as a single package that can run on a server or a cloud
+  platform, with the health checks and logs those platforms expect, built and security-checked
+  automatically with every change.
 - **Signing in with more than one identity.** For example email and GitHub, merged into one
   account. Suggested by the community and under consideration.
 - **Sharing an account across multiple users.** Each linked account belongs to one person; team or

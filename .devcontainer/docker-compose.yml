@@ -1,0 +1,32 @@
+# Layered on the root docker-compose.yml by devcontainer.json. Relative paths resolve against the
+# first file's folder (the repo root), not this one.
+services:
+
+  dev:
+    build:
+      context: .devcontainer
+    # the container only hosts the editor session; the API and the UI are started from its terminal
+    command: sleep infinity
+    volumes:
+      - .:/workspaces/grepdocs:cached
+      # Linux node_modules and Go caches in volumes: they must not mix with the host's (native
+      # binaries differ), and bind-mounted folders this large are slow on macOS
+      - ui-node-modules:/workspaces/grepdocs/src/ui/node_modules
+      - go-mod:/home/vscode/go/pkg/mod
+      - go-build:/home/vscode/.cache/go-build
+    # Inside the compose network the services are reached by name, not localhost. godotenv does not
+    # override variables that are already set, so these win over src/api/.env (and the Makefile's
+    # DATABASE_URL ?= defers to them too).
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-grepdocs}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-grepdocs}?sslmode=disable
+      REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  ui-node-modules:
+  go-mod:
+  go-build:

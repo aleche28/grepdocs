@@ -267,6 +267,11 @@ These live in the "Later" milestone.
   push webhooks.
 - **Several sign-in identities per user** (e.g. email + GitHub merged into one account) — an
   external proposal, not yet planned.
+- **Container-native deployment** — a distroless production image (#122) that serves the UI build
+  from the API binary (#123), a readiness endpoint next to `/api/ping` (#124), structured JSON logs
+  with `slog` (#125), and CI that builds, scans and pushes the image to GHCR (#126). #124 and #125
+  stand alone; #126 needs #122. Local development already runs in the dev container
+  (`.devcontainer/`); no phase includes deployment yet (Phase 4 leaves it out).
 - **Multi-user / shared accounts** — out of scope. This roadmap's multi-account work is
   multiple accounts *per user*, not accounts shared across users; `docs/api.md` treats users as
   private with no collaboration model, and revisiting that is a bigger product decision than this

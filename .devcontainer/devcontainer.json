@@ -1,0 +1,33 @@
+// Dev container for GrepDocs: Go, Node, and every tool the Makefile and CI use, plus Postgres,
+// Redis and pgAdmin from the root docker-compose.yml. See "Dev container" in README.md.
+{
+  "name": "GrepDocs",
+  "dockerComposeFile": ["../docker-compose.yml", "docker-compose.yml"],
+  "service": "dev",
+  "workspaceFolder": "/workspaces/grepdocs",
+  "remoteUser": "vscode",
+
+  "features": {
+    // nvm only: post-create.sh installs the Node version in src/ui/.nvmrc, the file CI reads
+    "ghcr.io/devcontainers/features/node:1": { "version": "none" },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+
+  // The OAuth callbacks (GOOGLE_REDIRECT_URL, GITHUB_REDIRECT_URL) and FRONTEND_URL name
+  // localhost:3000 and localhost:5173, so both must be forwarded to the same local port: fail
+  // rather than silently pick another one. Postgres, Redis and pgAdmin are published by compose.
+  "forwardPorts": [3000, 5173],
+  "portsAttributes": {
+    "3000": { "label": "API", "requireLocalPort": true, "onAutoForward": "silent" },
+    "5173": { "label": "UI", "requireLocalPort": true, "onAutoForward": "notify" }
+  },
+
+  "customizations": {
+    "vscode": {
+      // formatting settings come from .vscode/settings.json, shared with the host
+      "extensions": ["golang.go", "dbaeumer.vscode-eslint", "esbenp.prettier-vscode"]
+    }
+  }
+}

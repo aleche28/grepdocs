@@ -48,20 +48,28 @@ jobs:
         with:
           go-version-file: src/api/go.mod
           cache-dependency-path: src/api/go.sum
+      # one version for CI and the dev container: the ARG in .devcontainer/Dockerfile
+      - name: golangci-lint version
+        id: golangci-lint-version
+        run: |
+          version=$(sed -n 's/^ARG GOLANGCI_LINT_VERSION=//p' .devcontainer/Dockerfile)
+          test -n "$version" || { echo "GOLANGCI_LINT_VERSION not found in .devcontainer/Dockerfile"; exit 1; }
+          echo "version=v${version}" >> "$GITHUB_OUTPUT"
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v2.15.0 # golangci-lint version
+          version: ${{ steps.golangci-lint-version.outputs.version }}
           working-directory: src/api
       # the release binary, not `go run`: compiling vacuum takes minutes on every run
+      # version and checksum from the ARGs in .devcontainer/Dockerfile, shared with the dev container
       - name: install vacuum
-        env:
-          VACUUM_SHA256: fd08ed9bb27f84c740008029ba992681046479ea5f745108ea3fd87d3988fd47 # linux_x86_64
         run: |
-          version=$(sed -n 's/^VACUUM_VERSION *:= *v//p' Makefile)
+          version=$(sed -n 's/^ARG VACUUM_VERSION=//p' .devcontainer/Dockerfile)
+          sha256=$(sed -n 's/^ARG VACUUM_SHA256_AMD64=//p' .devcontainer/Dockerfile)
+          test -n "$version" && test -n "$sha256" || { echo "VACUUM_VERSION or VACUUM_SHA256_AMD64 not found in .devcontainer/Dockerfile"; exit 1; }
           archive="vacuum_${version}_linux_x86_64.tar.gz"
           curl -fsSLo "$archive" "https://github.com/daveshanley/vacuum/releases/download/v${version}/${archive}"
-          echo "${VACUUM_SHA256}  ${archive}" | sha256sum -c -
+          echo "${sha256}  ${archive}" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/bin"
           tar -xzf "$archive" -C "$RUNNER_TEMP/bin" vacuum
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"

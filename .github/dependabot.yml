@@ -35,6 +35,42 @@ updates:
       prefix: chore
       include: scope
 
+  # FROM lines in the dev container's Dockerfile (the pinned tool ARGs are bumped by hand)
+  - package-ecosystem: docker
+    directory: /.devcontainer
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 3
+    commit-message:
+      prefix: chore
+      include: scope
+
+  # images in the root docker-compose.yml (Postgres, Redis, pgAdmin)
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 3
+    commit-message:
+      prefix: chore
+      include: scope
+
+  # features in .devcontainer/devcontainer.json
+  - package-ecosystem: devcontainers
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 3
+    commit-message:
+      prefix: chore
+      include: scope
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

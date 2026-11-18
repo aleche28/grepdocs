@@ -7,9 +7,9 @@ SPEC        := $(GO_DIR)/openapi/openapi.yaml
 
 # OpenAPI linter, run with `go run` rather than a go.mod tool directive: it requires a newer go
 # line than the API's and would add its dependencies to the API's module graph. Go caches the
-# binary after the first (slow) build. CI downloads the release binary instead and passes
-# VACUUM=vacuum; bump VACUUM_VERSION together with VACUUM_SHA256 in .github/workflows/ci.yml.
-VACUUM_VERSION := v0.39.3
+# binary after the first (slow) build. CI and the dev container use the release binary instead
+# (VACUUM=vacuum). The version, with the release checksums, lives in .devcontainer/Dockerfile.
+VACUUM_VERSION := v$(shell sed -n 's/^ARG VACUUM_VERSION=//p' .devcontainer/Dockerfile)
 VACUUM         ?= go run github.com/daveshanley/vacuum@$(VACUUM_VERSION)
 
 # The migration CLI needs a postgres:// URL, so it cannot consume the pgx
