@@ -37,7 +37,7 @@ services:
       - pgadmin:/var/lib/pgadmin
 
   redis:
-    image: redis:8.6-alpine
+    image: redis:8.10-alpine
     restart: unless-stopped
     ports:
       - "${REDIS_PORT:-6379}:6379"
