@@ -60,6 +60,19 @@ Makefile caveats:
 
 Prerequisites beyond Go and Docker: `golang-migrate`, `sqlc`, and `golangci-lint` on `PATH` (see
 README), and Node.js at the version in `src/ui/.nvmrc` for the UI. govulncheck needs no install: it is a `tool` directive in `go.mod`, run with `go tool`.
+The dev container (`.devcontainer/`) has all of them, at the versions pinned in its `Dockerfile`.
+
+Dev container rules worth preserving:
+
+- It layers `.devcontainer/docker-compose.yml` on the root `docker-compose.yml`, whose fixed
+  `name: grepdocs` makes the container and `make infra-up` share containers and volumes. Do not add
+  `container_name` back: fixed names break that sharing.
+- Inside it, `DATABASE_URL` and `REDIS_ADDR` are set by compose to the service names (`postgres`,
+  `redis`). This relies on `godotenv.Load` not overriding set variables and on the Makefile's
+  `DATABASE_URL ?=`; switching to `godotenv.Overload` would break it.
+- Ports 3000 and 5173 use `requireLocalPort`: the OAuth redirect URLs and `FRONTEND_URL` name them.
+- The image has no Docker CLI or socket on purpose: it keeps agents running inside the container away
+  from the host's Docker daemon. Run `make infra-*` on the host.
 Health check: <http://localhost:3000/api/ping> returns `pong`.
 
 Interactive API docs (Swagger UI) are at <http://localhost:3000/api/docs>, mounted only when `ENV`
@@ -67,7 +80,9 @@ is not `production`. Sign in first at <http://localhost:3000/api/auth/google/log
 the page carry the browser's session cookie, so no cookie copying is needed.
 
 Infra (`make infra-up`) starts Postgres on `5432`, Redis on `6379`, pgAdmin on `8080`. The server
-needs both Postgres and Redis, and exits at startup if `DATABASE_URL` is unset.
+needs both Postgres and Redis, and exits at startup if `DATABASE_URL` is unset. Their data lives in
+named volumes (`grepdocs_pgdata`, `grepdocs_cache`): `make infra-down` keeps it, `docker compose
+down -v` deletes it. Postgres 18+ images mount the volume at `/var/lib/postgresql`, not `.../data`.
 
 ## Architecture
 
@@ -308,17 +323,25 @@ Rules worth preserving:
 - After any `go get`, check the `go` line in the diff: a dependency (or a `go tool` dependency,
   which shares the module graph) requiring a newer Go raises it silently.
 - Versions: govulncheck is pinned by the `tool` directive in `go.mod`, UI packages by
-  `package-lock.json`, and actions by commit SHA with a `# vX.Y.Z` comment; Dependabot
-  (`.github/dependabot.yml`) bumps all three weekly. The
-  golangci-lint version is the `version:` input in `ci.yml`: Dependabot does not touch it, so bump
-  it by hand together with your local install.
+  `package-lock.json`, actions by commit SHA with a `# vX.Y.Z` comment, and images by tag in
+  `docker-compose.yml` and the `FROM` lines of `.devcontainer/Dockerfile`; Dependabot
+  (`.github/dependabot.yml`) bumps all of them, and the dev container features, weekly.
+- golangci-lint, sqlc, golang-migrate and vacuum are pinned by the `ARG`s in
+  `.devcontainer/Dockerfile`, each with the sha256 of its linux amd64 and arm64 release archive. It
+  is the single place for these versions: CI reads `GOLANGCI_LINT_VERSION`, `VACUUM_VERSION` and
+  `VACUUM_SHA256_AMD64` from it, and the Makefile reads `VACUUM_VERSION`. Dependabot does not touch
+  them: bump a version together with both checksums (take them from the release's checksum file, or
+  `shasum -a 256` the archives; sqlc publishes none), and update your local golangci-lint too. Keep
+  `SQLC_VERSION` equal to the version in the header of the generated `src/api/dal` files.
+- The Dockerfile's `golang` tag should follow the `toolchain` line in `go.mod`. A mismatch is not an
+  error (`GOTOOLCHAIN` stays `auto`, so the newer one is downloaded), only slower.
 - The OpenAPI linter is vacuum, run with `go run …@$(VACUUM_VERSION)` from the Makefile (no install
   needed). It is not a `tool` directive on purpose: it requires a newer `go` line than the API's
   and would add its dependencies to the API's module graph. CI downloads the release binary
-  instead (compiling it took ~5 min per run), checks it against `VACUUM_SHA256` in `ci.yml`, and
-  calls `make openapi-lint VACUUM=vacuum`. Dependabot does not touch it: bump `VACUUM_VERSION` in
-  the Makefile and `VACUUM_SHA256` (the `linux_x86_64` line of the release's `checksums.txt`)
-  together; a mismatch fails the install step. Warnings fail the build (`--fail-severity warn`): fix the spec rather
+  instead (compiling it took ~5 min per run), checks it against `VACUUM_SHA256_AMD64` from
+  `.devcontainer/Dockerfile`, and calls `make openapi-lint VACUUM=vacuum`; the dev container image
+  has the same binary and sets `VACUUM=vacuum`. Bump it in the Dockerfile (see the rule above); a
+  checksum mismatch fails the install step. Warnings fail the build (`--fail-severity warn`): fix the spec rather
   than disabling a rule. The ruleset is `src/api/openapi/vacuum.yaml` (recommended rules); it turns
   off only rules that conflict with a project convention, each with its reason. Locally, the first
   run downloads and compiles vacuum (slow); Go caches the binary, so later runs are fast.

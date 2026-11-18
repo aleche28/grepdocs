@@ -1,35 +1,56 @@
+# Local infra. The project name is fixed so `make infra-up` on the host and the dev container
+# (.devcontainer/docker-compose.yml, layered on this file) share the same containers and volumes.
+name: grepdocs
+
 services:
 
   postgres:
-    image: postgres
-    container_name: postgres
-    restart: always
+    # keep the Debian (glibc) variant: the cluster's locale and collations depend on the libc
+    image: postgres:18.7-trixie
+    restart: unless-stopped
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-grepdocs}
       POSTGRES_USER: ${POSTGRES_USER:-grepdocs}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+    volumes:
+      # Postgres 18+ images keep data in a per-version folder under this path, not in .../data
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
 
   pgadmin:
-    image: dpage/pgadmin4
-    container_name: pgadmin
-    restart: always
+    image: dpage/pgadmin4:9.19
+    restart: unless-stopped
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
     ports:
       - "8080:80"
+    volumes:
+      # keeps registered servers and preferences across container recreation
+      - pgadmin:/var/lib/pgadmin
 
   redis:
     image: redis:8.6-alpine
-    container_name: redis
-    restart: always
+    restart: unless-stopped
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - cache:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
+# `make infra-down` keeps these; `docker compose down -v` deletes them (and the data in them).
 volumes:
+  pgdata:
+  pgadmin:
   cache:
-    driver: local
