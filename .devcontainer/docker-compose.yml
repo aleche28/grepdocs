@@ -14,12 +14,16 @@ services:
       - ui-node-modules:/workspaces/grepdocs/src/ui/node_modules
       - go-mod:/home/vscode/go/pkg/mod
       - go-build:/home/vscode/.cache/go-build
+      # Claude Code's login, settings and history, kept across rebuilds (see CLAUDE_CONFIG_DIR)
+      - claude-config:/home/vscode/.claude
     # Inside the compose network the services are reached by name, not localhost. godotenv does not
     # override variables that are already set, so these win over src/api/.env (and the Makefile's
     # DATABASE_URL ?= defers to them too).
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-grepdocs}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-grepdocs}?sslmode=disable
       REDIS_ADDR: redis:6379
+      # also moves ~/.claude.json into the volume, which otherwise sits outside ~/.claude
+      CLAUDE_CONFIG_DIR: /home/vscode/.claude
     depends_on:
       postgres:
         condition: service_healthy
@@ -30,3 +34,4 @@ volumes:
   ui-node-modules:
   go-mod:
   go-build:
+  claude-config:

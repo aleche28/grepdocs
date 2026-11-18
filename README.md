@@ -13,7 +13,7 @@ Containers extension (or any client that reads `devcontainer.json`).
 
 1. Open the repo in VS Code and run **Dev Containers: Reopen in Container**. The first build takes a
    few minutes; `.devcontainer/post-create.sh` then installs Node (from `src/ui/.nvmrc`), creates
-   `src/api/.env` if missing, and installs the Go and UI dependencies.
+   `src/api/.env` if missing, installs the Go and UI dependencies, and installs Claude Code.
 2. Fill in `src/api/.env` (see step 2 of the quick start below). Leave `DATABASE_URL` and
    `REDIS_ADDR` as they are: inside the container they are overridden to reach the `postgres` and
    `redis` services by name.
@@ -24,9 +24,16 @@ and `FRONTEND_URL` name them; if either is taken locally, forwarding fails inste
 another port. Postgres, Redis and pgAdmin are published by compose as usual. Do not also run
 `make run` or `make ui-dev` on the host at the same time.
 
+Claude Code is available both as `claude` in the container's terminal and as the VS Code extension.
+Sign in once in either: they share their login and settings, which live in the `claude-config`
+volume, so rebuilding the container keeps them.
+
 The container and `make infra-up` share one compose project (`grepdocs`), so they use the same
 containers and the same database. GitHub Codespaces works through VS Code desktop, which forwards to
 `localhost`; the browser-based editor uses `*.app.github.dev` URLs, which the OAuth apps do not allow.
+
+To run the container on a remote Linux machine over SSH while editing locally, see
+`docs/howto/remote-dev-container.md`.
 
 To work on the host instead, install the prerequisites below.
 
@@ -176,6 +183,7 @@ docs/                  # Requirements, user stories, how-to guides
 - `docs/howto/setup-github-app.md` — GitHub App registration, credentials, and installation
 - `docs/howto/database-migrations.md` — golang-migrate workflow
 - `docs/howto/use-sqlc.md` — sqlc schema/query generation
+- `docs/howto/remote-dev-container.md` — dev container on a remote machine over SSH
 
 ## Attribution & Credits
 

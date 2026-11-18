@@ -75,6 +75,12 @@ Dev container rules worth preserving:
   `::1`, and the forwarded port connects over IPv4, so the UI hangs. Servers in the container must
   listen on IPv4 loopback or on all addresses (the API listens on `:3000`).
 - `devcontainer-lock.json` pins the features by digest; Dependabot updates it with the features.
+- Claude Code is installed by `post-create.sh` and keeps its state in the `claude-config` volume
+  through `CLAUDE_CONFIG_DIR`; the Dockerfile creates `/home/vscode/.claude` so the volume starts
+  owned by `vscode`, like the Go cache volumes. The `anthropic.claude-code` extension shares that
+  directory, so its login survives a rebuild too. Keep the native installer rather than the
+  `claude-code` dev container feature: the feature needs npm at build time, when the image has
+  only nvm, and would install a second, outdated Node (details in `post-create.sh`).
 - The image has no Docker CLI or socket on purpose: it keeps agents running inside the container away
   from the host's Docker daemon. Run `make infra-*` on the host.
 Health check: <http://localhost:3000/api/ping> returns `pong`.
@@ -395,7 +401,8 @@ under `.agents/skills`, never inside `.claude/skills`.
   query and guard, the invariants that keep concurrent syncs safe, and when a repository stays busy.
   Update it whenever a sync query or its caller changes.
 - `docs/requirements.md`, `docs/user-stories.md` — product spec.
-- `docs/howto/` — Google OAuth setup, GitHub App setup, golang-migrate workflow, sqlc usage.
+- `docs/howto/` — Google OAuth setup, GitHub App setup, golang-migrate workflow, sqlc usage,
+  running the dev container on a remote machine over SSH.
 - `docs/roadmap.md` — phased build-out plan (not dated), interleaving new features with the open
   `tech-debt` issues each phase depends on or exposes. Update it as phases complete or scope shifts.
   Each phase is a GitHub milestone of the same name whose issues are its tasks; user stories are
