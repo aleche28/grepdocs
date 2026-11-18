@@ -161,7 +161,8 @@ provider-scoped routes.
   "linked_at": "2026-03-02T10:11:12Z",
   "last_refreshed_at": "2026-03-02T10:11:12Z",
   "token_expires_at": "2026-03-02T18:11:12Z",
-  "refresh_token_expires_at": "2026-09-02T10:11:12Z"
+  "refresh_token_expires_at": "2026-09-02T10:11:12Z",
+  "needs_relink": false
 }
 ```
 
@@ -178,8 +179,16 @@ be refreshed: the refresh token is missing or past `refresh_token_expires_at`, o
 rejects it (e.g. the user revoked the app). A rejected refresh clears the stored tokens, so later
 requests fail immediately with `403` instead of contacting the provider again. A refresh that fails
 for any other reason (provider outage, network error) returns `500 internal` and the account stays
-usable; retrying later is enough. `GET /api/accounts` does not yet flag accounts that need
-re-linking.
+usable; retrying later is enough.
+
+`needs_relink` is `true` when the account must be re-linked before it can be used again: the
+access token is missing or expires within 5 minutes, and it cannot be refreshed (no refresh token,
+one past `refresh_token_expires_at`, tokens cleared after a rejected refresh, or a provider that
+does not refresh tokens). These are exactly the cases where the server refuses to use the account
+without contacting the provider. The flag is computed from the stored tokens, so it cannot see a
+token the user revoked at the provider while it was still valid: requests that use it fail with
+`403 forbidden`, and the flag turns `true` only once the token has expired and a later request has
+had its refresh rejected. Clients should offer re-linking on those `403`s too, not only on the flag.
 
 `DELETE /api/accounts/{id}` unlinks an account and returns `200` with
 `{"message": "External account unlinked successfully"}`. An unknown `id` and another user's account

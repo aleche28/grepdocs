@@ -849,6 +849,7 @@ components:
         - token_expires_at
         - refresh_token_expires_at
         - label
+        - needs_relink
       properties:
         id:
           type: integer
@@ -874,6 +875,15 @@ components:
         label:
           type: string
           description: User-chosen name to tell accounts apart; empty by default.
+        needs_relink:
+          type: boolean
+          description: >-
+            True when the account must be re-linked before it can be used again: the access
+            token is missing or expires within 5 minutes, and it cannot be refreshed (no refresh
+            token, one past `refresh_token_expires_at`, tokens cleared after the provider rejected
+            a refresh, or a provider that does not refresh tokens). Computed from the stored
+            tokens without contacting the provider, so a token revoked at the provider while
+            still valid is not flagged; requests that use it fail with `403 forbidden`.
 
     ProviderRepository:
       type: object

@@ -177,6 +177,124 @@ func TestCanRefresh(t *testing.T) {
 	}
 }
 
+func TestNeedsReauth(t *testing.T) {
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	at := func(d time.Duration) *time.Time { ts := now.Add(d); return &ts }
+
+	// NeedsReauth never decrypts, so any non-empty value stands for a token. The
+	// "refreshing" provider can refresh tokens, "plain" cannot, and "nope" is not
+	// registered.
+	svc := New(nil, nil, providers.NewRegistry(&fakeRefreshRevoker{fakeRevoker: &fakeRevoker{}}, plainProvider{}))
+	const tok = "v1:x"
+
+	tests := []struct {
+		name    string
+		account dal.ExternalGitAccount
+		want    bool
+	}{
+		// ClearExternalGitAccountTokens keeps the expiries, so a cleared account can
+		// still show a refresh token expiry in the future
+		{
+			name: "tokens cleared after a rejected refresh",
+			account: dal.ExternalGitAccount{
+				Provider: "refreshing", TokenExpiresAt: at(-time.Minute), RefreshTokenExpiresAt: at(30 * 24 * time.Hour),
+			},
+			want: true,
+		},
+		{
+			name: "live access token, live refresh token",
+			account: dal.ExternalGitAccount{
+				Provider: "refreshing", AccessToken: tok, TokenExpiresAt: at(time.Hour),
+				RefreshToken: tok, RefreshTokenExpiresAt: at(time.Hour),
+			},
+			want: false,
+		},
+		{
+			name:    "live access token, no refresh token",
+			account: dal.ExternalGitAccount{Provider: "refreshing", AccessToken: tok, TokenExpiresAt: at(time.Hour)},
+			want:    false,
+		},
+		// a GitHub App with token expiration opted out
+		{
+			name:    "access token without expiry, no refresh token",
+			account: dal.ExternalGitAccount{Provider: "refreshing", AccessToken: tok},
+			want:    false,
+		},
+		{
+			name: "expired access token, valid refresh token",
+			account: dal.ExternalGitAccount{
+				Provider: "refreshing", AccessToken: tok, TokenExpiresAt: at(-time.Hour),
+				RefreshToken: tok, RefreshTokenExpiresAt: at(time.Hour),
+			},
+			want: false,
+		},
+		{
+			name: "expired access token, refresh token without expiry",
+			account: dal.ExternalGitAccount{
+				Provider: "refreshing", AccessToken: tok, TokenExpiresAt: at(-time.Hour), RefreshToken: tok,
+			},
+			want: false,
+		},
+		{
+			name: "expired access token, expired refresh token",
+			account: dal.ExternalGitAccount{
+				Provider: "refreshing", AccessToken: tok, TokenExpiresAt: at(-time.Hour),
+				RefreshToken: tok, RefreshTokenExpiresAt: at(-time.Hour),
+			},
+			want: true,
+		},
+		{
+			name:    "expired access token, no refresh token",
+			account: dal.ExternalGitAccount{Provider: "refreshing", AccessToken: tok, TokenExpiresAt: at(-time.Hour)},
+			want:    true,
+		},
+		// still valid for 2 minutes, but ForAccount already refuses it: the flag follows ForAccount
+		{
+			name:    "inside the refresh margin, no refresh token",
+			account: dal.ExternalGitAccount{Provider: "refreshing", AccessToken: tok, TokenExpiresAt: at(2 * time.Minute)},
+			want:    true,
+		},
+		{
+			name: "inside the refresh margin, valid refresh token",
+			account: dal.ExternalGitAccount{
+				Provider: "refreshing", AccessToken: tok, TokenExpiresAt: at(2 * time.Minute),
+				RefreshToken: tok, RefreshTokenExpiresAt: at(time.Hour),
+			},
+			want: false,
+		},
+		// refresh() returns ErrReauthRequired when the provider cannot refresh
+		{
+			name: "provider cannot refresh, expired access token, valid refresh token",
+			account: dal.ExternalGitAccount{
+				Provider: "plain", AccessToken: tok, TokenExpiresAt: at(-time.Hour),
+				RefreshToken: tok, RefreshTokenExpiresAt: at(time.Hour),
+			},
+			want: true,
+		},
+		{
+			name:    "provider cannot refresh, live access token",
+			account: dal.ExternalGitAccount{Provider: "plain", AccessToken: tok, TokenExpiresAt: at(time.Hour)},
+			want:    false,
+		},
+		{
+			name: "unregistered provider, expired access token, valid refresh token",
+			account: dal.ExternalGitAccount{
+				Provider: "nope", AccessToken: tok, TokenExpiresAt: at(-time.Hour),
+				RefreshToken: tok, RefreshTokenExpiresAt: at(time.Hour),
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := svc.NeedsReauth(tt.account, now); got != tt.want {
+				t.Errorf("NeedsReauth() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // fakeRevoker is a registered provider that records Revoke calls; the embedded
 // interface is nil, so calling any other Provider method panics
 type fakeRevoker struct {
