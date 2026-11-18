@@ -398,7 +398,8 @@ under `.agents/skills`, never inside `.claude/skills`.
   query and guard, the invariants that keep concurrent syncs safe, and when a repository stays busy.
   Update it whenever a sync query or its caller changes.
 - `docs/requirements.md`, `docs/user-stories.md` — product spec.
-- `docs/howto/` — Google OAuth setup, GitHub App setup, golang-migrate workflow, sqlc usage.
+- `docs/howto/` — Google OAuth setup, GitHub App setup, golang-migrate workflow, sqlc usage,
+  running the dev container on a remote machine over SSH.
 - `docs/roadmap.md` — phased build-out plan (not dated), interleaving new features with the open
   `tech-debt` issues each phase depends on or exposes. Update it as phases complete or scope shifts.
   Each phase is a GitHub milestone of the same name whose issues are its tasks; user stories are

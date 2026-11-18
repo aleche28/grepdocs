@@ -31,6 +31,9 @@ The container and `make infra-up` share one compose project (`grepdocs`), so the
 containers and the same database. GitHub Codespaces works through VS Code desktop, which forwards to
 `localhost`; the browser-based editor uses `*.app.github.dev` URLs, which the OAuth apps do not allow.
 
+To run the container on a remote Linux machine over SSH while editing locally, see
+`docs/howto/remote-dev-container.md`.
+
 To work on the host instead, install the prerequisites below.
 
 ## Prerequisites
@@ -179,6 +182,7 @@ docs/                  # Requirements, user stories, how-to guides
 - `docs/howto/setup-github-app.md` — GitHub App registration, credentials, and installation
 - `docs/howto/database-migrations.md` — golang-migrate workflow
 - `docs/howto/use-sqlc.md` — sqlc schema/query generation
+- `docs/howto/remote-dev-container.md` — dev container on a remote machine over SSH
 
 ## Attribution & Credits
 
