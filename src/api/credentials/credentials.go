@@ -69,6 +69,25 @@ func (s *Service) ForAccount(ctx context.Context, account dal.ExternalGitAccount
 	return s.refresh(ctx, account.ID)
 }
 
+// NeedsReauth reports whether account must be re-linked, judged from its stored
+// tokens without contacting the provider: it mirrors the cases where ForAccount
+// returns ErrReauthRequired before calling the provider. The access token is
+// missing or expires within refreshMargin, and it cannot be refreshed: no
+// refresh token, an expired one, or a provider that does not refresh tokens. A
+// token revoked at the provider while still valid is not detected; only a
+// provider call reveals it.
+func (s *Service) NeedsReauth(account dal.ExternalGitAccount, now time.Time) bool {
+	if !needsRefresh(account, now) {
+		return false
+	}
+	// refresh() returns ErrReauthRequired for a provider that cannot refresh,
+	// even when a refresh token is stored
+	if _, ok := s.refresherFor(account.Provider); !ok {
+		return true
+	}
+	return !canRefresh(account, now)
+}
+
 // ForRepository returns the access token to use for provider calls on repo:
 // the token of its linked account, or of the user's single account for the
 // provider when a private repo has none. A public repo with no linked account

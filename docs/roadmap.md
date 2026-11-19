@@ -86,7 +86,7 @@ Status: **done** — the
 that `credentials.Service` refreshes and revokes. The sync engine, planned here at first, is now
 Phase 3. Known gaps carried forward: handler and locked-refresh tests need a DB seam (#94, #100,
 ongoing); a re-link racing a refresh can leave the rotated token unrevoked (accepted as rare);
-`GET /api/accounts` does not flag accounts that need re-linking (Phase 4).
+`GET /api/accounts` did not flag accounts that need re-linking (done in Phase 4).
 
 - `POST/GET/PATCH/DELETE /api/repositories`, `GET /repositories/{id}/branches`. **Done.**
 - Track a repo from a linked account **or** by public `owner`/`name` (no account needed for public
@@ -162,22 +162,24 @@ Goal: the first usable product. A user signs in, links GitHub, tracks repositori
 browses and reads their documentation in a browser. This is the first point a real browser origin
 exists.
 
-Status: **document API + UI project setup + logout fix + UI sign-in + app shell done** — `GET
-/documents`, `GET /documents/{id}` and `/raw` are implemented, and `POST /auth/logout` ends the
-session. `src/ui` is a Vite + React + TypeScript app with routing (placeholder pages), an API client
+Status: **document API + re-link flag + UI project setup + logout fix + UI sign-in + app shell
+done** — `GET /documents`, `GET /documents/{id}` and `/raw` are implemented, `GET /accounts` flags
+accounts that need re-linking (`needs_relink`), and `POST /auth/logout` ends the session. `src/ui` is a Vite + React + TypeScript app with routing (placeholder pages), an API client
 that reads the error envelope, a shared TanStack Query client, and its own CI job; locally it runs
 beside the API through the Vite dev-server proxy. Signing in with Google returns the user to the
 page they wanted (`?redirect=` on `/auth/google/login`), an auth guard protects every signed-in
 page, and logout clears the client cache. Every signed-in page sits in an app shell (navigation,
 current user, sign out), and pages show API errors through one shared component. Still open in this
-phase: the re-link flag (#63), CORS + rate limiting (#64), sending OAuth callback failures back to
-the UI (#119), and the UI screens (#67–#71).
+phase: CORS + rate limiting (#64), sending OAuth callback failures back to the UI (#119), and the UI
+screens (#67–#71).
 
 - **Document API (read only)**: `GET /documents` (metadata, filter by `repo_id`) and
   `GET /documents/{id}` + `/raw`, with the repository and branch the document comes from. No
   draft fields yet. **Done.**
-- `GET /api/accounts` flags accounts that need re-linking, so the UI can offer a "Re-link" action
-  (#63).
+- `GET /api/accounts` flags accounts that need re-linking, so the UI can offer a "Re-link" action.
+  **Done** — `needs_relink`, computed from the stored tokens by `credentials.Service.NeedsReauth`
+  with the same rules as `ForAccount`. It cannot see a token revoked at the provider while still
+  valid, so the UI should also offer re-linking on the `403` such a token causes.
 - **CORS + rate limiting (#64)**: currently skipped because there's no real frontend to
   protect against; mandatory before the UI is used.
 - **Logout that ends the session**: `POST /auth/logout` deletes the session from Redis and sends

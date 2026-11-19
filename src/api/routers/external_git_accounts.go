@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -75,6 +76,7 @@ func (h *ExternalAccountsHandler) listExternalAccounts(w http.ResponseWriter, r 
 
 	// Sanitize response - don't send tokens to client
 	sanitizedAccounts := make([]map[string]interface{}, len(accounts))
+	now := time.Now()
 	for i, acc := range accounts {
 		sanitizedAccounts[i] = map[string]interface{}{
 			"id":                       acc.ID,
@@ -85,6 +87,7 @@ func (h *ExternalAccountsHandler) listExternalAccounts(w http.ResponseWriter, r 
 			"token_expires_at":         acc.TokenExpiresAt,
 			"refresh_token_expires_at": acc.RefreshTokenExpiresAt,
 			"label":                    acc.Label,
+			"needs_relink":             h.creds.NeedsReauth(acc, now),
 		}
 	}
 
