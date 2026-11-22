@@ -31,6 +31,7 @@ type ExternalGitAccount struct {
 	LastRefreshedAt       *time.Time
 	Label                 string
 	RefreshTokenExpiresAt *time.Time
+	ProviderLogin         pgtype.Text
 }
 
 type Repository struct {
