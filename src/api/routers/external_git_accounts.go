@@ -114,7 +114,7 @@ func (h *ExternalAccountsHandler) providerLogin(w http.ResponseWriter, r *http.R
 	sess, _ := session.GetSession(h.sessionMgr, r)
 	sess.SetOAuthStateToken(state)
 
-	url := provider.AuthCodeURL(state)
+	url := provider.AuthCodeURL(state, providers.AuthOptions{SelectAccount: true})
 	//nolint:gosec // G710: the URL is built by the provider from its own config, not from input
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }

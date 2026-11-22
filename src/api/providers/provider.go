@@ -61,9 +61,21 @@ type Token struct {
 	RefreshExpiry *time.Time
 }
 
+// AuthOptions tunes the provider's authorization page
+type AuthOptions struct {
+	// SelectAccount asks the provider to show its account picker, even when the
+	// browser is already signed in
+	SelectAccount bool
+	// LoginHint suggests the account to sign in with (its login); empty for none
+	LoginHint string
+}
+
 type Provider interface {
+	// Name is the stable identifier used in routes and stored on accounts
 	Name() string
-	AuthCodeURL(state string) string
+	// DisplayName is the human-readable name shown in the UI
+	DisplayName() string
+	AuthCodeURL(state string, opts AuthOptions) string
 	Exchange(ctx context.Context, code string) (Token, error)
 	FetchUser(ctx context.Context, accessToken string) (User, error)
 	ListRepositories(ctx context.Context, accessToken string) ([]Repository, error)
