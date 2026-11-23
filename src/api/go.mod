@@ -6,7 +6,7 @@ toolchain go1.27.4
 
 require (
 	github.com/go-chi/chi/v5 v5.5.0
-	github.com/jackc/pgx/v5 v5.12.0
+	github.com/jackc/pgx/v5 v5.13.0
 	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/v9 v9.23.0
 	golang.org/x/oauth2 v0.38.0
