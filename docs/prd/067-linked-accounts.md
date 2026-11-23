@@ -1,6 +1,6 @@
 # PRD: Linked accounts page (#67)
 
-Status: agreed, not started. Milestone: Phase 4 — Read-only MVP. Replaces user stories S1.2, S1.4
+Status: PR 1 (API) in review as #139; PR 2 (UI) not started. Milestone: Phase 4 — Read-only MVP. Replaces user stories S1.2, S1.4
 and S1.5 (UI side).
 
 ## Problem
@@ -181,6 +181,42 @@ refresh token). Handlers still never touch the provider's `Revoker` themselves.
 - `GET /providers` DTO: an `Installer` with a URL, with an empty URL (`null`), and a non-installer.
 - Session helpers: `GetRelinkAccountID` is single-use, and a plain link clears it.
 - `Registry.List` order.
+
+### As built in PR 1 (#139)
+
+PR 1 implements the plan above, with these differences. Where they conflict, this list and the code
+win over the plan.
+
+- **`Registry.List` is sorted by name**, which meets "a stable order". `NewRegistry` panics on a
+  duplicate name, since it runs once at startup. `DisplayName()` is a method on `providers.Provider`,
+  not an optional interface.
+- **The re-link target is stored in the session as a decimal string.** The session round-trips
+  through JSON, which would turn a number into a `float64`. `SetRelinkAccountID(0)` clears it.
+- **`RevokeAccessToken` returns its error** instead of logging it, like `Revoke`, and the callback
+  logs it.
+- **Revocation covers every failure after the exchange**, not only step 5: a rejected token, a
+  failed user fetch, a mismatch, a target that's gone, and a failed store all revoke the new token.
+- **Step 5 runs inside the store.** The callback locks the target with
+  `GetExternalGitAccountByIdForUpdate` and checks it in the same transaction as the upsert, so an
+  unlink cannot land between the check and the write and turn a re-link into a new account.
+  Ownership and provider are checked on the locked row. `ResolveAccount` is used only at login.
+- **The end of the callback runs detached from the request.** After the exchange it uses
+  `context.WithoutCancel` with a 30s timeout, so a client disconnect cannot cancel a committed
+  write and then revoke the token that was just stored.
+- **Login failures other than `501` redirect too.** A failed state token or a failed target lookup
+  redirects with `error=server_error`, for the same reason as D9.
+- **The callback reads the state and the target before the provider lookup**, so the `501` path
+  consumes them too.
+- **`frontendURL()` is shared by both OAuth flows** and trims trailing slashes from `FRONTEND_URL`.
+  Without the trim, a trailing slash produced `//settings/accounts`, which no UI route matches.
+- **Accepted: the login hint can be stale.** It is the login stored at the last link, so after a
+  rename on GitHub it names the old login until the re-link completes. It is only a hint, and the
+  identity check still decides what is stored.
+- **Accepted: an ambiguous commit.** If the upsert commits but an error still reaches the handler,
+  the stored token is revoked, and the account needs one more re-link.
+- **Not covered by automated tests:** the re-link check and the store and success paths, since there
+  is no database seam yet. They are on the manual-check list in #139. Everything that ends before
+  the database is unit-tested, and so is the pure re-link check.
 
 ## UI (PR 2)
 
