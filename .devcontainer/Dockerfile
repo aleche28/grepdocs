@@ -5,7 +5,7 @@
 # line in src/api/go.mod is downloaded on first use, as on the host; keep this tag in step anyway.
 FROM golang:1.27.4-trixie AS go
 
-FROM mcr.microsoft.com/devcontainers/base:2.2.6-trixie
+FROM mcr.microsoft.com/devcontainers/base:2.2.7-trixie
 
 # gcc and libc headers: the race detector (make test-race) needs cgo.
 # psql and redis-cli: for poking at the local infra.
