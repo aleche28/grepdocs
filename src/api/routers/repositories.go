@@ -484,11 +484,20 @@ func writeProviderError(w http.ResponseWriter, err error, prov providers.Provide
 
 // installDetails returns the error details with prov's app install link, or nil when it has none
 func installDetails(prov providers.Provider) map[string]any {
-	inst, ok := prov.(providers.Installer)
-	if !ok || inst.InstallURL() == "" {
+	u := installURL(prov)
+	if u == "" {
 		return nil
 	}
-	return map[string]any{"install_url": inst.InstallURL()}
+	return map[string]any{"install_url": u}
+}
+
+// installURL returns the provider's app install URL, or "" when the provider is
+// not an Installer or has no URL configured (no GITHUB_APP_SLUG)
+func installURL(prov providers.Provider) string {
+	if inst, ok := prov.(providers.Installer); ok {
+		return inst.InstallURL()
+	}
+	return ""
 }
 
 func branchExists(branches []providers.Branch, name string) bool {
