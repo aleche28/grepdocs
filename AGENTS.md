@@ -17,7 +17,7 @@ worker pool (on `testing/synctest`, so its timeouts run on a fake clock). `route
 only code that needs no database (`writeProviderError`, `installDetails`, ID parsing, `isValidRedirectPath`, the docs routes,
 `GET /providers`, the linking redirect helpers, and the linking-flow paths that end before a DB call); other handlers and
 `reposync` stay untested because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
-The UI has no tests yet.
+UI tests (Vitest) cover the API client and the auth helpers so far; see Web UI for the setup.
 
 ## Commands
 
@@ -45,6 +45,7 @@ commands from `src/ui`. The Makefile at the repo root wraps them and handles the
 | Install UI deps        | `make ui-install` (`npm ci`)         |
 | Run the UI (`:5173`)   | `make ui-dev`                        |
 | Build the UI           | `make ui-build`                      |
+| Run the UI tests       | `make ui-test`                       |
 | UI typecheck / lint    | `make ui-typecheck` / `make ui-lint` |
 | UI format / check      | `make ui-fmt` / `make ui-fmt-check`  |
 | UI dependency audit    | `make ui-audit`                      |
@@ -228,6 +229,16 @@ React + TypeScript, built with Vite, React Router for routes, TanStack Query for
   need a page-specific action (`app_not_installed`'s `install_url`, `rate_limited`'s
   `retryAfter`) are handled by that page.
 - Formatting is Prettier (no semicolons, single quotes), linting ESLint. Run `make ui-fmt`.
+- Tests are Vitest in jsdom, with Testing Library, next to the code they test (`*.test.ts(x)`).
+  The API is mocked with MSW (`src/test/server.ts`), so requests go through `apiFetch` exactly as
+  in the app: each test declares its endpoints with `server.use(...)`, with paths from `apiUrl()`.
+  `src/test/setup.ts` fails a test that makes a request no handler matches; it also blocks the
+  request, which MSW would otherwise send to the real network. It resolves relative URLs for
+  Node's `fetch`, which rejects them, so `apiUrl` stays relative. Render a page with
+  `renderRoute` (`src/test/renderRoute.tsx`): a memory router and a fresh `QueryClient` without
+  retries, and no `AppLayout`, so no `GET /users/me` handler is needed. Vitest does not
+  type-check, so a test run passes code that `make ui-typecheck` rejects (such as MSW 2's
+  `onUnhandledRequest`, renamed `onUnhandledFrame` in MSW 3, which MSW then ignores).
 
 ### Git providers
 
@@ -340,8 +351,8 @@ Two workflows in `.github/workflows/`, both calling `make` from the repo root (t
 
 - `ci.yml` — job `check` (`tidy-check`, `vet`, `build`, `test-race`), job `lint`
   (`golangci-lint-action`, which also reports formatting, so `fmt-check` is not run separately,
-  then `make openapi-lint`), and job `ui` (`ui-install`, `ui-fmt-check`, `ui-lint`, `ui-build`,
-  which also type-checks).
+  then `make openapi-lint`), and job `ui` (`ui-install`, `ui-fmt-check`, `ui-lint`, `ui-test`,
+  `ui-build`, which also type-checks).
 - `security.yml` — `make vuln` (govulncheck) and `make ui-audit` (`npm audit`) on PRs, pushes to
   `main`, a weekly cron, and manually.
 
