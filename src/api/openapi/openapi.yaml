@@ -27,6 +27,8 @@ tags:
   - name: users
   - name: accounts
     description: Linked git provider accounts (GitHub today).
+  - name: providers
+    description: Git providers that accounts can be linked with.
   - name: repositories
     description: Tracked repositories and their sync.
   - name: documents
@@ -74,7 +76,7 @@ paths:
             type: string
             default: /
             maxLength: 2048
-          example: /settings/accounts?linked=github
+          example: /repositories/3
       responses:
         "307":
           $ref: "#/components/responses/Redirect"
@@ -134,6 +136,27 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /providers:
+    get:
+      tags: [providers]
+      operationId: listProviders
+      summary: List linkable providers
+      description: |
+        The providers an account can be linked with, sorted by `name`. Read from server
+        configuration only: the provider is never contacted, so `install_url` says nothing about
+        whether the app is actually installed.
+      responses:
+        "200":
+          description: The linkable providers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Provider"
+        "401":
+          $ref: "#/components/responses/NotAuthenticated"
+
   /accounts:
     get:
       tags: [accounts]
@@ -179,20 +202,41 @@ paths:
     get:
       tags: [accounts]
       operationId: providerLogin
-      summary: Start linking a provider account
+      summary: Start linking or re-linking a provider account
       description: |
-        Stores a single-use OAuth state token in the session and redirects to the provider's
-        authorization page. Open it in a browser tab: "Try it out" cannot follow a cross-origin
-        redirect.
+        Stores a single-use OAuth state token (and, with `account_id`, the re-link target) in the
+        session and redirects to the provider's authorization page, asking it to show its account
+        picker (`prompt=select_account` for GitHub). Open it in a browser tab: "Try it out" cannot
+        follow a cross-origin redirect.
+
+        This is a full-page navigation, so failures redirect to the UI instead of answering with
+        an error envelope: an `account_id` that is not a positive integer, unknown, another
+        user's, or another provider's redirects to
+        `FRONTEND_URL/settings/accounts?error=account_not_found`, and an internal error to
+        `?error=server_error`. Only an unregistered provider answers `501`.
       parameters:
         - $ref: "#/components/parameters/Provider"
+        - name: account_id
+          in: query
+          required: false
+          description: |
+            Re-link this account instead of linking a new one. The callback then stores only the
+            same provider identity; any other identity changes nothing (`identity_mismatch`).
+            When the account's `provider_login` is known, it is sent as a login hint.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
       responses:
         "307":
-          $ref: "#/components/responses/Redirect"
+          description: |
+            Redirect to the provider's authorization page or, on failure, to
+            `FRONTEND_URL/settings/accounts` with an `error` code (see `providerCallback`).
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
         "401":
           $ref: "#/components/responses/NotAuthenticated"
-        "500":
-          $ref: "#/components/responses/Internal"
         "501":
           $ref: "#/components/responses/NotImplemented"
 
@@ -202,23 +246,50 @@ paths:
       operationId: providerCallback
       summary: Provider OAuth callback
       description: |
-        Called by the provider, not by clients. Links the account (or re-links it, revoking the
-        replaced token) and redirects to `FRONTEND_URL/settings/accounts?linked={provider}`.
+        Called by the provider, not by clients. Links the account, or re-links it and revokes the
+        replaced token. For a re-link started with `account_id`, an identity other than the
+        target's stores nothing. Any token issued but not stored is revoked (best-effort).
+
+        Every outcome, success or failure, redirects to `FRONTEND_URL/settings/accounts` with the
+        query parameters below. They are a stable contract mirrored by the UI and never carry
+        provider-supplied text; the real error is logged server-side.
+
+        | Query                                  | When                                                    |
+        | -------------------------------------- | ------------------------------------------------------- |
+        | `result=linked&account_id=N`           | A new identity was linked.                              |
+        | `result=relinked&account_id=N`         | An identity already linked had its tokens replaced.     |
+        | `error=access_denied`                  | The user cancelled at the provider.                     |
+        | `error=invalid_state`                  | State missing or wrong (expired flow, second tab).      |
+        | `error=link_failed`                    | Provider error, no code, or a bad code or token.        |
+        | `error=identity_mismatch&account_id=N` | A re-link came back with a different identity.          |
+        | `error=account_not_found`              | The re-link target was unlinked during the flow.        |
+        | `error=server_error`                   | Anything else.                                          |
       parameters:
         - $ref: "#/components/parameters/Provider"
         - $ref: "#/components/parameters/OAuthState"
-        - $ref: "#/components/parameters/OAuthCode"
+        - name: code
+          in: query
+          required: false
+          description: The authorization code to exchange for tokens. Absent when `error` is set.
+          schema:
+            type: string
+        - name: error
+          in: query
+          required: false
+          description: |
+            OAuth error from the provider, read before `code`. `access_denied` (the user
+            cancelled) redirects with `error=access_denied`; any other value with `link_failed`.
+          schema:
+            type: string
+            examples: [access_denied]
       responses:
         "307":
-          $ref: "#/components/responses/Redirect"
-        "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Redirect to `FRONTEND_URL/settings/accounts` with the outcome above.
+          headers:
+            Location:
+              $ref: "#/components/headers/Location"
         "401":
           $ref: "#/components/responses/NotAuthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "500":
-          $ref: "#/components/responses/Internal"
         "501":
           $ref: "#/components/responses/NotImplemented"
 
@@ -844,6 +915,7 @@ components:
         - id
         - provider
         - provider_user_id
+        - provider_login
         - linked_at
         - last_refreshed_at
         - token_expires_at
@@ -859,6 +931,15 @@ components:
           examples: [github]
         provider_user_id:
           type: string
+          description: The account's stable ID at the provider.
+          examples: ["123456"]
+        provider_login:
+          type: [string, "null"]
+          description: >-
+            The account's login at the provider (the GitHub username), stored on every link and
+            re-link, so a rename at the provider shows up after the next re-link. Null for
+            accounts linked before it was recorded, until they are re-linked.
+          examples: [octocat]
         linked_at:
           type: [string, "null"]
           format: date-time
@@ -884,6 +965,28 @@ components:
             a refresh, or a provider that does not refresh tokens). Computed from the stored
             tokens without contacting the provider, so a token revoked at the provider while
             still valid is not flagged; requests that use it fail with `403 forbidden`.
+
+    Provider:
+      type: object
+      description: A git provider that accounts can be linked with.
+      required: [name, display_name, install_url]
+      properties:
+        name:
+          type: string
+          description: Identifier used in routes (`/accounts/{provider}/…`) and on accounts.
+          examples: [github]
+        display_name:
+          type: string
+          description: Human-readable name.
+          examples: [GitHub]
+        install_url:
+          type: [string, "null"]
+          format: uri
+          description: >-
+            Page where the user installs the provider's app or changes which repositories it can
+            access. Null when the provider has no app, or none is configured (no
+            `GITHUB_APP_SLUG`).
+          examples: ["https://github.com/apps/grepdocs/installations/new"]
 
     ProviderRepository:
       type: object

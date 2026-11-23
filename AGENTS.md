@@ -14,7 +14,8 @@ GitHub Actions runs the quality gates on every PR and push to `main` (see CI and
 `make ci` runs the same checks locally — run it before pushing. Unit tests cover sessions, auth
 middleware, providers, credentials, response envelopes, the session model, and the `syncqueue`
 worker pool (on `testing/synctest`, so its timeouts run on a fake clock). `routers` tests cover
-only code that needs no database (`writeProviderError`, `installDetails`, ID parsing, `isValidRedirectPath`, the docs routes); handlers and
+only code that needs no database (`writeProviderError`, `installDetails`, ID parsing, `isValidRedirectPath`, the docs routes,
+`GET /providers`, the linking redirect helpers, and the linking-flow paths that end before a DB call); other handlers and
 `reposync` stay untested because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
 The UI has no tests yet.
 
@@ -109,6 +110,7 @@ http.Server (explicit timeouts, graceful shutdown on SIGINT/SIGTERM)
               ├─ GET /ping                          (public)
               ├─ /auth          routers.AuthRoutes             (public: Google OAuth login/callback, logout)
               ├─ /users         routers.UserRoutes             (RequireAuth)
+              ├─ /providers     routers.ProvidersRoutes        (RequireAuth)
               ├─ /accounts      routers.ExternalAccountsRoutes (RequireAuth)
               ├─ /repositories  routers.RepositoriesRoutes     (RequireAuth)
               └─ /docs          routers.DocsRoutes             (public; not mounted in production)
@@ -187,7 +189,8 @@ Every response goes through `httpx`. Never use `http.Error` or hand-rolled JSON 
 - `WriteInternalError(w, err)` — logs the real error server-side and returns a generic `internal`
   envelope. Internal error strings must never reach the client.
 
-Handlers build response DTOs explicitly (inline `map[string]any` today). Token fields from
+Handlers build response DTOs explicitly (mostly inline `map[string]any`; `providerDTO` is a typed
+struct). Token fields from
 `external_git_accounts` must be stripped at the DTO layer — see `listExternalAccounts`.
 
 ### Web UI (`src/ui`)
@@ -237,9 +240,14 @@ implementation rather than adding a second inline flow.
 Capabilities not every provider has are optional interfaces checked with a type assertion, not
 methods on `Provider`: `Refresher` (token refresh), `Installer` (`InstallURL()`, for providers
 whose access depends on an app installation), and `Revoker` (token revocation).
-`routers.installDetails` turns `InstallURL()` into the `details.install_url` of an error, and
-returns `nil` when the provider is not an `Installer` or the URL is empty (no `GITHUB_APP_SLUG`),
-so the key is omitted rather than sent empty.
+`routers.installURL` reads `InstallURL()` (empty when the provider is not an `Installer` or there is
+no `GITHUB_APP_SLUG`); `installDetails` turns it into the `details.install_url` of an error, omitting
+the key rather than sending it empty, and `GET /providers` sends it as `install_url` or `null`.
+
+Every provider has a `DisplayName()` for the UI. `Registry.List()` returns the providers sorted by
+name (it is what `GET /providers` lists), and `NewRegistry` panics on a duplicate name: it runs
+once at startup. `AuthCodeURL(state, AuthOptions)` takes `SelectAccount` (GitHub:
+`prompt=select_account`) and `LoginHint` (GitHub: `login=`).
 
 Handlers and background jobs get provider access tokens from `credentials.Service`
 (`src/api/credentials`), never from the token columns directly: `ResolveAccount` picks the account,
@@ -283,6 +291,9 @@ that replaces a stored token). Rules worth preserving:
   sent when the provider is not a `Refresher` or `canRefresh` is false (no refresh token, expired,
   or cleared after a rejected refresh), and a refresh rejected with `ErrInvalidToken` means the
   token was already dead, so it returns `nil`. `revokeTimeout` covers both calls.
+- A token issued during a linking flow that then stores nothing is revoked with
+  `Service.RevokeAccessToken(ctx, provider, token)`: plaintext, never stored, best-effort like
+  `Revoke`. It is only for a freshly issued (live) token, so no refresh-then-revoke is needed.
 - Unlink deletes with `DeleteExternalGitAccountByIdAndUserId` (`DELETE … RETURNING *`): ownership
   is in the `WHERE`, so another user's account is a `404`, and the delete waits for a refresh
   holding the row lock, so it returns the post-refresh tokens. Do not go back to read-then-delete.
@@ -294,6 +305,24 @@ that replaces a stored token). Rules worth preserving:
   (both verified manually), hence the refresh-then-revoke above. GitHub has no endpoint that revokes
   a refresh token directly. Never use `/applications/{client_id}/grant` instead: it revokes the
   GitHub identity's authorization for every GrepDocs user who linked it.
+
+The linking flow (`providerLogin` / `providerCallback`) is a full-page navigation, so it never
+answers with an error envelope, except `501` for an unregistered provider and `401` from
+`RequireAuth` (#133). Rules worth preserving:
+
+- Every callback outcome, and every login failure, is a `307` to `FRONTEND_URL/settings/accounts`
+  with `result=` or `error=` (and `account_id`). The codes are constants in
+  `routers/account_link.go` and listed in `docs/api.md` → Linking and re-linking; the UI mirrors
+  them, so add a code to both in one change. Build the URL with `linkRedirectURL`, and never put
+  provider-supplied text in it.
+- A re-link (`?account_id=`) stores its target in the session with `SetRelinkAccountID`, as a
+  string (the session round-trips through JSON, which turns numbers into `float64`). A plain link
+  sets it to `0`, clearing a target left by an abandoned re-link. The callback reads the state and
+  the target (both single-use) before any early return, and never takes the target from its URL.
+- A re-link stores only the target's identity: any other is `identity_mismatch` and changes nothing.
+- Once the code is exchanged, every failure that stores nothing revokes the new token (`discard`
+  in `linkCallback`), so no live token is left behind.
+- The provider's `error` parameter is read before `code`.
 
 GitHub specifics worth preserving: the shared `httpClient` from `routers/http.go` (10s timeout),
 `newGitHubGetRequest` / `newGitHubDeleteRequest` for auth, accept, and content-type headers,
@@ -401,6 +430,9 @@ under `.agents/skills`, never inside `.claude/skills`.
   query and guard, the invariants that keep concurrent syncs safe, and when a repository stays busy.
   Update it whenever a sync query or its caller changes.
 - `docs/requirements.md`, `docs/user-stories.md` — product spec.
+- `docs/prd/` — one PRD per feature issue (`NNN-name.md`, by issue number): problem, decisions,
+  API and UI changes, acceptance criteria, follow-up issues. Agreed before implementation; check it
+  before building the issue it names.
 - `docs/howto/` — Google OAuth setup, GitHub App setup, golang-migrate workflow, sqlc usage,
   running the dev container on a remote machine over SSH.
 - `docs/roadmap.md` — phased build-out plan (not dated), interleaving new features with the open

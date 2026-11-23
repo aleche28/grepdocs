@@ -26,7 +26,7 @@ improvising a new one.
   whether it's a real provider name.
 - **Pagination**: list endpoints are proposed to accept `?page=1&size=50` (defaults `1`/`50`, max
   `size` `100`) and respond with `{ "items": [...], "page": 1, "size": 50, "total": 123 }`. This is
-  **Proposed** — the list endpoints implemented today (`GET /api/accounts`,
+  **Proposed** — the list endpoints implemented today (`GET /api/providers`, `GET /api/accounts`,
   `GET /api/accounts/{provider}/repositories`, `GET /api/repositories`,
   `GET /api/repositories/{id}/branches`, `GET /api/documents`) return a bare JSON array with no
   pagination envelope.
@@ -141,14 +141,27 @@ is planned, so only self endpoints exist.
 
 | Method | Path                             | Auth | Status                        | Description                                                    |
 | ------ | --------------------------------- | ---- | ------------------------------ | ---------------------------------------------------------------- |
+| GET    | `/providers`                      | Y    | Implemented                    | List the providers an account can be linked with                 |
 | GET    | `/accounts`                       | Y    | Implemented (no pagination)    | List linked accounts (sanitized, **no tokens**)                  |
-| GET    | `/accounts/{provider}/login`      | Y    | Implemented for `github`       | Redirect: start linking a provider account                       |
+| GET    | `/accounts/{provider}/login`      | Y    | Implemented for `github`       | Redirect: start linking, or re-linking with `?account_id=`       |
 | GET    | `/accounts/{provider}/callback`   | Y    | Implemented for `github`       | Provider OAuth callback (verify state, store tokens, redirect)   |
 | GET    | `/accounts/{provider}/repositories` | Y  | Implemented for `github` (no filtering yet) | Discover repos from a linked account (`?account_id=` disambiguates) |
 | DELETE | `/accounts/{id}`                  | Y    | Implemented                    | Unlink account (must own it) and revoke its token                 |
 
 `bitbucket` (and any other non-`github` value) currently returns `501 not_implemented` on all four
 provider-scoped routes.
+
+`GET /api/providers` lists the providers an account can be linked with, sorted by `name`. It reads
+only server configuration and never contacts the provider:
+
+```json
+[{ "name": "github", "display_name": "GitHub", "install_url": "https://github.com/apps/<slug>/installations/new" }]
+```
+
+`install_url` opens the page where the user installs the GitHub App or changes which repositories
+it can access. It is `null` when the provider has no app, or the server has no `GITHUB_APP_SLUG`.
+Since the provider is not contacted, it says nothing about whether the app is installed: that shows
+up as `403 app_not_installed` on `GET /accounts/{provider}/repositories` (below).
 
 `GET /api/accounts` item (implemented shape, tokens stripped at the DTO layer):
 
@@ -157,6 +170,7 @@ provider-scoped routes.
   "id": 3,
   "provider": "github",
   "provider_user_id": "123456",
+  "provider_login": "octocat",
   "label": "",
   "linked_at": "2026-03-02T10:11:12Z",
   "last_refreshed_at": "2026-03-02T10:11:12Z",
@@ -165,6 +179,11 @@ provider-scoped routes.
   "needs_relink": false
 }
 ```
+
+`provider_login` is the account's login at the provider (the GitHub username), so a user with two
+accounts can tell them apart; `provider_user_id` is the stable numeric ID. The login is stored on
+every link and re-link, so a rename on GitHub shows up after the next re-link. It is `null` for
+accounts linked before it was recorded, until they are re-linked (there is no backfill).
 
 `token_expires_at` and `refresh_token_expires_at` are the expiries reported by the provider when
 the tokens were issued (for a GitHub App: 8 hours and ~6 months). Either is `null` when the
@@ -196,8 +215,10 @@ both return `404 not_found`, never `403`, so the response does not reveal that t
 a non-numeric `id` returns `400 bad_request`. Tracked repositories that used the account keep their
 rows, with `account_id` set to `null`.
 
-Tokens GrepDocs stops using are revoked at the provider: on unlink, and on a re-link that replaces
-the stored token (`GET /accounts/{provider}/callback` for an identity already linked). For GitHub,
+Tokens GrepDocs stops using are revoked at the provider: on unlink, on a re-link that replaces
+the stored token (`GET /accounts/{provider}/callback` for an identity already linked), and for a
+token issued during a linking flow that then stores nothing (identity mismatch, re-link target
+gone, internal error). For GitHub,
 revoking a live access token also revokes its refresh token; when the stored access token has
 already expired, the server first spends the refresh token on a new pair and revokes that, so no
 refresh token outlives the account. Revocation runs after the database change and is best-effort: a
@@ -245,9 +266,57 @@ refreshed, or the provider rejects it as revoked (the user must re-link the acco
 `429 rate_limited` when the provider's rate limit is hit, `501 not_implemented` for a provider that
 has no registered implementation.
 
+### Linking and re-linking
+
+`GET /api/accounts/{provider}/login` starts the flow. It is a full-page navigation (the UI links to
+it, it does not `fetch` it), and it always asks the provider to show its account picker
+(`prompt=select_account` for GitHub), so the user can choose which identity to link even when the
+browser is already signed in to one.
+
+- Without parameters it links a new identity, or re-links one already linked (the same identity
+  updates its row; see migration `000004`). A second identity adds a second account.
+- `?account_id=N` re-links that account. It must be the caller's and of this provider. Its
+  `provider_login`, when known, is sent as a login hint (`login=` for GitHub), so the picker
+  preselects it. The target is stored in the session next to the state, never read back from the
+  callback URL.
+
 Both provider OAuth routes verify a single-use, session-bound `state` value the same way as
 Google login — a linking flow using a state cookie instead of the session would be a regression,
 not an alternative implementation.
+
+**Identity check on re-link.** When a re-link comes back with a different provider identity than
+the target's (the user picked another account in the picker), the callback stores nothing: the
+target keeps its tokens, no second account is created, the token just issued is revoked, and the
+redirect says `identity_mismatch`. A re-link therefore either refreshes *that* account or changes
+nothing. The target is re-read in the callback, so one unlinked while the user was at the provider
+ends with `account_not_found`.
+
+**Redirects.** Every outcome of the callback redirects to `FRONTEND_URL/settings/accounts`, never
+to a JSON envelope, with these query parameters. They are a stable contract mirrored by the UI,
+built with `url.Values`, and never carry provider-supplied text; the real error is logged
+server-side.
+
+| Query                                  | When                                                    |
+| -------------------------------------- | ------------------------------------------------------- |
+| `result=linked&account_id=N`           | A new identity was linked.                              |
+| `result=relinked&account_id=N`         | An identity already linked had its tokens replaced.     |
+| `error=access_denied`                  | The user cancelled on the provider's consent screen.    |
+| `error=invalid_state`                  | State missing or wrong (expired flow, second tab).      |
+| `error=link_failed`                    | The provider returned an error, no code, or a bad code or token. |
+| `error=identity_mismatch&account_id=N` | A re-link came back with a different identity.          |
+| `error=account_not_found`              | The re-link target does not exist or is not the caller's. |
+| `error=server_error`                   | Anything else.                                          |
+
+`result=relinked` is sent whenever the identity was already linked, whether or not the flow
+started with `account_id`. The provider's `error` parameter is read before `code`, so a cancel is
+reported as `access_denied` rather than as a missing code.
+
+`login` uses the same redirects for its own failures: an `account_id` that is not a positive
+integer, unknown, another user's or another provider's gives `error=account_not_found` (a `400`
+would strand the user on JSON), and an internal error gives `error=server_error`. Only an
+unregistered provider still answers `501 not_implemented`, since the UI links only the providers
+from `GET /providers`. A session that expired while the user was at the provider still gets a
+`401` envelope from the callback (#133).
 
 ## Repositories (tracked)
 
@@ -541,7 +610,7 @@ Proposed, so most of this table currently maps to work not yet started.
 | S1.1 Google auth                        | `GET /auth/google/login`, `GET /auth/google/callback`, `POST /auth/logout`, `GET /users/me`  |
 | S1.2/S1.3 Link provider                 | `GET /accounts/{provider}/login`, `GET /accounts/{provider}/callback`                        |
 | S1.4 Unlink                             | `DELETE /accounts/{id}`                                                                      |
-| S1.5 View linked accounts               | `GET /accounts`                                                                              |
+| S1.5 View linked accounts               | `GET /accounts`, `GET /providers`                                                            |
 | S2.1/S2.2 Available repos               | `GET /accounts/{provider}/repositories?q=&private=`                                          |
 | S2.3/S2.4 Track/untrack                 | `POST /repositories`, `DELETE /repositories/{id}`                                            |
 | S2.5 Branch selection                   | `PATCH /repositories/{id}`                                                                   |
