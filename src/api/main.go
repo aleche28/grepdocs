@@ -149,6 +149,7 @@ func main() {
 
 		r.Mount("/auth", routers.AuthRoutes(&AppConfig.GoogleLoginConfig, pool, sm))
 		r.Mount("/users", routers.UserRoutes(pool, sm))
+		r.Mount("/providers", routers.ProvidersRoutes(sm, registry))
 		r.Mount("/accounts", routers.ExternalAccountsRoutes(pool, sm, registry, tokenCipher, credSvc))
 		r.Mount("/repositories", routers.RepositoriesRoutes(pool, sm, registry, credSvc, syncPool))
 		r.Mount("/documents", routers.DocumentsRoutes(pool, sm))

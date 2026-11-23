@@ -386,6 +386,69 @@ func TestRevoke(t *testing.T) {
 	}
 }
 
+func TestRevokeAccessToken(t *testing.T) {
+	cipher := newTestCipher(t, 1)
+
+	t.Run("revokes the plaintext token on a detached context", func(t *testing.T) {
+		rev := &fakeRevoker{}
+		svc := New(nil, cipher, providers.NewRegistry(rev))
+
+		// the revoke must survive the request being canceled
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		if err := svc.RevokeAccessToken(ctx, "fake", "ghu_new"); err != nil {
+			t.Fatalf("RevokeAccessToken() unexpected error: %v", err)
+		}
+		// sent as given: the token was never stored, so never encrypted
+		if len(rev.calls) != 1 || rev.calls[0] != "ghu_new" {
+			t.Fatalf("Revoke calls = %v, want [ghu_new]", rev.calls)
+		}
+		if rev.ctxErr != nil {
+			t.Errorf("revoke context error = %v, want a live context", rev.ctxErr)
+		}
+		if !rev.hasDeadline {
+			t.Error("revoke context has no deadline, want revokeTimeout")
+		}
+	})
+
+	t.Run("returns the provider error", func(t *testing.T) {
+		wantErr := errors.New("boom")
+		rev := &fakeRevoker{err: wantErr}
+		svc := New(nil, cipher, providers.NewRegistry(rev))
+
+		if err := svc.RevokeAccessToken(context.Background(), "fake", "ghu_new"); !errors.Is(err, wantErr) {
+			t.Fatalf("RevokeAccessToken() error = %v, want %v", err, wantErr)
+		}
+	})
+
+	tests := []struct {
+		name     string
+		provider string
+		token    string
+		wantErr  bool
+	}{
+		{name: "empty token", provider: "fake", token: ""},
+		{name: "provider cannot revoke", provider: "plain", token: "ghu_new"},
+		{name: "unregistered provider", provider: "nope", token: "ghu_new", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rev := &fakeRevoker{}
+			svc := New(nil, cipher, providers.NewRegistry(rev, plainProvider{}))
+
+			err := svc.RevokeAccessToken(context.Background(), tc.provider, tc.token)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Fatalf("RevokeAccessToken() error = %v, want error = %v", err, tc.wantErr)
+			}
+			if len(rev.calls) != 0 {
+				t.Errorf("Revoke calls = %v, want none", rev.calls)
+			}
+		})
+	}
+}
+
 // fakeRefreshRevoker can refresh too, so Revoke can trade an expired token's
 // refresh token for a live pair before revoking
 type fakeRefreshRevoker struct {

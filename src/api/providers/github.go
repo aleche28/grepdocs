@@ -76,8 +76,17 @@ func NewGitHub(opts GitHubOptions) *GitHubProvider {
 
 func (ghp *GitHubProvider) Name() string { return GitHub }
 
-func (ghp *GitHubProvider) AuthCodeURL(state string) string {
-	return ghp.oauth2Config.AuthCodeURL(state)
+func (ghp *GitHubProvider) DisplayName() string { return "GitHub" }
+
+func (ghp *GitHubProvider) AuthCodeURL(state string, opts AuthOptions) string {
+	var params []oauth2.AuthCodeOption
+	if opts.SelectAccount {
+		params = append(params, oauth2.SetAuthURLParam("prompt", "select_account"))
+	}
+	if opts.LoginHint != "" {
+		params = append(params, oauth2.SetAuthURLParam("login", opts.LoginHint))
+	}
+	return ghp.oauth2Config.AuthCodeURL(state, params...)
 }
 
 func (ghp *GitHubProvider) Exchange(ctx context.Context, code string) (Token, error) {

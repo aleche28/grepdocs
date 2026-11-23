@@ -52,15 +52,18 @@ INSERT INTO external_git_accounts (
 	user_id,
 	provider,
 	provider_user_id,
+	provider_login,
 	access_token,
 	refresh_token,
 	token_expires_at,
 	refresh_token_expires_at
 ) VALUES (
-	$1, $2, $3, $4, $5, $6, $7
+	$1, $2, $3, $4, $5, $6, $7, $8
 )
 ON CONFLICT (user_id, provider, provider_user_id)
 	DO UPDATE SET
+		-- always overwritten: picks up a rename at the provider on re-link
+		provider_login = EXCLUDED.provider_login,
 		access_token = EXCLUDED.access_token,
 		refresh_token = COALESCE(NULLIF(EXCLUDED.refresh_token, ''), external_git_accounts.refresh_token),
 		token_expires_at = EXCLUDED.token_expires_at,

@@ -148,14 +148,9 @@ func (s *Service) ResolveAccount(ctx context.Context, userID int64, provider str
 }
 
 func (s *Service) Revoke(ctx context.Context, account dal.ExternalGitAccount) error {
-	prov, ok := s.registry.Lookup(account.Provider)
-	if !ok {
-		return fmt.Errorf("provider %s not registered", account.Provider)
-	}
-
-	revoker, ok := prov.(providers.Revoker)
-	if !ok {
-		return nil
+	prov, revoker, err := s.revokerFor(account.Provider)
+	if err != nil || revoker == nil {
+		return err
 	}
 
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), revokeTimeout)
@@ -196,6 +191,27 @@ func (s *Service) Revoke(ctx context.Context, account dal.ExternalGitAccount) er
 	return revoker.Revoke(ctx, accessToken)
 }
 
+// RevokeAccessToken revokes a plaintext access token that was never stored,
+// such as one issued during a re-link that came back with the wrong identity.
+// The token must be live (just issued): revoking it also kills its refresh
+// token, which is not true of an expired one (see Revoke).
+//
+// Like Revoke, it is best-effort for callers: they log the error and never fail
+// the request. It runs detached from ctx with revokeTimeout, so a client
+// disconnect does not skip it, and does nothing for an empty token or a
+// provider that cannot revoke.
+func (s *Service) RevokeAccessToken(ctx context.Context, provider string, accessToken string) error {
+	_, revoker, err := s.revokerFor(provider)
+	if err != nil || revoker == nil || accessToken == "" {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), revokeTimeout)
+	defer cancel()
+
+	return revoker.Revoke(ctx, accessToken)
+}
+
 // private helpers
 
 // needsRefresh returns true if the access token is empty, expired, or
@@ -210,6 +226,17 @@ func canRefresh(acc dal.ExternalGitAccount, now time.Time) bool {
 	return acc.RefreshToken != "" &&
 		// NOTE: nil expiration date means no expiration
 		(acc.RefreshTokenExpiresAt == nil || acc.RefreshTokenExpiresAt.After(now))
+}
+
+// revokerFor looks up provider and its Revoker. The Revoker is nil, with no
+// error, when the provider cannot revoke; an unregistered provider is an error.
+func (s *Service) revokerFor(provider string) (providers.Provider, providers.Revoker, error) {
+	prov, ok := s.registry.Lookup(provider)
+	if !ok {
+		return nil, nil, fmt.Errorf("provider %s not registered", provider)
+	}
+	revoker, _ := prov.(providers.Revoker)
+	return prov, revoker, nil
 }
 
 func (s *Service) refresherFor(provider string) (providers.Refresher, bool) {

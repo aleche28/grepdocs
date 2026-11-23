@@ -18,8 +18,8 @@ private Bitbucket repositories.
 
 ### S1.4 Unlink external accounts
 
-As a user, I want to unlink my Github or Bitbucket account at any time, removing the added private
-repositories from those sources.
+As a user, I want to unlink my GitHub or Bitbucket account at any time. Tracked repositories that
+used it stay in GrepDocs, but they cannot sync until I link an account that can access them.
 
 ### S1.5 View linked external accounts
 

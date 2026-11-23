@@ -13,7 +13,7 @@ func TestIsValidRedirectPath(t *testing.T) {
 	}{
 		{name: "root", in: "/", want: true},
 		{name: "page", in: "/repositories/3", want: true},
-		{name: "query", in: "/settings/accounts?linked=github", want: true},
+		{name: "query", in: "/settings/accounts?result=linked&account_id=3", want: true},
 		{name: "max length", in: "/" + strings.Repeat("a", maxRedirectPathLen-1), want: true},
 		{name: "empty", in: "", want: false},
 		{name: "relative", in: "repositories", want: false},

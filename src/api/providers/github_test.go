@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"testing"
 	"time"
@@ -315,6 +316,48 @@ func TestInstallURL(t *testing.T) {
 			gh := NewGitHub(GitHubOptions{AppSlug: tc.slug})
 			if got := gh.InstallURL(); got != tc.want {
 				t.Errorf("InstallURL() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAuthCodeURL(t *testing.T) {
+	tests := []struct {
+		name       string
+		opts       AuthOptions
+		wantPrompt string // "" means absent
+		wantLogin  string // "" means absent
+	}{
+		{name: "select account with hint", opts: AuthOptions{SelectAccount: true, LoginHint: "octocat"}, wantPrompt: "select_account", wantLogin: "octocat"},
+		{name: "select account without hint", opts: AuthOptions{SelectAccount: true}, wantPrompt: "select_account"},
+		{name: "hint without select account", opts: AuthOptions{LoginHint: "octocat"}, wantLogin: "octocat"},
+		{name: "no options", opts: AuthOptions{}},
+	}
+
+	gh := NewGitHub(GitHubOptions{ClientID: "client-id", RedirectURL: "http://localhost:3000/cb"})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := gh.AuthCodeURL("state-123", tc.opts)
+			u, err := url.Parse(raw)
+			if err != nil {
+				t.Fatalf("AuthCodeURL() = %q, not a URL: %v", raw, err)
+			}
+			q := u.Query()
+
+			if got := q.Get("state"); got != "state-123" {
+				t.Errorf("state = %q, want %q", got, "state-123")
+			}
+			if got := q.Get("client_id"); got != "client-id" {
+				t.Errorf("client_id = %q, want %q", got, "client-id")
+			}
+			for param, want := range map[string]string{"prompt": tc.wantPrompt, "login": tc.wantLogin} {
+				got, present := q.Get(param), q.Has(param)
+				switch {
+				case want == "" && present:
+					t.Errorf("%s = %q, want absent", param, got)
+				case want != "" && got != want:
+					t.Errorf("%s = %q (present %v), want %q", param, got, present, want)
+				}
 			}
 		})
 	}

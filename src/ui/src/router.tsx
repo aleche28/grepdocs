@@ -32,8 +32,8 @@ export const router = createBrowserRouter([
           { path: 'documents/:documentId', element: <DocumentPage /> },
         ],
       },
-      // Fixed by the API: it redirects here after linking an account, with
-      // ?linked={provider}.
+      // Fixed by the API: every linking flow ends here, with ?result= or ?error=
+      // (and account_id); the codes are listed in docs/api.md → Linking and re-linking.
       { path: 'settings/accounts', element: <AccountsPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],

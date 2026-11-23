@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -135,12 +134,8 @@ func (h *AuthHandler) googleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redirectURL := os.Getenv("FRONTEND_URL")
-	if redirectURL == "" {
-		redirectURL = "http://localhost:5173" // Default for development
-	}
 	//nolint:gosec // G710: the origin is FRONTEND_URL and redirectPath passed isValidRedirectPath
-	http.Redirect(w, r, redirectURL+redirectPath, http.StatusTemporaryRedirect)
+	http.Redirect(w, r, frontendURL()+redirectPath, http.StatusTemporaryRedirect)
 }
 
 // logout handles user logout
