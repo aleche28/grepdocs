@@ -277,7 +277,8 @@ browser is already signed in to one.
   updates its row; see migration `000004`). A second identity adds a second account.
 - `?account_id=N` re-links that account. It must be the caller's and of this provider. Its
   `provider_login`, when known, is sent as a login hint (`login=` for GitHub), so the picker
-  preselects it. The target is stored in the session next to the state, never read back from the
+  preselects it. The hint is the login stored at the last link, so it is stale after a rename on
+  GitHub; it is only a hint, and the identity check below still decides what is stored. The target is stored in the session next to the state, never read back from the
   callback URL.
 
 Both provider OAuth routes verify a single-use, session-bound `state` value the same way as
@@ -288,8 +289,9 @@ not an alternative implementation.
 the target's (the user picked another account in the picker), the callback stores nothing: the
 target keeps its tokens, no second account is created, the token just issued is revoked, and the
 redirect says `identity_mismatch`. A re-link therefore either refreshes *that* account or changes
-nothing. The target is re-read in the callback, so one unlinked while the user was at the provider
-ends with `account_not_found`.
+nothing. The callback locks the target row and checks it in the same transaction as the write, so one
+unlinked while the user was at the provider ends with `account_not_found`, and an unlink cannot
+slip in between the check and the write (it waits, then deletes the re-linked account).
 
 **Redirects.** Every outcome of the callback redirects to `FRONTEND_URL/settings/accounts`, never
 to a JSON envelope, with these query parameters. They are a stable contract mirrored by the UI,

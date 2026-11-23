@@ -165,6 +165,12 @@ func (h *ExternalAccountsHandler) providerLogin(w http.ResponseWriter, r *http.R
 // outcome redirects to the accounts page with the codes in account_link.go;
 // the real error is only logged.
 func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *http.Request) {
+	// both single-use: read them before any early return, so neither outlives
+	// this flow
+	sess, _ := session.GetSession(h.sessionMgr, r)
+	sessState := sess.GetOAuthStateToken()
+	relinkID := sess.GetRelinkAccountID()
+
 	providerParam := chi.URLParam(r, "provider")
 	provider, ok := h.providerRegistry.Lookup(providerParam)
 	if !ok {
@@ -173,12 +179,6 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 	}
 
 	userID, _ := middleware.CurrentUserID(r)
-
-	// both single-use: read them before any early return, so neither outlives
-	// this flow
-	sess, _ := session.GetSession(h.sessionMgr, r)
-	sessState := sess.GetOAuthStateToken()
-	relinkID := sess.GetRelinkAccountID()
 
 	redirectLinkOutcome(w, r, h.linkCallback(r.Context(), provider, userID, r.URL.Query(), sessState, relinkID))
 }
@@ -218,6 +218,12 @@ func (h *ExternalAccountsHandler) linkCallback(
 		return linkFailure(linkErrLinkFailed)
 	}
 
+	// A token now exists: finish detached from the request. Otherwise a client
+	// disconnect could cancel the store after it committed, and discard would
+	// revoke the token just stored.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), linkFinishTimeout)
+	defer cancel()
+
 	// discard revokes the issued token, which is never stored on this path
 	discard := func(o linkOutcome) linkOutcome {
 		if err := h.creds.RevokeAccessToken(ctx, provider.Name(), token.AccessToken); err != nil {
@@ -239,27 +245,16 @@ func (h *ExternalAccountsHandler) linkCallback(
 		return discard(linkFailure(linkErrServerError))
 	}
 
-	if relinkID > 0 {
-		// re-read: the target may have been unlinked while the user was away
-		target, err := h.creds.ResolveAccount(ctx, userID, provider.Name(), relinkID)
-		switch failCode := checkRelinkTarget(target, err, provUser.ProviderUserID); failCode {
-		case "":
-		case linkErrIdentityMismatch:
-			return discard(linkOutcome{Error: failCode, AccountID: relinkID})
-		default:
-			if err != nil && !errors.Is(err, credentials.ErrAccountNotFound) {
-				//nolint:gosec // G706: relinkID is an int64 from the session, err comes from the database
-				log.Printf("accounts: re-reading re-link target %d: %v", relinkID, err)
-			}
-			return discard(linkFailure(failCode))
-		}
-	}
-
-	account, existing, err := h.storeAccount(ctx, provider, userID, provUser, token)
-	if err != nil {
+	account, existing, failCode, err := h.storeAccount(ctx, provider, userID, relinkID, provUser, token)
+	switch {
+	case err != nil:
 		//nolint:gosec // G706: the name comes from the registry, err from the database
 		log.Printf("accounts: storing %s account: %v", provider.Name(), err)
 		return discard(linkFailure(linkErrServerError))
+	case failCode == linkErrIdentityMismatch:
+		return discard(linkOutcome{Error: failCode, AccountID: relinkID})
+	case failCode != "":
+		return discard(linkFailure(failCode))
 	}
 
 	if existing.ID > 0 {
@@ -276,27 +271,51 @@ func (h *ExternalAccountsHandler) linkCallback(
 // storeAccount encrypts the tokens and upserts the account for the identity
 // provUser. It also returns the row it replaced (zero ID for a new identity),
 // whose tokens the caller revokes.
+//
+// For a re-link (relinkID > 0) it first locks the target row and checks it with
+// checkRelinkTarget; when that fails, it stores nothing and returns the code as
+// failCode. Check and write share one transaction, so the target cannot be
+// unlinked in between (the write would then insert a new account): an unlink
+// waits for the lock, then deletes the re-linked row and revokes its tokens.
 func (h *ExternalAccountsHandler) storeAccount(
 	ctx context.Context,
 	provider providers.Provider,
 	userID int64,
+	relinkID int64,
 	provUser providers.User,
 	token providers.Token,
-) (account, existing dal.ExternalGitAccount, err error) {
+) (account, existing dal.ExternalGitAccount, failCode string, err error) {
 	encAccTok, err := h.cipher.Encrypt(token.AccessToken)
 	if err != nil {
-		return account, existing, err
+		return account, existing, "", err
 	}
 
 	encRefTok := ""
 	if len(token.RefreshToken) > 0 {
 		encRefTok, err = h.cipher.Encrypt(token.RefreshToken)
 		if err != nil {
-			return account, existing, err
+			return account, existing, "", err
 		}
 	}
 
-	q := dal.New(h.dbPool)
+	tx, err := h.dbPool.Begin(ctx)
+	if err != nil {
+		return account, existing, "", err
+	}
+	defer tx.Rollback(ctx)
+
+	q := dal.New(tx)
+
+	if relinkID > 0 {
+		target, err := q.GetExternalGitAccountByIdForUpdate(ctx, relinkID)
+		found := err == nil
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return account, existing, "", err
+		}
+		if failCode = checkRelinkTarget(target, found, userID, provider.Name(), provUser.ProviderUserID); failCode != "" {
+			return account, existing, failCode, nil
+		}
+	}
 
 	existing, err = q.GetExternalGitAccountByIdentity(ctx, dal.GetExternalGitAccountByIdentityParams{
 		UserID:         userID,
@@ -304,7 +323,7 @@ func (h *ExternalAccountsHandler) storeAccount(
 		ProviderUserID: provUser.ProviderUserID,
 	})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return account, existing, err
+		return account, existing, "", err
 	}
 
 	account, err = q.UpsertExternalGitAccount(ctx, dal.UpsertExternalGitAccountParams{
@@ -317,7 +336,10 @@ func (h *ExternalAccountsHandler) storeAccount(
 		TokenExpiresAt:        token.Expiry,
 		RefreshTokenExpiresAt: token.RefreshExpiry,
 	})
-	return account, existing, err
+	if err != nil {
+		return account, existing, "", err
+	}
+	return account, existing, "", tx.Commit(ctx)
 }
 
 // redirectLinkOutcome ends a linking flow on the UI's accounts page

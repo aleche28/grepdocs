@@ -1,13 +1,16 @@
 package routers
 
 import (
-	"errors"
 	"net/url"
 	"strconv"
+	"time"
 
-	"grepdocs/api/credentials"
 	"grepdocs/api/dal"
 )
+
+// linkFinishTimeout bounds the end of a linking flow, from the user fetch to
+// the store, which runs detached from the request once a token is issued
+const linkFinishTimeout = 30 * time.Second
 
 // Query values of the redirect that ends every provider linking flow, on
 // FRONTEND_URL/settings/accounts. They are a stable contract mirrored by the
@@ -75,14 +78,15 @@ func providerAuthError(errParam string) string {
 }
 
 // checkRelinkTarget decides whether a re-link may store the identity that came
-// back from the provider, given the re-read target and its lookup error. It
-// returns "" when it may, or the redirect code to fail with.
-func checkRelinkTarget(target dal.ExternalGitAccount, resolveErr error, providerUserID string) string {
+// back from the provider. target is the locked target row, found false when it
+// no longer exists. It returns "" when the re-link may proceed, or the redirect
+// code to fail with.
+func checkRelinkTarget(target dal.ExternalGitAccount, found bool, userID int64, provider, providerUserID string) string {
 	switch {
-	case errors.Is(resolveErr, credentials.ErrAccountNotFound):
-		return linkErrAccountNotFound // unlinked while the user was at the provider
-	case resolveErr != nil:
-		return linkErrServerError
+	// gone (unlinked while the user was at the provider), or not this user's
+	// account for this provider: login checked it, so only a stale session gets here
+	case !found, target.UserID != userID, target.Provider != provider:
+		return linkErrAccountNotFound
 	case target.ProviderUserID != providerUserID:
 		return linkErrIdentityMismatch
 	default:

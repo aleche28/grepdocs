@@ -69,23 +69,30 @@ func TestProviderAuthError(t *testing.T) {
 }
 
 func TestCheckRelinkTarget(t *testing.T) {
-	target := dal.ExternalGitAccount{ID: 7, ProviderUserID: "123"}
+	target := dal.ExternalGitAccount{ID: 7, UserID: 1, Provider: "github", ProviderUserID: "123"}
+	other := func(change func(*dal.ExternalGitAccount)) dal.ExternalGitAccount {
+		acc := target
+		change(&acc)
+		return acc
+	}
 
 	tests := []struct {
-		name       string
-		resolveErr error
-		identity   string
-		want       string
+		name     string
+		target   dal.ExternalGitAccount
+		found    bool
+		identity string
+		want     string
 	}{
-		{name: "same identity", identity: "123", want: ""},
-		{name: "different identity", identity: "456", want: linkErrIdentityMismatch},
-		{name: "target gone", resolveErr: credentials.ErrAccountNotFound, identity: "123", want: linkErrAccountNotFound},
-		{name: "lookup failed", resolveErr: errors.New("db down"), identity: "123", want: linkErrServerError},
+		{name: "same identity", target: target, found: true, identity: "123", want: ""},
+		{name: "different identity", target: target, found: true, identity: "456", want: linkErrIdentityMismatch},
+		{name: "target gone", found: false, identity: "123", want: linkErrAccountNotFound},
+		{name: "another user's account", target: other(func(a *dal.ExternalGitAccount) { a.UserID = 2 }), found: true, identity: "123", want: linkErrAccountNotFound},
+		{name: "another provider's account", target: other(func(a *dal.ExternalGitAccount) { a.Provider = "bitbucket" }), found: true, identity: "123", want: linkErrAccountNotFound},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := checkRelinkTarget(target, tc.resolveErr, tc.identity); got != tc.want {
+			if got := checkRelinkTarget(tc.target, tc.found, 1, "github", tc.identity); got != tc.want {
 				t.Errorf("checkRelinkTarget() = %q, want %q", got, tc.want)
 			}
 		})
