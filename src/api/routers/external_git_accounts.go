@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"grepdocs/api/credentials"
@@ -75,13 +76,14 @@ func (h *ExternalAccountsHandler) listExternalAccounts(w http.ResponseWriter, r 
 	}
 
 	// Sanitize response - don't send tokens to client
-	sanitizedAccounts := make([]map[string]interface{}, len(accounts))
+	sanitizedAccounts := make([]map[string]any, len(accounts))
 	now := time.Now()
 	for i, acc := range accounts {
-		sanitizedAccounts[i] = map[string]interface{}{
+		sanitizedAccounts[i] = map[string]any{
 			"id":                       acc.ID,
 			"provider":                 acc.Provider,
 			"provider_user_id":         acc.ProviderUserID,
+			"provider_login":           textOrNil(acc.ProviderLogin),
 			"linked_at":                acc.LinkedAt,
 			"last_refreshed_at":        acc.LastRefreshedAt,
 			"token_expires_at":         acc.TokenExpiresAt,
@@ -204,6 +206,7 @@ func (h *ExternalAccountsHandler) providerCallback(w http.ResponseWriter, r *htt
 		UserID:                userID,
 		Provider:              provider.Name(),
 		ProviderUserID:        provUser.ProviderUserID,
+		ProviderLogin:         pgtype.Text{String: provUser.Login, Valid: provUser.Login != ""},
 		AccessToken:           encAccTok,
 		RefreshToken:          encRefTok,
 		TokenExpiresAt:        token.Expiry,
@@ -334,4 +337,13 @@ func (h *ExternalAccountsHandler) listExternalRepositories(w http.ResponseWriter
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, repos)
+}
+
+// textOrNil returns t's value, or nil (JSON null) when it is NULL or empty: an
+// empty login would render as a bare "@" in the UI, so it counts as unknown.
+func textOrNil(t pgtype.Text) *string {
+	if !t.Valid || t.String == "" {
+		return nil
+	}
+	return &t.String
 }
