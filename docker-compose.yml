@@ -6,7 +6,7 @@ services:
 
   postgres:
     # keep the Debian (glibc) variant: the cluster's locale and collations depend on the libc
-    image: postgres:18.7-trixie
+    image: postgres:19.0-trixie
     restart: unless-stopped
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
