@@ -162,16 +162,19 @@ Goal: the first usable product. A user signs in, links GitHub, tracks repositori
 browses and reads their documentation in a browser. This is the first point a real browser origin
 exists.
 
-Status: **document API + re-link flag + UI project setup + logout fix + UI sign-in + app shell
-done** — `GET /documents`, `GET /documents/{id}` and `/raw` are implemented, `GET /accounts` flags
+Status: **document API + re-link flag + UI project setup + logout fix + UI sign-in + app shell +
+linked-accounts API done** — `GET /documents`, `GET /documents/{id}` and `/raw` are implemented, `GET /accounts` flags
 accounts that need re-linking (`needs_relink`), and `POST /auth/logout` ends the session. `src/ui` is a Vite + React + TypeScript app with routing (placeholder pages), an API client
 that reads the error envelope, a shared TanStack Query client, and its own CI job; locally it runs
 beside the API through the Vite dev-server proxy. Signing in with Google returns the user to the
 page they wanted (`?redirect=` on `/auth/google/login`), an auth guard protects every signed-in
 page, and logout clears the client cache. Every signed-in page sits in an app shell (navigation,
-current user, sign out), and pages show API errors through one shared component. Still open in this
-phase: CORS + rate limiting (#64), sending OAuth callback failures back to the UI (#119), and the UI
-screens (#67–#71).
+current user, sign out), and pages show API errors through one shared component. The API side of
+the linked accounts page (#67) is done: accounts carry their GitHub login, `GET /providers` gives
+the install link, re-linking targets one account and refuses any other identity, and every linking
+outcome redirects to the accounts page with a stable code. Still open in this phase: CORS + rate
+limiting (#64), sending Google sign-in failures back to the UI (#119; the GitHub linking half is
+done), and the UI screens (#67–#71).
 
 - **Document API (read only)**: `GET /documents` (metadata, filter by `repo_id`) and
   `GET /documents/{id}` + `/raw`, with the repository and branch the document comes from. No
@@ -180,13 +183,22 @@ screens (#67–#71).
   **Done** — `needs_relink`, computed from the stored tokens by `credentials.Service.NeedsReauth`
   with the same rules as `ForAccount`. It cannot see a token revoked at the provider while still
   valid, so the UI should also offer re-linking on the `403` such a token causes.
+- **Linked accounts API (#67, PR 1 of 2)**: what the accounts page needs from the API
+  (`docs/prd/067-linked-accounts.md`). **Done** — `provider_login` (migration `000008`, written on
+  every link and re-link, no backfill); `GET /providers` with each provider's `install_url`;
+  `GET /accounts/{provider}/login?account_id=N` re-links that account, with GitHub's account picker
+  and a login hint, and the callback stores nothing (and revokes the new token) when another
+  identity comes back; every callback outcome and login failure is a `307` to
+  `/settings/accounts?result=…|error=…`, which also covers the GitHub half of #119. PR 2 (the UI
+  page and the UI test setup) is open.
 - **CORS + rate limiting (#64)**: currently skipped because there's no real frontend to
   protect against; mandatory before the UI is used.
 - **Logout that ends the session**: `POST /auth/logout` deletes the session from Redis and sends
   only the clearing cookie; a request-scoped `Destroyed` flag stops `Handle` from saving the
   session again or re-sending its cookie. **Done.**
 - **UI (`src/ui`, React)**: Google login with an auth guard and logout (**done**); app shell
-  (**done**); linked accounts (link, unlink, re-link, install-the-app link); track a repository
+  (**done**); linked accounts (link, unlink, re-link, install-the-app link; its API is **done**, see
+  above); track a repository
   (pick account and branch, filter repositories client-side, or a public repository by
   `owner/name`); repositories page with sync status, trigger and polling, branch and `auto_sync`
   changes, untrack; a repository's document tree built from `GET /documents`; a document viewer with
