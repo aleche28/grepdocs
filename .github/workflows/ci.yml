@@ -95,5 +95,7 @@ jobs:
         run: make ui-fmt-check
       - name: lint
         run: make ui-lint
+      - name: test
+        run: make ui-test
       - name: build
         run: make ui-build

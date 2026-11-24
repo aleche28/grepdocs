@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 
 // The browser only ever talks to Vite, which forwards /api to the Go API, so
 // API calls are same-origin and need no CORS. The port must match the API's
@@ -28,5 +28,10 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: apiProxy,
+  },
+  // Component tests (`npm test`), run in jsdom against MSW handlers.
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['src/test/setup.ts'],
   },
 })

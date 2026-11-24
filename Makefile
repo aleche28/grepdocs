@@ -18,7 +18,7 @@ VACUUM         ?= go run github.com/daveshanley/vacuum@$(VACUUM_VERSION)
 DATABASE_URL ?= $(shell sed -n 's/^[[:space:]]*DATABASE_URL[[:space:]]*=[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}[[:space:]]*$$/\1/p' $(ENV_FILE))
 
 .PHONY: help infra-up infra-down env run build test test-race fmt fmt-check vet tidy tidy-check lint openapi-lint vuln ci sqlc-generate migrate-up migrate-down migrate-new \
-	ui-install ui-dev ui-build ui-typecheck ui-lint ui-fmt ui-fmt-check ui-audit ui-ci
+	ui-install ui-dev ui-build ui-test ui-typecheck ui-lint ui-fmt ui-fmt-check ui-audit ui-ci
 
 help:
 	@echo "GrepDocs targets:"
@@ -45,6 +45,7 @@ help:
 	@echo "  ui-install      Install the UI dependencies from package-lock.json (npm ci)"
 	@echo "  ui-dev          Run the UI dev server on :5173, proxying /api to :3000"
 	@echo "  ui-build        Type-check and build the UI into src/ui/dist"
+	@echo "  ui-test         Run the UI tests (Vitest)"
 	@echo "  ui-typecheck    Type-check the UI"
 	@echo "  ui-lint         Run ESLint on the UI"
 	@echo "  ui-fmt          Prettier format the UI (rewrites files)"
@@ -109,6 +110,9 @@ ui-dev:
 ui-build:
 	cd $(UI_DIR) && npm run build
 
+ui-test:
+	cd $(UI_DIR) && npm test
+
 ui-typecheck:
 	cd $(UI_DIR) && npm run typecheck
 
@@ -125,7 +129,7 @@ ui-fmt-check:
 ui-audit:
 	cd $(UI_DIR) && npm audit --omit=dev
 
-ui-ci: ui-fmt-check ui-lint ui-audit ui-build
+ui-ci: ui-fmt-check ui-lint ui-audit ui-test ui-build
 
 sqlc-generate:
 	cd $(GO_DIR) && sqlc generate
