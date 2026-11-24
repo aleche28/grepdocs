@@ -227,7 +227,9 @@ React + TypeScript, built with Vite, React Router for routes, TanStack Query for
   call with `ApiErrorMessage` (`src/components/`), never by hand: it shows the envelope's message,
   offers a retry, and renders nothing for `not_authenticated`, which the guard handles. Errors that
   need a page-specific action (`app_not_installed`'s `install_url`, `rate_limited`'s
-  `retryAfter`) are handled by that page.
+  `retryAfter`) are handled by that page. A dismissible message about something that just
+  happened (a link attempt, an unlink) is a `Banner` (`src/components/`): a status for a success,
+  an alert for a failure.
 - Formatting is Prettier (no semicolons, single quotes), linting ESLint. Run `make ui-fmt`.
 - Tests are Vitest in jsdom, with Testing Library, next to the code they test (`*.test.ts(x)`).
   The API is mocked with MSW (`src/test/server.ts`), so requests go through `apiFetch` exactly as

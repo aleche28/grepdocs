@@ -1,6 +1,6 @@
 # PRD: Linked accounts page (#67)
 
-Status: PR 1 (API) in review as #139; PR 2 (UI) not started. Milestone: Phase 4 — Read-only MVP. Replaces user stories S1.2, S1.4
+Status: PR 1 (API) merged as #139; PR 2 (UI) in review. Milestone: Phase 4 — Read-only MVP. Replaces user stories S1.2, S1.4
 and S1.5 (UI side).
 
 ## Problem
@@ -315,6 +315,38 @@ a TypeScript union next to the API types.
 - Unlink: impact count (0, n, loading, failed request), success refetch, `404` path, error shown in
   the dialog.
 - Query errors render `ApiErrorMessage` with retry.
+
+### As built in PR 2
+
+PR 2 implements the plan above, with these differences. Where they conflict, this list and the code
+win over the plan.
+
+- **The redirect names no provider**, so the banners take the provider's display name from the
+  account named by `account_id`, or from the only provider `GET /providers` lists, and say "your git
+  provider" otherwise. With GitHub as the only provider, the messages read as in the table.
+- **Messages without a name** say "Account linked.", "Account re-linked." and "…a different account
+  than the one you re-linked…".
+- **Unknown codes**: an unknown `error` shows the generic message, an unknown `result` shows
+  nothing (claiming a success that may not be one would be worse), and an `error` wins over a
+  `result`. An `account_id` that is not a positive integer is ignored.
+- **The banner waits** until both lists have loaded or failed, so its message does not change when
+  the account it names arrives.
+- **Links are built from the provider's `name`** (`/accounts/{name}/login`), and the labels from its
+  `display_name`, rather than hard-coding GitHub.
+- **The impact line has a singular form**: "1 tracked repository uses this account. It stays…".
+- **The dialog** starts with focus on *Cancel*, disables *Cancel* and Esc while the request runs
+  (closing would not stop it, and the outcome would go unseen), and follows the native `close`
+  event, since a browser may close a modal dialog on its own after a prevented cancel (Chrome does
+  on a second Esc). A `404` closes it without a message, as planned.
+- **`GET /repositories` is refetched after an unlink while the dialog is still open**, since its
+  query is active then. `Repository` has only the fields the page reads; #69 adds the rest.
+- **Test setup**: MSW 3 (`onUnhandledFrame`, imports from `msw/http`), a test that makes a request
+  no handler matches fails and the request is blocked, relative URLs are resolved for Node's
+  `fetch`, jsdom's missing modal dialog is stubbed, and pages render in `StrictMode`. jsdom 31 raised
+  `engines.node` to `>=22.22.2`.
+- **Not covered by automated tests**: the page in a real browser (layout, the top layer and focus
+  trap of the native dialog, Chrome's close on a second Esc) and the acceptance criteria end to end
+  against the API and GitHub. They are on the manual-check list in the PR.
 
 ### Docs in PR 2
 
