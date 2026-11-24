@@ -1,22 +1,49 @@
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import {
   type ExternalAccount,
+  linkOutcomeParams,
+  parseLinkOutcome,
   type Provider,
   useAccounts,
   useProviders,
 } from '../api/accounts.ts'
 import { ApiErrorMessage } from '../components/ApiErrorMessage.tsx'
+import { LinkOutcomeBanner } from './accounts/LinkOutcomeBanner.tsx'
 import { ProviderSection } from './accounts/ProviderSection.tsx'
 
 // /settings/accounts: the user's linked git provider accounts. Every linking
-// flow ends here (see router.tsx).
+// flow ends here (see router.tsx), with its outcome in the query.
 export function AccountsPage() {
   const providers = useProviders()
   const accounts = useAccounts()
 
+  // Read once, on mount: the API's redirect is a full page load, so the page
+  // never receives an outcome while it is already open. State rather than a
+  // value derived from the URL, which the effect below clears.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [outcome, setOutcome] = useState(() => parseLinkOutcome(searchParams))
+
+  // Remove the outcome from the URL, so a refresh or a back navigation does
+  // not show it again.
+  useEffect(() => {
+    if (!linkOutcomeParams.some((param) => searchParams.has(param))) {
+      return
+    }
+    const rest = new URLSearchParams(searchParams)
+    for (const param of linkOutcomeParams) {
+      rest.delete(param)
+    }
+    setSearchParams(rest, { replace: true })
+  }, [searchParams, setSearchParams])
+
   let content
   if (providers.data && accounts.data) {
+    // Only a success points at the row it changed.
+    const highlightId =
+      outcome && 'result' in outcome ? outcome.accountId : null
     content = groupByProvider(providers.data, accounts.data).map((group) => (
-      <ProviderSection key={group.name} {...group} />
+      <ProviderSection key={group.name} highlightId={highlightId} {...group} />
     ))
   } else if (providers.error || accounts.error) {
     // Only when there is nothing to show: a failed background refetch keeps
@@ -38,6 +65,16 @@ export function AccountsPage() {
   return (
     <>
       <h1>Linked accounts</h1>
+      {/* Held until both lists have settled, so the message does not change
+          when the account it names arrives. */}
+      {outcome && !providers.isPending && !accounts.isPending && (
+        <LinkOutcomeBanner
+          outcome={outcome}
+          providers={providers.data ?? []}
+          accounts={accounts.data}
+          onDismiss={() => setOutcome(null)}
+        />
+      )}
       {content}
     </>
   )

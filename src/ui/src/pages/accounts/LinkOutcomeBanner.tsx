@@ -1,0 +1,104 @@
+import type { ReactNode } from 'react'
+import { Link } from 'react-router'
+import type {
+  ExternalAccount,
+  LinkOutcome,
+  Provider,
+} from '../../api/accounts.ts'
+import { accountName } from './format.ts'
+
+interface LinkOutcomeBannerProps {
+  outcome: LinkOutcome
+  providers: Provider[]
+  // Undefined when the accounts could not be loaded: the message then
+  // leaves out the account's name.
+  accounts: ExternalAccount[] | undefined
+  onDismiss: () => void
+}
+
+// The message for the redirect that ends every link attempt. Successes are a
+// status, failures an alert.
+export function LinkOutcomeBanner({
+  outcome,
+  providers,
+  accounts,
+  onDismiss,
+}: LinkOutcomeBannerProps) {
+  const account = accounts?.find((a) => a.id === outcome.accountId)
+  const provider = outcomeProvider(account, providers)
+  const providerName = provider?.display_name ?? 'your git provider'
+  const name = account && accountName(account, providerName)
+
+  const isError = 'error' in outcome
+  return (
+    <div
+      role={isError ? 'alert' : 'status'}
+      className={isError ? 'banner error' : 'banner success'}
+    >
+      <p>{message(outcome, name, providerName, provider?.install_url)}</p>
+      <button type="button" aria-label="Dismiss" onClick={onDismiss}>
+        ×
+      </button>
+    </div>
+  )
+}
+
+// The redirect names an account at most, never a provider. With no account,
+// the only provider the server offers is the one the user linked with.
+function outcomeProvider(
+  account: ExternalAccount | undefined,
+  providers: Provider[],
+): Provider | undefined {
+  if (account) {
+    return providers.find((p) => p.name === account.provider)
+  }
+  return providers.length === 1 ? providers[0] : undefined
+}
+
+function message(
+  outcome: LinkOutcome,
+  name: string | undefined,
+  providerName: string,
+  installUrl: string | null | undefined,
+): ReactNode {
+  if ('result' in outcome) {
+    if (outcome.result === 'relinked') {
+      return name ? `Re-linked ${name}.` : 'Account re-linked.'
+    }
+    const appAccess = `make sure the ${providerName} App can see your repositories`
+    return (
+      <>
+        {name ? `Linked ${name}.` : 'Account linked.'} Next:{' '}
+        {installUrl ? (
+          <a href={installUrl} target="_blank" rel="noopener noreferrer">
+            {appAccess}
+            <span aria-hidden="true"> ↗</span>
+          </a>
+        ) : (
+          appAccess
+        )}
+        , then <Link to="/repositories/track">track a repository</Link>.
+      </>
+    )
+  }
+
+  switch (outcome.error) {
+    case 'access_denied':
+      return `Linking was cancelled on ${providerName}.`
+    case 'invalid_state':
+      return 'The linking session expired. Try again.'
+    case 'link_failed':
+      return `${capitalize(providerName)} did not complete the sign-in. Try again.`
+    case 'identity_mismatch':
+      return `You signed in to ${providerName} with a different account than ${name ?? 'the one you re-linked'}, so nothing was changed. Switch accounts in the picker and re-link again.`
+    case 'account_not_found':
+      return 'That account is no longer linked.'
+    case 'server_error':
+      return 'Something went wrong while linking. Try again.'
+  }
+}
+
+// For the generic provider name at the start of a sentence.
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}

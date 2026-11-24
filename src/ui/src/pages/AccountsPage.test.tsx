@@ -1,54 +1,14 @@
 import { screen, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw/http'
 import { describe, expect, test } from 'vitest'
-import type { ExternalAccount, Provider } from '../api/accounts.ts'
 import { apiUrl } from '../api/client.ts'
-import { renderRoute } from '../test/renderRoute.tsx'
+import {
+  account,
+  github,
+  mockAccountsApi,
+  renderAccountsPage,
+} from '../test/accounts.tsx'
 import { server } from '../test/server.ts'
-import { AccountsPage } from './AccountsPage.tsx'
-
-const github: Provider = {
-  name: 'github',
-  display_name: 'GitHub',
-  install_url: 'https://github.com/apps/grepdocs/installations/new',
-}
-
-function account(overrides: Partial<ExternalAccount> = {}): ExternalAccount {
-  return {
-    id: 3,
-    provider: 'github',
-    provider_user_id: '123456',
-    provider_login: 'octocat',
-    label: '',
-    linked_at: '2026-03-02T10:11:12Z',
-    last_refreshed_at: null,
-    token_expires_at: '2026-03-02T18:11:12Z',
-    refresh_token_expires_at: '2026-09-02T10:11:12Z',
-    needs_relink: false,
-    ...overrides,
-  }
-}
-
-function mockApi({
-  providers = [github],
-  accounts = [],
-}: {
-  providers?: Provider[]
-  accounts?: ExternalAccount[]
-}) {
-  server.use(
-    http.get(apiUrl('/providers'), () => HttpResponse.json(providers)),
-    http.get(apiUrl('/accounts'), () => HttpResponse.json(accounts)),
-  )
-}
-
-function renderPage(url = '/settings/accounts') {
-  return renderRoute({
-    path: '/settings/accounts',
-    element: <AccountsPage />,
-    url,
-  })
-}
 
 // The section of one provider, found by its heading.
 async function findSection(name: string) {
@@ -57,8 +17,8 @@ async function findSection(name: string) {
 
 describe('AccountsPage list', () => {
   test('shows loading until both lists arrive', async () => {
-    mockApi({ accounts: [account()] })
-    renderPage()
+    mockAccountsApi({ accounts: [account()] })
+    renderAccountsPage()
 
     expect(screen.getByText('Loading…')).toBeInTheDocument()
     expect(await screen.findByText('@octocat')).toBeInTheDocument()
@@ -66,13 +26,13 @@ describe('AccountsPage list', () => {
   })
 
   test('lists each account by login with its link date', async () => {
-    mockApi({
+    mockAccountsApi({
       accounts: [
         account(),
         account({ id: 4, provider_user_id: '999', provider_login: 'work-bot' }),
       ],
     })
-    renderPage()
+    renderAccountsPage()
 
     const section = await findSection('GitHub')
     const rows = section.getAllByRole('listitem')
@@ -87,24 +47,24 @@ describe('AccountsPage list', () => {
   })
 
   test('names an account without a login by its provider ID', async () => {
-    mockApi({ accounts: [account({ provider_login: null })] })
-    renderPage()
+    mockAccountsApi({ accounts: [account({ provider_login: null })] })
+    renderAccountsPage()
 
     const section = await findSection('GitHub')
     expect(section.getByText('GitHub account 123456')).toBeInTheDocument()
   })
 
   test('omits the link date when there is none', async () => {
-    mockApi({ accounts: [account({ linked_at: null })] })
-    renderPage()
+    mockAccountsApi({ accounts: [account({ linked_at: null })] })
+    renderAccountsPage()
 
     const section = await findSection('GitHub')
     expect(section.getByRole('listitem')).not.toHaveTextContent('Linked')
   })
 
   test('re-links an account by its ID, as a secondary action', async () => {
-    mockApi({ accounts: [account()] })
-    renderPage()
+    mockAccountsApi({ accounts: [account()] })
+    renderAccountsPage()
 
     const relink = await screen.findByRole('link', { name: 'Re-link @octocat' })
     expect(relink).toHaveAttribute(
@@ -118,8 +78,8 @@ describe('AccountsPage list', () => {
   })
 
   test('warns about an account that needs re-linking, and makes re-link primary', async () => {
-    mockApi({ accounts: [account({ needs_relink: true })] })
-    renderPage()
+    mockAccountsApi({ accounts: [account({ needs_relink: true })] })
+    renderAccountsPage()
 
     const section = await findSection('GitHub')
     expect(
@@ -131,8 +91,8 @@ describe('AccountsPage list', () => {
   })
 
   test('links another account without a target', async () => {
-    mockApi({ accounts: [account()] })
-    renderPage()
+    mockAccountsApi({ accounts: [account()] })
+    renderAccountsPage()
 
     const section = await findSection('GitHub')
     expect(
@@ -141,8 +101,8 @@ describe('AccountsPage list', () => {
   })
 
   test('shows the empty state for a provider without accounts', async () => {
-    mockApi({ accounts: [] })
-    renderPage()
+    mockAccountsApi({ accounts: [] })
+    renderAccountsPage()
 
     const section = await findSection('GitHub')
     expect(
@@ -157,8 +117,8 @@ describe('AccountsPage list', () => {
   })
 
   test('opens the install page in a new tab', async () => {
-    mockApi({ accounts: [] })
-    renderPage()
+    mockAccountsApi({ accounts: [] })
+    renderAccountsPage()
 
     const section = await findSection('GitHub')
     const install = section.getByRole('link', {
@@ -170,21 +130,21 @@ describe('AccountsPage list', () => {
   })
 
   test('hides the install link without an install URL', async () => {
-    mockApi({ providers: [{ ...github, install_url: null }] })
-    renderPage()
+    mockAccountsApi({ providers: [{ ...github, install_url: null }] })
+    renderAccountsPage()
 
     const section = await findSection('GitHub')
     expect(section.queryByRole('link', { name: /Install/ })).toBeNull()
   })
 
   test('shows one section per provider, in the API order', async () => {
-    mockApi({
+    mockAccountsApi({
       providers: [
         github,
         { name: 'bitbucket', display_name: 'Bitbucket', install_url: null },
       ],
     })
-    renderPage()
+    renderAccountsPage()
 
     await findSection('GitHub')
     expect(
@@ -193,12 +153,12 @@ describe('AccountsPage list', () => {
   })
 
   test('keeps accounts of a provider the API no longer lists, without linking', async () => {
-    mockApi({
+    mockAccountsApi({
       accounts: [
         account({ id: 7, provider: 'gitlab', provider_login: 'old-me' }),
       ],
     })
-    renderPage()
+    renderAccountsPage()
 
     const section = await findSection('gitlab')
     expect(section.getByText('@old-me')).toBeInTheDocument()
@@ -213,7 +173,7 @@ describe('AccountsPage list', () => {
     ['accounts', '/accounts'],
   ])('shows a failed %s request with a retry', async (_, failingPath) => {
     let failing = true
-    mockApi({ accounts: [account()] })
+    mockAccountsApi({ accounts: [account()] })
     server.use(
       http.get(apiUrl(failingPath), () =>
         failing
@@ -224,7 +184,7 @@ describe('AccountsPage list', () => {
           : undefined,
       ),
     )
-    const { user } = renderPage()
+    const { user } = renderAccountsPage()
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('Could not load your linked accounts')

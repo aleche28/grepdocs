@@ -14,12 +14,15 @@ interface ProviderSectionProps {
   // configuration): its accounts are shown, but cannot be linked again.
   provider: Provider | null
   accounts: ExternalAccount[]
+  // The account a link attempt just changed, highlighted briefly.
+  highlightId: number | null
 }
 
 export function ProviderSection({
   name,
   provider,
   accounts,
+  highlightId,
 }: ProviderSectionProps) {
   const headingId = useId()
   const displayName = provider?.display_name ?? name
@@ -36,6 +39,7 @@ export function ProviderSection({
               account={account}
               name={accountName(account, displayName)}
               canRelink={provider !== null}
+              highlighted={account.id === highlightId}
             />
           ))}
         </ul>

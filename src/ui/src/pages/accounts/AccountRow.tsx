@@ -8,13 +8,19 @@ interface AccountRowProps {
   // False for a provider the API no longer lists: it cannot be linked, so
   // only unlinking is offered.
   canRelink: boolean
+  highlighted: boolean
 }
 
-export function AccountRow({ account, name, canRelink }: AccountRowProps) {
+export function AccountRow({
+  account,
+  name,
+  canRelink,
+  highlighted,
+}: AccountRowProps) {
   const linkedOn = formatDate(account.linked_at)
 
   return (
-    <li className="account-row">
+    <li className={highlighted ? 'account-row highlighted' : 'account-row'}>
       <div className="account-identity">
         <strong>{name}</strong>
         {linkedOn && <span className="muted">Linked {linkedOn}</span>}

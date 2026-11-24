@@ -146,3 +146,52 @@ main {
   flex-wrap: wrap;
   gap: 0 1rem;
 }
+
+/* Fades out once, after a link attempt changed this row. */
+.account-row.highlighted {
+  animation: highlight 3s ease-out;
+}
+
+@keyframes highlight {
+  from {
+    background: color-mix(in srgb, #2563eb 18%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-row.highlighted {
+    animation: none;
+    background: color-mix(in srgb, #2563eb 10%, transparent);
+  }
+}
+
+/* LinkOutcomeBanner */
+
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.5rem 1rem;
+}
+
+.banner p {
+  flex: 1;
+  margin: 0;
+}
+
+.banner.success {
+  border-left: 3px solid #16a34a;
+  background: color-mix(in srgb, #16a34a 10%, transparent);
+}
+
+/* .banner.error takes its colours from .error (ApiErrorMessage). */
+.banner button {
+  margin: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}

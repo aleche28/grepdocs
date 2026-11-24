@@ -1,7 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactNode } from 'react'
+import { type ReactNode, StrictMode } from 'react'
 import { createMemoryRouter } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
 import { createTestQueryClient } from './queryClient.ts'
@@ -28,10 +28,14 @@ export function renderRoute({ path, element, url = path }: RenderRouteOptions) {
   })
   const user = userEvent.setup()
 
+  // StrictMode as in main.tsx, so effects run twice here as they do in
+  // development.
   const result = render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </StrictMode>,
   )
   return { ...result, router, queryClient, user }
 }
