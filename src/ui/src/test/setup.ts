@@ -44,8 +44,10 @@ if (typeof HTMLDialogElement.prototype.showModal !== 'function') {
 
 let unpatchedFetch: typeof fetch
 
-// MSW's message for each request no handler matched in the current test.
-const unhandledRequests: string[] = []
+// Each request no handler matched in the current test, with MSW's message.
+// Recorded synchronously, so a request made just before a test ends is still
+// reported by that test's afterEach.
+const unhandledRequests: { message: string }[] = []
 
 beforeAll(() => {
   // MSW's default lets an unmatched request through to the real network
@@ -55,9 +57,10 @@ beforeAll(() => {
   // in afterEach, and rejects, which fails the request instead of sending it.
   server.listen({
     onUnhandledFrame: async ({ frame }) => {
-      const message = await frame.getUnhandledMessage()
-      unhandledRequests.push(message)
-      throw new Error(message)
+      const entry = { message: 'a request without a handler' }
+      unhandledRequests.push(entry)
+      entry.message = await frame.getUnhandledMessage()
+      throw new Error(entry.message)
     },
   })
 
@@ -80,7 +83,10 @@ afterEach(() => {
   server.resetHandlers()
 
   if (unhandledRequests.length > 0) {
-    const requests = unhandledRequests.splice(0).join(', ')
+    const requests = unhandledRequests
+      .splice(0)
+      .map((entry) => entry.message)
+      .join(', ')
     throw new Error(`Requests without an MSW handler: ${requests}`)
   }
 })

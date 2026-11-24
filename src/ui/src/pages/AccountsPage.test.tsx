@@ -196,4 +196,36 @@ describe('AccountsPage list', () => {
     expect(await screen.findByText('@octocat')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
+
+  // A query without data goes back to pending on a refetch, which clears
+  // its error, so a retry shows as loading.
+  test('shows loading while a retry runs', async () => {
+    mockAccountsApi({ accounts: [account()] })
+    let attempt = 0
+    let releaseRetry!: () => void
+    const retryReleased = new Promise<void>((resolve) => {
+      releaseRetry = resolve
+    })
+    server.use(
+      http.get(apiUrl('/accounts'), async () => {
+        attempt++
+        if (attempt === 1) {
+          return HttpResponse.json(
+            { error: { code: 'internal', message: 'Something went wrong' } },
+            { status: 500 },
+          )
+        }
+        await retryReleased
+        return undefined
+      }),
+    )
+    const { user } = renderAccountsPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Try again' }))
+
+    expect(await screen.findByText('Loading…')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    releaseRetry()
+    expect(await screen.findByText('@octocat')).toBeInTheDocument()
+  })
 })

@@ -337,13 +337,17 @@ win over the plan.
 - **The dialog** starts with focus on *Cancel*, disables *Cancel* and Esc while the request runs
   (closing would not stop it, and the outcome would go unseen), and follows the native `close`
   event, since a browser may close a modal dialog on its own after a prevented cancel (Chrome does
-  on a second Esc). A `404` closes it without a message, as planned.
+  on a second Esc): while the request runs it reopens, otherwise the page drops it. Focus returns
+  to the opener, or to the page heading when the opener is gone (the unlinked row). A `404` closes
+  it without a message, as planned.
+- **An unlinked account leaves the list at once**: it is removed from the cached list on success,
+  and the dialog does not wait for the refetches, which retry on 5xx.
 - **`GET /repositories` is refetched after an unlink while the dialog is still open**, since its
   query is active then. `Repository` has only the fields the page reads; #69 adds the rest.
 - **Test setup**: MSW 3 (`onUnhandledFrame`, imports from `msw/http`), a test that makes a request
   no handler matches fails and the request is blocked, relative URLs are resolved for Node's
-  `fetch`, jsdom's missing modal dialog is stubbed, and pages render in `StrictMode`. jsdom 31 raised
-  `engines.node` to `>=22.22.2`.
+  `fetch`, jsdom's missing modal dialog is stubbed, and pages render in `StrictMode`. jsdom 31 narrowed
+  `engines.node` to `^22.22.2 || ^24.15.0 || >=26.0.0`.
 - **Not covered by automated tests**: the page in a real browser (layout, the top layer and focus
   trap of the native dialog, Chrome's close on a second Esc) and the acceptance criteria end to end
   against the API and GitHub. They are on the manual-check list in the PR.

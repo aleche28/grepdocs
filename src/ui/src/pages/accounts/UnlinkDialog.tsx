@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { type RefObject, useEffect, useId, useRef, useState } from 'react'
 import { type ExternalAccount, useUnlinkAccount } from '../../api/accounts.ts'
 import { ApiError } from '../../api/client.ts'
 import { type Repository, useRepositories } from '../../api/repositories.ts'
@@ -10,6 +10,10 @@ interface UnlinkDialogProps {
   name: string
   onClose: () => void
   onUnlinked: () => void
+  // Where focus goes when the dialog closes and the element that opened it
+  // is gone (the unlinked account's row) or was never focused (Safari does
+  // not focus a clicked button).
+  fallbackFocus: RefObject<HTMLElement | null>
 }
 
 // Confirms unlinking an account, with the tracked repositories it affects.
@@ -19,6 +23,7 @@ export function UnlinkDialog({
   name,
   onClose,
   onUnlinked,
+  fallbackFocus,
 }: UnlinkDialogProps) {
   const titleId = useId()
   const dialogRef = useRef<HTMLDialogElement>(null)
@@ -32,18 +37,23 @@ export function UnlinkDialog({
 
   useEffect(() => {
     const dialog = dialogRef.current
+    // Rendered before the dialog and kept while it is open.
+    const fallback = fallbackFocus.current
     dialog?.showModal()
     // Cancel rather than the destructive action, which is first.
     cancelRef.current?.focus()
     return () => {
       dialog?.close()
-      // Not every browser returns focus on its own. The opener is gone when
-      // the account was unlinked, and focusing it then does nothing.
-      if (opener instanceof HTMLElement) {
-        opener.focus()
-      }
+      // Not every browser returns focus on its own.
+      const returnTo =
+        opener instanceof HTMLElement &&
+        opener.isConnected &&
+        opener !== opener.ownerDocument.body
+          ? opener
+          : fallback
+      returnTo?.focus()
     }
-  }, [opener])
+  }, [opener, fallbackFocus])
 
   const confirm = () =>
     unlink.mutate(account.id, {
@@ -64,11 +74,18 @@ export function UnlinkDialog({
       className="dialog"
       onClose={() => {
         // The browser closed the dialog by itself, which it may do even
-        // after a prevented cancel (Chrome closes on a second Esc). Without
-        // this the page would keep a closed dialog mounted. The event is
-        // queued, so after StrictMode's simulated unmount, which closes and
-        // reopens at once, it finds the dialog open and does nothing.
-        if (!dialogRef.current?.open) {
+        // after a prevented cancel (Chrome closes on a second Esc). The event
+        // is queued, so after StrictMode's simulated unmount, which closes
+        // and reopens at once, it finds the dialog open and does nothing.
+        const dialog = dialogRef.current
+        if (!dialog || dialog.open) {
+          return
+        }
+        if (unlink.isPending) {
+          // Unmounting now would drop the outcome of the running request.
+          dialog.showModal()
+        } else {
+          // Otherwise the page would keep a closed dialog mounted.
           onClose()
         }
       }}

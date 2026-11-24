@@ -26,15 +26,18 @@ export function LinkOutcomeBanner({
 }: LinkOutcomeBannerProps) {
   const account = accounts?.find((a) => a.id === outcome.accountId)
   const provider = outcomeProvider(account, providers)
+  // Generic wording when the provider is unknown (GET /providers failed, or
+  // several providers and no account to tell which).
   const providerName = provider?.display_name ?? 'your git provider'
-  const name = account && accountName(account, providerName)
+  const name =
+    account && accountName(account, provider?.display_name ?? account.provider)
 
   return (
     <Banner
       tone={'error' in outcome ? 'error' : 'success'}
       onDismiss={onDismiss}
     >
-      {message(outcome, name, providerName, provider?.install_url)}
+      {message(outcome, name, providerName, provider)}
     </Banner>
   )
 }
@@ -55,13 +58,16 @@ function message(
   outcome: LinkOutcome,
   name: string | undefined,
   providerName: string,
-  installUrl: string | null | undefined,
+  provider: Provider | undefined,
 ): ReactNode {
   if ('result' in outcome) {
     if (outcome.result === 'relinked') {
       return name ? `Re-linked ${name}.` : 'Account re-linked.'
     }
-    const appAccess = `make sure the ${providerName} App can see your repositories`
+    const appAccess = provider
+      ? `make sure the ${provider.display_name} App can see your repositories`
+      : 'make sure the app can see your repositories'
+    const installUrl = provider?.install_url
     return (
       <>
         {name ? `Linked ${name}.` : 'Account linked.'} Next:{' '}

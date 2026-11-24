@@ -48,21 +48,26 @@ export function useAccounts() {
   })
 }
 
-// DELETE /accounts/{id}. Tracked repositories that used the account keep
-// their rows with account_id null, so both lists are refetched. A 404 means
-// the account is already gone (another tab unlinked it): the accounts list is
-// refetched so the row disappears, and the caller decides what to show.
+// DELETE /accounts/{id}. The account leaves the cached list at once, and
+// both lists are refetched: tracked repositories that used the account keep
+// their rows with account_id null. The mutation settles without waiting for
+// those refetches, which retry on 5xx and could hold the caller for seconds.
+// A 404 means the account is already gone (another tab unlinked it): the
+// accounts list is refetched so the row disappears, and the caller decides
+// what to show.
 export function useUnlinkAccount() {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: (accountId: number) =>
       apiFetch<void>(`/accounts/${accountId}`, { method: 'DELETE' }),
-    onSuccess: () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: accountsQueryKey }),
-        queryClient.invalidateQueries({ queryKey: repositoriesQueryKey }),
-      ]),
+    onSuccess: (_, accountId) => {
+      queryClient.setQueryData<ExternalAccount[]>(accountsQueryKey, (old) =>
+        old?.filter((account) => account.id !== accountId),
+      )
+      void queryClient.invalidateQueries({ queryKey: accountsQueryKey })
+      void queryClient.invalidateQueries({ queryKey: repositoriesQueryKey })
+    },
     onError: (error) => {
       if (error instanceof ApiError && error.status === 404) {
         void queryClient.invalidateQueries({ queryKey: accountsQueryKey })

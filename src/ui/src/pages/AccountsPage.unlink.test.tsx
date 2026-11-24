@@ -295,3 +295,62 @@ describe('AccountsPage unlink dialog closed by the browser', () => {
     ).toBeVisible()
   })
 })
+
+describe('AccountsPage unlink, review regressions', () => {
+  test('reopens a dialog the browser closes while the unlink runs', async () => {
+    mockApi([account()])
+    const { released, release } = gate()
+    server.use(
+      http.delete(apiUrl('/accounts/3'), async () => {
+        await released
+        return HttpResponse.json({ message: 'ok' })
+      }),
+    )
+    const { dialog, dialogElement, user } = await openDialog()
+    await user.click(dialog.getByRole('button', { name: 'Unlink' }))
+    await dialog.findByRole('button', { name: 'Unlinking…' })
+
+    ;(dialogElement as HTMLDialogElement).close()
+    // Let the queued close event run.
+    await new Promise((resolve) => setTimeout(resolve))
+
+    expect(dialogElement).toBeVisible()
+    release()
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Unlinked @octocat.',
+    )
+  })
+
+  test('confirms without waiting for the lists to refetch', async () => {
+    mockApi([account()])
+    const { dialog, user } = await openDialog()
+    const { released, release } = gate()
+    server.use(
+      http.get(apiUrl('/accounts'), async () => {
+        await released
+        return HttpResponse.json([])
+      }),
+    )
+
+    await user.click(dialog.getByRole('button', { name: 'Unlink' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Unlinked @octocat.',
+    )
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByText('@octocat')).not.toBeInTheDocument()
+    release()
+  })
+
+  test('moves focus to the heading once the unlinked row is gone', async () => {
+    mockApi([account()])
+    const { dialog, user } = await openDialog()
+
+    await user.click(dialog.getByRole('button', { name: 'Unlink' }))
+
+    await screen.findByRole('status')
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Linked accounts' }),
+    ).toHaveFocus()
+  })
+})

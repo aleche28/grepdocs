@@ -161,3 +161,34 @@ describe('AccountsPage banners after a link attempt', () => {
     expect(row).not.toHaveClass('highlighted')
   })
 })
+
+describe('AccountsPage banners without the providers list', () => {
+  test('a new link uses generic wording when the provider is unknown', async () => {
+    mockAccountsApi({ accounts: [account()] })
+    server.use(
+      http.get(apiUrl('/providers'), () =>
+        HttpResponse.json(
+          { error: { code: 'internal', message: 'Something went wrong' } },
+          { status: 500 },
+        ),
+      ),
+    )
+    renderAccountsPage(`${page}?result=linked&account_id=3`)
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Linked @octocat. Next: make sure the app can see your repositories, then track a repository.',
+    )
+  })
+
+  test('names an account without a login by its raw provider', async () => {
+    mockAccountsApi({
+      providers: [],
+      accounts: [account({ provider: 'gitlab', provider_login: null })],
+    })
+    renderAccountsPage(`${page}?result=relinked&account_id=3`)
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Re-linked gitlab account 123456.',
+    )
+  })
+})

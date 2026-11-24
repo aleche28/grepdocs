@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import {
   type ExternalAccount,
@@ -39,6 +39,8 @@ export function AccountsPage() {
     return link && { link }
   })
   const [unlinkTarget, setUnlinkTarget] = useState<UnlinkTarget | null>(null)
+  // Takes focus after an unlink, when the row that had it is gone.
+  const headingRef = useRef<HTMLHeadingElement>(null)
 
   // Remove the outcome from the URL, so a refresh or a back navigation does
   // not show it again.
@@ -87,7 +89,9 @@ export function AccountsPage() {
 
   return (
     <>
-      <h1>Linked accounts</h1>
+      <h1 ref={headingRef} tabIndex={-1}>
+        Linked accounts
+      </h1>
       {notice && 'unlinked' in notice && (
         <Banner tone="success" onDismiss={() => setNotice(null)}>
           Unlinked {notice.unlinked}.
@@ -112,6 +116,7 @@ export function AccountsPage() {
           // A fresh dialog, and mutation, per account.
           key={unlinkTarget.account.id}
           {...unlinkTarget}
+          fallbackFocus={headingRef}
           onClose={() => setUnlinkTarget(null)}
           onUnlinked={() => {
             setUnlinkTarget(null)
