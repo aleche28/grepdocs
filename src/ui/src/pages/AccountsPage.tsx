@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import {
   type ExternalAccount,
+  type LinkOutcome,
   linkOutcomeParams,
   parseLinkOutcome,
   type Provider,
@@ -9,8 +10,19 @@ import {
   useProviders,
 } from '../api/accounts.ts'
 import { ApiErrorMessage } from '../components/ApiErrorMessage.tsx'
+import { Banner } from '../components/Banner.tsx'
 import { LinkOutcomeBanner } from './accounts/LinkOutcomeBanner.tsx'
 import { ProviderSection } from './accounts/ProviderSection.tsx'
+import { UnlinkDialog } from './accounts/UnlinkDialog.tsx'
+
+// What the banner above the list reports: the outcome of the link attempt
+// that redirected here, or the account just unlinked.
+type Notice = { link: LinkOutcome } | { unlinked: string }
+
+interface UnlinkTarget {
+  account: ExternalAccount
+  name: string
+}
 
 // /settings/accounts: the user's linked git provider accounts. Every linking
 // flow ends here (see router.tsx), with its outcome in the query.
@@ -22,7 +34,11 @@ export function AccountsPage() {
   // never receives an outcome while it is already open. State rather than a
   // value derived from the URL, which the effect below clears.
   const [searchParams, setSearchParams] = useSearchParams()
-  const [outcome, setOutcome] = useState(() => parseLinkOutcome(searchParams))
+  const [notice, setNotice] = useState<Notice | null>(() => {
+    const link = parseLinkOutcome(searchParams)
+    return link && { link }
+  })
+  const [unlinkTarget, setUnlinkTarget] = useState<UnlinkTarget | null>(null)
 
   // Remove the outcome from the URL, so a refresh or a back navigation does
   // not show it again.
@@ -41,9 +57,16 @@ export function AccountsPage() {
   if (providers.data && accounts.data) {
     // Only a success points at the row it changed.
     const highlightId =
-      outcome && 'result' in outcome ? outcome.accountId : null
+      notice && 'link' in notice && 'result' in notice.link
+        ? notice.link.accountId
+        : null
     content = groupByProvider(providers.data, accounts.data).map((group) => (
-      <ProviderSection key={group.name} highlightId={highlightId} {...group} />
+      <ProviderSection
+        key={group.name}
+        highlightId={highlightId}
+        onUnlink={(account, name) => setUnlinkTarget({ account, name })}
+        {...group}
+      />
     ))
   } else if (providers.error || accounts.error) {
     // Only when there is nothing to show: a failed background refetch keeps
@@ -65,17 +88,37 @@ export function AccountsPage() {
   return (
     <>
       <h1>Linked accounts</h1>
+      {notice && 'unlinked' in notice && (
+        <Banner tone="success" onDismiss={() => setNotice(null)}>
+          Unlinked {notice.unlinked}.
+        </Banner>
+      )}
       {/* Held until both lists have settled, so the message does not change
           when the account it names arrives. */}
-      {outcome && !providers.isPending && !accounts.isPending && (
-        <LinkOutcomeBanner
-          outcome={outcome}
-          providers={providers.data ?? []}
-          accounts={accounts.data}
-          onDismiss={() => setOutcome(null)}
+      {notice &&
+        'link' in notice &&
+        !providers.isPending &&
+        !accounts.isPending && (
+          <LinkOutcomeBanner
+            outcome={notice.link}
+            providers={providers.data ?? []}
+            accounts={accounts.data}
+            onDismiss={() => setNotice(null)}
+          />
+        )}
+      {content}
+      {unlinkTarget && (
+        <UnlinkDialog
+          // A fresh dialog, and mutation, per account.
+          key={unlinkTarget.account.id}
+          {...unlinkTarget}
+          onClose={() => setUnlinkTarget(null)}
+          onUnlinked={() => {
+            setUnlinkTarget(null)
+            setNotice({ unlinked: unlinkTarget.name })
+          }}
         />
       )}
-      {content}
     </>
   )
 }

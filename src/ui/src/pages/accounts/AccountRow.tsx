@@ -9,6 +9,7 @@ interface AccountRowProps {
   // only unlinking is offered.
   canRelink: boolean
   highlighted: boolean
+  onUnlink: () => void
 }
 
 export function AccountRow({
@@ -16,6 +17,7 @@ export function AccountRow({
   name,
   canRelink,
   highlighted,
+  onUnlink,
 }: AccountRowProps) {
   const linkedOn = formatDate(account.linked_at)
 
@@ -38,6 +40,9 @@ export function AccountRow({
             Re-link
           </a>
         )}
+        <button type="button" onClick={onUnlink} aria-label={`Unlink ${name}`}>
+          Unlink
+        </button>
       </div>
     </li>
   )

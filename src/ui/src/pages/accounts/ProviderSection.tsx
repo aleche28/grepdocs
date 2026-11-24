@@ -16,6 +16,8 @@ interface ProviderSectionProps {
   accounts: ExternalAccount[]
   // The account a link attempt just changed, highlighted briefly.
   highlightId: number | null
+  // Opens the unlink dialog for an account, with its name.
+  onUnlink: (account: ExternalAccount, name: string) => void
 }
 
 export function ProviderSection({
@@ -23,6 +25,7 @@ export function ProviderSection({
   provider,
   accounts,
   highlightId,
+  onUnlink,
 }: ProviderSectionProps) {
   const headingId = useId()
   const displayName = provider?.display_name ?? name
@@ -33,15 +36,19 @@ export function ProviderSection({
 
       {accounts.length > 0 ? (
         <ul className="account-list">
-          {accounts.map((account) => (
-            <AccountRow
-              key={account.id}
-              account={account}
-              name={accountName(account, displayName)}
-              canRelink={provider !== null}
-              highlighted={account.id === highlightId}
-            />
-          ))}
+          {accounts.map((account) => {
+            const name = accountName(account, displayName)
+            return (
+              <AccountRow
+                key={account.id}
+                account={account}
+                name={name}
+                canRelink={provider !== null}
+                highlighted={account.id === highlightId}
+                onUnlink={() => onUnlink(account, name)}
+              />
+            )
+          })}
         </ul>
       ) : (
         <p>

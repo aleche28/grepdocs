@@ -17,7 +17,7 @@ worker pool (on `testing/synctest`, so its timeouts run on a fake clock). `route
 only code that needs no database (`writeProviderError`, `installDetails`, ID parsing, `isValidRedirectPath`, the docs routes,
 `GET /providers`, the linking redirect helpers, and the linking-flow paths that end before a DB call); other handlers and
 `reposync` stay untested because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
-UI tests (Vitest) cover the API client, the auth helpers, and the accounts API module so far; see Web UI for the setup.
+UI tests (Vitest) cover the API client, the auth helpers, and the accounts page (`/settings/accounts`); see Web UI for the setup.
 
 ## Commands
 
@@ -236,7 +236,9 @@ React + TypeScript, built with Vite, React Router for routes, TanStack Query for
   request, which MSW would otherwise send to the real network. It resolves relative URLs for
   Node's `fetch`, which rejects them, so `apiUrl` stays relative. Render a page with
   `renderRoute` (`src/test/renderRoute.tsx`): a memory router and a fresh `QueryClient` without
-  retries, and no `AppLayout`, so no `GET /users/me` handler is needed. Vitest does not
+  retries, in `StrictMode` like `main.tsx`, and no `AppLayout`, so no `GET /users/me` handler is
+  needed. jsdom has no modal dialogs: `setup.ts` stubs `showModal()` / `close()` and Esc, and
+  queues `close` as browsers do. Vitest does not
   type-check, so a test run passes code that `make ui-typecheck` rejects (such as MSW 2's
   `onUnhandledRequest`, renamed `onUnhandledFrame` in MSW 3, which MSW then ignores).
 

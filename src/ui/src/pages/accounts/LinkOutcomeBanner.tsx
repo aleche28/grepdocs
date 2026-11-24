@@ -5,6 +5,7 @@ import type {
   LinkOutcome,
   Provider,
 } from '../../api/accounts.ts'
+import { Banner } from '../../components/Banner.tsx'
 import { accountName } from './format.ts'
 
 interface LinkOutcomeBannerProps {
@@ -16,8 +17,7 @@ interface LinkOutcomeBannerProps {
   onDismiss: () => void
 }
 
-// The message for the redirect that ends every link attempt. Successes are a
-// status, failures an alert.
+// The message for the redirect that ends every link attempt.
 export function LinkOutcomeBanner({
   outcome,
   providers,
@@ -29,17 +29,13 @@ export function LinkOutcomeBanner({
   const providerName = provider?.display_name ?? 'your git provider'
   const name = account && accountName(account, providerName)
 
-  const isError = 'error' in outcome
   return (
-    <div
-      role={isError ? 'alert' : 'status'}
-      className={isError ? 'banner error' : 'banner success'}
+    <Banner
+      tone={'error' in outcome ? 'error' : 'success'}
+      onDismiss={onDismiss}
     >
-      <p>{message(outcome, name, providerName, provider?.install_url)}</p>
-      <button type="button" aria-label="Dismiss" onClick={onDismiss}>
-        ×
-      </button>
-    </div>
+      {message(outcome, name, providerName, provider?.install_url)}
+    </Banner>
   )
 }
 

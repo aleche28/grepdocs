@@ -5,6 +5,43 @@ import { server } from './server.ts'
 
 // Runs before every test file (vite.config.ts → test.setupFiles).
 
+// jsdom has no modal dialogs: HTMLDialogElement has neither showModal() nor
+// close(). This stands in for what the pages rely on: showModal() opens the
+// dialog, Esc anywhere in the document (focus may be outside it, such as on
+// a button that was just disabled) fires a cancelable "cancel" and closes
+// unless it was prevented, and close() queues "close". There is no top layer
+// or focus trap.
+if (typeof HTMLDialogElement.prototype.showModal !== 'function') {
+  const escListeners = new WeakMap<
+    HTMLDialogElement,
+    (e: KeyboardEvent) => void
+  >()
+
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute('open', '')
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      const cancel = new Event('cancel', { cancelable: true })
+      if (this.dispatchEvent(cancel)) this.close()
+    }
+    escListeners.set(this, onKeyDown)
+    this.ownerDocument.addEventListener('keydown', onKeyDown)
+  }
+
+  HTMLDialogElement.prototype.close = function (returnValue?: string) {
+    if (!this.hasAttribute('open')) return
+    this.removeAttribute('open')
+    const onKeyDown = escListeners.get(this)
+    if (onKeyDown) {
+      this.ownerDocument.removeEventListener('keydown', onKeyDown)
+      escListeners.delete(this)
+    }
+    if (returnValue !== undefined) this.returnValue = returnValue
+    // Queued, as browsers do, not dispatched synchronously.
+    setTimeout(() => this.dispatchEvent(new Event('close')))
+  }
+}
+
 let unpatchedFetch: typeof fetch
 
 // MSW's message for each request no handler matched in the current test.

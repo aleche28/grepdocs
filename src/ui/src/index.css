@@ -165,7 +165,7 @@ main {
   }
 }
 
-/* LinkOutcomeBanner */
+/* Banner */
 
 .banner {
   display: flex;
@@ -194,4 +194,32 @@ main {
   font-size: 1.25rem;
   line-height: 1;
   cursor: pointer;
+}
+
+/* UnlinkDialog */
+
+.dialog {
+  max-width: min(32rem, calc(100vw - 2rem));
+  padding: 1.5rem;
+  border: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
+  border-radius: 6px;
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+
+.dialog h2 {
+  margin-top: 0;
+}
+
+button.danger {
+  border: 1px solid #b91c1c;
+  border-radius: 4px;
+  background: #b91c1c;
+  color: #fff;
+}
+
+button.danger:disabled {
+  opacity: 0.6;
 }

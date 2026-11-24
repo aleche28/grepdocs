@@ -14,18 +14,9 @@ export interface Repository {
 
 export const repositoriesQueryKey = ['repositories'] as const
 
-interface UseRepositoriesOptions {
-  // False to hold the request until it is needed, such as the unlink dialog
-  // that counts the repositories an account syncs.
-  enabled?: boolean
-}
-
-export function useRepositories({
-  enabled = true,
-}: UseRepositoriesOptions = {}) {
+export function useRepositories() {
   return useQuery({
     queryKey: repositoriesQueryKey,
     queryFn: () => apiFetch<Repository[]>('/repositories'),
-    enabled,
   })
 }
