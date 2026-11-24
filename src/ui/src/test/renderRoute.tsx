@@ -1,9 +1,10 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { createMemoryRouter } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
+import { createTestQueryClient } from './queryClient.ts'
 
 interface RenderRouteOptions {
   // The route pattern the element is mounted at, such as "/settings/accounts".
@@ -21,14 +22,7 @@ interface RenderRouteOptions {
 // Returns the router, to assert on navigation (router.state.location), and a
 // userEvent instance, to drive the page.
 export function renderRoute({ path, element, url = path }: RenderRouteOptions) {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      // The app retries network errors and 5xx (queryClient.ts); here a
-      // failed request must show its error at once.
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  })
+  const queryClient = createTestQueryClient()
   const router = createMemoryRouter([{ path, element }], {
     initialEntries: [url],
   })

@@ -17,7 +17,7 @@ worker pool (on `testing/synctest`, so its timeouts run on a fake clock). `route
 only code that needs no database (`writeProviderError`, `installDetails`, ID parsing, `isValidRedirectPath`, the docs routes,
 `GET /providers`, the linking redirect helpers, and the linking-flow paths that end before a DB call); other handlers and
 `reposync` stay untested because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
-UI tests (Vitest) cover the API client and the auth helpers so far; see Web UI for the setup.
+UI tests (Vitest) cover the API client, the auth helpers, and the accounts API module so far; see Web UI for the setup.
 
 ## Commands
 
@@ -324,7 +324,8 @@ answers with an error envelope, except `501` for an unregistered provider and `4
 - Every callback outcome, and every login failure, is a `307` to `FRONTEND_URL/settings/accounts`
   with `result=` or `error=` (and `account_id`). The codes are constants in
   `routers/account_link.go` and listed in `docs/api.md` → Linking and re-linking; the UI mirrors
-  them, so add a code to both in one change. Build the URL with `linkRedirectURL`, and never put
+  them in `LinkResult` / `LinkErrorCode` (`src/ui/src/api/accounts.ts`), so add a code to both in
+  one change. The UI shows an unknown error code as `server_error`. Build the URL with `linkRedirectURL`, and never put
   provider-supplied text in it.
 - A re-link (`?account_id=`) stores its target in the session with `SetRelinkAccountID`, as a
   string (the session round-trips through JSON, which turns numbers into `float64`). A plain link
