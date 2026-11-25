@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  skipToken,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { apiFetch, ApiError, apiUrl } from './client.ts'
 import { repositoriesQueryKey } from './repositories.ts'
 
@@ -45,6 +50,42 @@ export function useAccounts() {
   return useQuery({
     queryKey: accountsQueryKey,
     queryFn: () => apiFetch<ExternalAccount[]>('/accounts'),
+  })
+}
+
+// GET /accounts/{provider}/repositories item: a repository a linked account
+// can see, tracked or not.
+export interface AccountRepository {
+  provider: string
+  // A string for every provider: Bitbucket uses UUIDs.
+  provider_repo_id: string
+  name: string
+  full_name: string
+  html_url: string
+  is_private: boolean
+  default_branch: string
+}
+
+// Under accountsQueryKey, so invalidating the accounts (as unlinking does)
+// also drops every account's repository list.
+export function accountRepositoriesQueryKey(accountId: number) {
+  return [...accountsQueryKey, accountId, 'repositories'] as const
+}
+
+// The repositories of one linked account; nothing is requested while account
+// is null. account_id is always sent: with several accounts for a provider,
+// the API refuses to guess.
+export function useAccountRepositories(
+  account: Pick<ExternalAccount, 'id' | 'provider'> | null,
+) {
+  return useQuery({
+    queryKey: accountRepositoriesQueryKey(account?.id ?? 0),
+    queryFn: account
+      ? () =>
+          apiFetch<AccountRepository[]>(
+            `/accounts/${encodeURIComponent(account.provider)}/repositories?${new URLSearchParams({ account_id: String(account.id) })}`,
+          )
+      : skipToken,
   })
 }
 
