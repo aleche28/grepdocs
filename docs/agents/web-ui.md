@@ -36,7 +36,19 @@ React + TypeScript, built with Vite, React Router for routes, TanStack Query for
   `retryAfter`) are handled by that page. A dismissible message about something that just
   happened (a link attempt, an unlink) is a `Banner` (`src/components/`): a status for a success,
   an alert for a failure. A confirmation or a small form is a `Dialog` (`src/components/`), open
-  for as long as the page renders it, which keeps it open while its request runs.
+  for as long as the page renders it, which keeps it open while its request runs. Actions behind a
+  button (the user menu) are a `Menu` (`src/components/`): a disclosure (`aria-expanded`) of plain
+  buttons and links, not an ARIA menu, so it needs no arrow keys. A link to another site is an
+  `ExternalLink`, never a hand-built `target="_blank"` link.
+- Styles are plain CSS in `src/styles/`, imported by `main.tsx` in cascade order: `tokens.css`
+  (every colour, font, size and radius, with dark values under `prefers-color-scheme`),
+  `base.css` (elements and shared controls), `components.css` (the app shell and
+  `src/components`), `pages.css`. Never hard-code a colour outside `tokens.css`; its text colours
+  pass WCAG AA on every background, so check contrast when adding one. A plain `<button>` is the
+  secondary button; `.primary`, `.danger`, `.icon-button` (with an `aria-label`) and `.link` are the
+  variants, and `.button` styles a link as one. Icons come from `lucide-react`, hidden from screen
+  readers unless given an `aria-label`. Inter and JetBrains Mono are self-hosted through
+  `@fontsource-variable`, never loaded from a font CDN.
 - Formatting is Prettier (no semicolons, single quotes), linting ESLint. Run `make ui-fmt`.
 - Tests are Vitest in jsdom, with Testing Library, next to the code they test (`*.test.ts(x)`).
   The API is mocked with MSW (`src/test/server.ts`), so requests go through `apiFetch` exactly as
@@ -53,7 +65,7 @@ React + TypeScript, built with Vite, React Router for routes, TanStack Query for
 
 ## What the UI tests cover
 
-UI tests (Vitest) cover the API client, the auth helpers, the accounts page (`/settings/accounts`), the track page
+UI tests (Vitest) cover the API client, the auth helpers, the app shell's user menu (`AppLayout`), the accounts page (`/settings/accounts`), the track page
 (`/repositories/track`), the repositories page (`/repositories`), the repository page with
 its document tree (`/repositories/:repoId`), and the document viewer
 (`/repositories/:repoId/documents/:documentId`); the setup is described above.
