@@ -7,7 +7,7 @@ interface UpstreamLinkProps {
   displayName: string
 }
 
-// The repository on its provider, in a new tab: "GitHub ↗", named
+// The repository on its provider, in a new tab: "GitHub" and an icon, named
 // "acme/docs on GitHub" for screen readers.
 export function UpstreamLink({ repository, displayName }: UpstreamLinkProps) {
   return (

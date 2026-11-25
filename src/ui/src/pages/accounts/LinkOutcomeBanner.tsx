@@ -7,6 +7,7 @@ import type {
 } from '../../api/accounts.ts'
 import { Banner } from '../../components/Banner.tsx'
 import { accountName } from './format.ts'
+import { ExternalLink } from '../../components/ExternalLink.tsx'
 
 interface LinkOutcomeBannerProps {
   outcome: LinkOutcome
@@ -72,10 +73,7 @@ function message(
       <>
         {name ? `Linked ${name}.` : 'Account linked.'} Next:{' '}
         {installUrl ? (
-          <a href={installUrl} target="_blank" rel="noopener noreferrer">
-            {appAccess}
-            <span aria-hidden="true"> ↗</span>
-          </a>
+          <ExternalLink href={installUrl}>{appAccess}</ExternalLink>
         ) : (
           appAccess
         )}

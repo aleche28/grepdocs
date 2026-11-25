@@ -2,6 +2,7 @@ import { relinkUrl, type ExternalAccount } from '../../api/accounts.ts'
 import { ApiError } from '../../api/client.ts'
 import { ApiErrorMessage } from '../../components/ApiErrorMessage.tsx'
 import { installUrlOf, retryAfterText } from '../../components/errorText.ts'
+import { ExternalLink } from '../../components/ExternalLink.tsx'
 
 interface ListErrorProps {
   error: Error
@@ -32,15 +33,9 @@ export function ListError({
               GrepDocs can see.
             </p>
             {installUrl && (
-              <a
-                href={installUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="button primary"
-              >
+              <ExternalLink href={installUrl} className="button primary">
                 Install the {providerDisplayName} App
-                <span aria-hidden="true"> ↗</span>
-              </a>
+              </ExternalLink>
             )}
           </div>
         )

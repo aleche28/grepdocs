@@ -3,6 +3,7 @@ import type { ExternalAccount, Provider } from '../../api/accounts.ts'
 import type { Repository } from '../../api/repositories.ts'
 import { providerDisplayName } from './format.ts'
 import { RelinkPrompt } from './RelinkPrompt.tsx'
+import { ExternalLink } from '../../components/ExternalLink.tsx'
 
 interface SyncErrorProps {
   repository: Repository
@@ -60,14 +61,9 @@ export function SyncError({
           {provider?.install_url && (
             <>
               {' '}
-              <a
-                href={provider.install_url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <ExternalLink href={provider.install_url}>
                 Install the {displayName} App
-                <span aria-hidden="true"> ↗</span>
-              </a>
+              </ExternalLink>
             </>
           )}
         </p>

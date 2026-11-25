@@ -1,3 +1,4 @@
+import { CircleAlert } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { ApiError } from '../api/client.ts'
 import { isNotAuthenticated } from '../api/auth.ts'
@@ -35,13 +36,16 @@ export function ApiErrorMessage({
 
   return (
     <div role="alert" className="error">
-      {title && <strong>{title}</strong>}
-      <p>{text}</p>
-      {onRetry && (
-        <button type="button" onClick={onRetry}>
-          Try again
-        </button>
-      )}
+      <CircleAlert className="notice-icon" size={16} />
+      <div className="notice-body">
+        {title && <strong>{title}</strong>}
+        <p>{text}</p>
+        {onRetry && (
+          <button type="button" onClick={onRetry}>
+            Try again
+          </button>
+        )}
+      </div>
     </div>
   )
 }

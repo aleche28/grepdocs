@@ -19,7 +19,7 @@ describe('AccountsPage banners after a link attempt', () => {
 
     const banner = await screen.findByRole('status')
     expect(banner).toHaveTextContent(
-      'Linked @octocat. Next: make sure the GitHub App can see your repositories ↗, then track a repository.',
+      'Linked @octocat. Next: make sure the GitHub App can see your repositories, then track a repository.',
     )
     expect(
       within(banner).getByRole('link', {
