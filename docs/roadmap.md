@@ -163,7 +163,7 @@ browses and reads their documentation in a browser. This is the first point a re
 exists.
 
 Status: **document API + re-link flag + UI project setup + logout fix + UI sign-in + app shell +
-linked accounts page + track page + repositories page done** — `GET /documents`, `GET /documents/{id}` and `/raw` are implemented, `GET /accounts` flags
+linked accounts page + track page + repositories page + document tree done** — `GET /documents`, `GET /documents/{id}` and `/raw` are implemented, `GET /accounts` flags
 accounts that need re-linking (`needs_relink`), and `POST /auth/logout` ends the session. `src/ui` is a Vite + React + TypeScript app with routing (placeholder pages), an API client
 that reads the error envelope, a shared TanStack Query client, and its own CI job; locally it runs
 beside the API through the Vite dev-server proxy. Signing in with Google returns the user to the
@@ -176,9 +176,11 @@ redirects with; the UI has Vitest tests with MSW. The track page lists a linked 
 repositories with a client-side filter and tracks one on its default branch, or a public repository
 by `owner/name`. The repositories page lists tracked repositories with their sync status and a
 readable message for every `sync_error`, starts a sync and polls until it ends, changes the
-branch and `auto_sync`, untracks, and syncs the `auto_sync` repositories once per page load. Still
-open in this phase: CORS + rate limiting (#64), sending Google sign-in failures back to the UI
-(#119; the GitHub linking half is done), and the document tree and viewer (#70, #71).
+branch and `auto_sync`, untracks, and syncs the `auto_sync` repositories once per page load. A
+repository's page shows its documents as a tree beside the selected one, says why there are none
+from the sync status, and refetches them when a sync succeeds. Still open in this phase: CORS +
+rate limiting (#64), sending Google sign-in failures back to the UI (#119; the GitHub linking half
+is done), and the document viewer (#71).
 
 - **Document API (read only)**: `GET /documents` (metadata, filter by `repo_id`) and
   `GET /documents/{id}` + `/raw`, with the repository and branch the document comes from. No
@@ -209,9 +211,11 @@ open in this phase: CORS + rate limiting (#64), sending Google sign-in failures 
   choosing the branch moved to the repositories page); repositories page (**done** —
   `docs/prd/069-repositories-page.md`: sync status and `sync_error` messages with their action,
   trigger and polling, branch and `auto_sync` changes, untrack, and auto-sync on opening, run by
-  the UI; API follow-ups #142–#145); a repository's document tree built from `GET /documents`; a document viewer with
-  rendered (client-side, sanitized) and raw modes. The project itself is **done** (routing, API
-  client, query client, lint/format, CI); the screens are not.
+  the UI; API follow-ups #142–#145); document tree (**done** — `docs/prd/070-document-tree.md`:
+  built from `GET /documents`, directories first in natural order, the selected document's
+  directories open, an empty state per sync status, refetched when a sync succeeds); a document
+  viewer with rendered (client-side, sanitized) and raw modes (#71). The project itself is
+  **done** (routing, API client, query client, lint/format, CI); the viewer is the screen left.
 - A documented way to run the API and the UI together locally (dev-server proxy, so the session
   cookie stays same-origin). **Done** — `make run` + `make ui-dev`, README "Run the API and the UI
   together".

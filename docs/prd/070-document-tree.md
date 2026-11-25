@@ -1,6 +1,6 @@
 # PRD: Browse a repository's documents (#70)
 
-Status: **proposed**. Milestone: Phase 4 — Read-only MVP. Replaces user story S4.3 (navigate
+Status: **done** — built on `feat/70-document-tree`. Milestone: Phase 4 — Read-only MVP. Replaces user story S4.3 (navigate
 between a repository's documentation files).
 
 ## Problem

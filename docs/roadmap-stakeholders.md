@@ -29,7 +29,8 @@ reading documentation; editing, search, and groups arrive afterwards, each with 
   browse and read their documentation — formatted or as plain source — in one place. Already
   there: connecting accounts, picking repositories, and a page that shows whether each one is up
   to date, updates it on request or each time you open GrepDocs, and lets you change its branch or
-  stop following it. Still to come: browsing and reading the documents.
+  stop following it, and browsing each repository's documents as a folder tree. Still to come:
+  reading a document, formatted or as plain source.
 
 ## Later
 
