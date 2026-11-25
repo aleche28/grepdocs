@@ -262,3 +262,58 @@ button.danger {
 button.danger:disabled {
   opacity: 0.6;
 }
+
+/* RepositoriesPage */
+
+.page-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.repository-entries {
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.repository-entry {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid color-mix(in srgb, CanvasText 15%, transparent);
+}
+
+.repository-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 1rem;
+}
+
+.repository-identity a:first-child {
+  overflow-wrap: anywhere;
+}
+
+.sync-state p {
+  margin: 0;
+}
+
+.sync-state .warning {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+}
+
+/* An action inside a sentence, such as "Change branch". */
+button.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: LinkText;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
