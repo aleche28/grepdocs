@@ -10,6 +10,8 @@ interface RenderRouteOptions {
   // The route pattern the element is mounted at, such as "/settings/accounts".
   path: string
   element: ReactNode
+  // Routes nested under the page, rendered in its <Outlet />.
+  children?: RouteObject[]
   // The URL the test starts on, with its query. Defaults to `path`.
   url?: string
   // Other routes, for a test that leaves the page and comes back.
@@ -26,11 +28,12 @@ interface RenderRouteOptions {
 export function renderRoute({
   path,
   element,
+  children,
   url = path,
   routes = [],
 }: RenderRouteOptions) {
   const queryClient = createTestQueryClient()
-  const router = createMemoryRouter([{ path, element }, ...routes], {
+  const router = createMemoryRouter([{ path, element, children }, ...routes], {
     initialEntries: [url],
   })
   const user = userEvent.setup()

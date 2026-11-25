@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-query'
 import { useRef } from 'react'
 import { apiFetch, ApiError } from './client.ts'
+import { documentsQueryKey } from './documents.ts'
 
 // Where a repository is in its sync (docs/api.md → Sync status and errors).
 // queued and running are busy: a sync cannot start until it ends.
@@ -217,13 +218,14 @@ export function useUpdateRepository() {
 }
 
 // DELETE /repositories/{id}, which also deletes its documents. A 404 means
-// another tab untracked it already: the row leaves the list either way, and
-// the caller decides what to show.
+// another tab untracked it already: the row and its documents leave the
+// cache either way, and the caller decides what to show.
 export function useUntrackRepository() {
   const queryClient = useQueryClient()
 
   const untracked = (repositoryId: number) => {
     removeRepository(queryClient, repositoryId)
+    queryClient.removeQueries({ queryKey: documentsQueryKey(repositoryId) })
     refetchRepositories(queryClient)
   }
 
