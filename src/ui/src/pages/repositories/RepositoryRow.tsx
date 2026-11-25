@@ -9,6 +9,7 @@ import {
 import { formatDateTime } from '../accounts/format.ts'
 import { providerDisplayName, syncStatusText } from './format.ts'
 import { SyncError } from './SyncError.tsx'
+import { UpstreamLink } from './UpstreamLink.tsx'
 
 interface RepositoryRowProps {
   repository: Repository
@@ -53,15 +54,7 @@ export function RepositoryRow({
           Branch <code>{repository.tracked_branch}</code>
         </span>
         {repository.auto_sync && <span className="muted">Auto-sync</span>}
-        <a
-          href={repository.html_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`${fullName} on ${displayName}`}
-        >
-          {displayName}
-          <span aria-hidden="true"> ↗</span>
-        </a>
+        <UpstreamLink repository={repository} displayName={displayName} />
       </div>
       {/* Polite: a sync started here ends while the user does something
           else, and its outcome is announced then. */}

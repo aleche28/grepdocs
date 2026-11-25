@@ -29,19 +29,17 @@ const synced = repository({
   last_sync_at: '2026-11-25T10:12:00Z',
 })
 
+const treeName = 'Documents in acme/docs'
+
 function tree() {
-  return within(
-    screen.getByRole('navigation', { name: 'Documents in acme/docs' }),
-  )
+  return within(screen.getByRole('navigation', { name: treeName }))
 }
 
 // A document's link in the tree, once the tree has loaded. Hidden too: a
 // link in a closed directory is not shown.
 async function findTreeLink(name: string) {
-  const nav = await screen.findByRole('navigation', {
-    name: 'Documents in acme/docs',
-  })
-  return within(nav).findByRole('link', { name, hidden: true })
+  await screen.findByRole('navigation', { name: treeName })
+  return tree().findByRole('link', { name, hidden: true })
 }
 
 // The <details> of a directory, found by its <summary>.
@@ -182,7 +180,7 @@ describe('RepositoryPage', () => {
 
     const message = await screen.findByText(text)
     expect(
-      screen.queryByRole('navigation', { name: 'Documents in acme/docs' }),
+      screen.queryByRole('navigation', { name: treeName }),
     ).not.toBeInTheDocument()
     if (link) {
       expect(within(message).getByRole('link', { name: link })).toHaveAttribute(

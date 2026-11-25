@@ -140,11 +140,19 @@ code win.
   a tree shown beside it reads as the last successful sync's. `syncStatusText` in
   `pages/repositories/format.ts` holds every status text; the repositories row uses it for all
   but `failed`, where it adds the error and its fix.
-- **The refresh** is `useRefetchAfterSync` in `RepositoryPage.tsx`: it remembers the repository's
-  ID and `last_sync_at`, and invalidates the documents when the same repository gets a new
-  non-null value. The first value the page sees never refetches.
-- **IDs from the URL** go through `parseId` (`src/api/ids.ts`), which `parseAccountId` now calls
-  too, so `/repositories/abc` and `/repositories/0` are "not tracked" without a request.
+- **The refresh lives in `useRepositories`** (`src/api/repositories.ts`), not in the page: each
+  fetch of the list compares it with the cached one and marks stale the documents of every
+  repository whose `last_sync_at` took a new non-null value. Any page that shows documents (#71
+  too) gets fresh ones, whichever page saw the sync end. So `useDocuments` uses
+  `staleTime: Infinity`: the list changes only after a sync, and is not refetched on mount or focus.
+- **The documents query key** is `['documents', 'repository', id]` (planned:
+  `['documents', { repoId }]`), so a later cross-repository list can sit under `['documents']`
+  without sharing the disabled query's key.
+- **`DocumentTree` is memoized**: the page re-renders on every poll while a sync runs, and the
+  tree's props do not change then. The provider link is `UpstreamLink`
+  (`pages/repositories/`), shared with the repositories row.
+- **IDs from the URL** go through `parseId` (`src/api/ids.ts`), which replaces `parseAccountId`,
+  so `/repositories/abc` and `/repositories/0` are "not tracked" without a request.
 - **`useDocuments`** uses `skipToken` while the repository is unknown, rather than `enabled`.
 - **Tests:** the fixture is `trackedDocument()` (`document` would shadow the DOM global), with
   `mockDocumentsApi` and `renderRepositoryPage` in `src/test/documents.tsx`. `renderRoute` takes

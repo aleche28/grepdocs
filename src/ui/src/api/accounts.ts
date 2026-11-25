@@ -177,7 +177,7 @@ export const linkOutcomeParams = ['result', 'error', 'account_id'] as const
 // so a newer API never leaves the user without a message. An unknown result
 // is ignored: claiming a success that may not be one would be worse.
 export function parseLinkOutcome(params: URLSearchParams): LinkOutcome | null {
-  const accountId = parseAccountId(params.get('account_id'))
+  const accountId = parseId(params.get('account_id'))
 
   const error = params.get('error')
   if (error !== null) {
@@ -192,9 +192,4 @@ export function parseLinkOutcome(params: URLSearchParams): LinkOutcome | null {
     return { result, accountId }
   }
   return null
-}
-
-// An account ID from the URL: a positive integer in plain decimal, or null.
-export function parseAccountId(value: string | null): number | null {
-  return parseId(value)
 }

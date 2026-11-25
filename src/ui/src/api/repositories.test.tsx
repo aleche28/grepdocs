@@ -244,6 +244,45 @@ describe('useRepositories', () => {
     await vi.advanceTimersByTimeAsync(slowPollMs * 2)
     expect(requests).toBe(1)
   })
+
+  test('marks stale the documents of the repositories a sync replaced', async () => {
+    const before = [
+      fixture({ id: 12, last_sync_at: '2026-11-25T10:00:00Z' }),
+      fixture({ id: 13, last_sync_at: '2026-11-25T10:00:00Z' }),
+      fixture({ id: 14, last_sync_at: '2026-11-25T10:00:00Z' }),
+    ]
+    server.use(
+      http.get(apiUrl('/repositories'), () =>
+        HttpResponse.json([
+          // Synced again: its documents are stale.
+          { ...before[0], last_sync_at: '2026-11-25T11:00:00Z' },
+          // Failed: last_sync_at stays.
+          { ...before[1], sync_status: 'failed', sync_error: 'internal' },
+          // Branch changed: reset to null, documents not replaced yet.
+          { ...before[2], last_sync_at: null },
+        ]),
+      ),
+    )
+    const { result, queryClient } = renderWithList(
+      () => useRepositories(),
+      before,
+    )
+    for (const id of [12, 13, 14]) {
+      queryClient.setQueryData(documentsQueryKey(id), [])
+    }
+    const isStale = (id: number) =>
+      queryClient.getQueryState(documentsQueryKey(id))?.isInvalidated
+
+    // The list was set by hand, so the hook fetches it on mount.
+    await waitFor(() =>
+      expect(result.current.data?.[0].last_sync_at).toBe(
+        '2026-11-25T11:00:00Z',
+      ),
+    )
+    expect(isStale(12)).toBe(true)
+    expect(isStale(13)).toBe(false)
+    expect(isStale(14)).toBe(false)
+  })
 })
 
 describe('useSyncRepository', () => {

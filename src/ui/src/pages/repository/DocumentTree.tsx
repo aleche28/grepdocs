@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { NavLink } from 'react-router'
 import type { Document } from '../../api/documents.ts'
 import { ancestorPaths, buildTree, type TreeNode } from './tree.ts'
@@ -14,20 +14,21 @@ interface DocumentTreeProps {
 // The documents as nested lists, directories as <details>. Top-level entries
 // are always visible; a directory starts open when it holds the selected
 // document, and the user's choice sticks while the tree stays mounted.
-export function DocumentTree({
+// Memoized: the page re-renders on every poll of the repositories while a
+// sync runs, and none of the tree's props change then.
+export const DocumentTree = memo(function DocumentTree({
   repositoryId,
   fullName,
   documents,
   selected,
 }: DocumentTreeProps) {
   const tree = useMemo(() => buildTree(documents), [documents])
-  const [open, setOpen] = useState(
-    () => new Set(selected ? ancestorPaths(selected.path) : []),
-  )
+  const [open, setOpen] = useState(() => new Set<string>())
 
-  // A document selected from outside the tree (back, a link) opens its
-  // directories, once per selection, leaving the others as they are.
-  const [revealed, setRevealed] = useState(selected?.path)
+  // The selected document opens its directories, once per selection (on the
+  // first render, or when it comes from outside the tree: back, a link),
+  // leaving the others as they are.
+  const [revealed, setRevealed] = useState<string>()
   if (selected && selected.path !== revealed) {
     setRevealed(selected.path)
     setOpen((current) => new Set([...current, ...ancestorPaths(selected.path)]))
@@ -57,7 +58,7 @@ export function DocumentTree({
       />
     </nav>
   )
-}
+})
 
 interface TreeListProps {
   nodes: TreeNode[]
@@ -70,7 +71,7 @@ function TreeList({ nodes, repositoryId, open, onToggle }: TreeListProps) {
   return (
     <ul>
       {nodes.map((node) => (
-        <li key={`${node.kind}:${node.path}`}>
+        <li key={node.path}>
           {node.kind === 'directory' ? (
             <details
               open={open.has(node.path)}

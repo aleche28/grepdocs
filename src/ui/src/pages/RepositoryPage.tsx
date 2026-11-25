@@ -1,12 +1,11 @@
-import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef } from 'react'
 import { Link, useOutlet, useParams } from 'react-router'
 import { useProviders } from '../api/accounts.ts'
-import { documentsQueryKey, useDocuments } from '../api/documents.ts'
+import { useDocuments } from '../api/documents.ts'
 import { parseId } from '../api/ids.ts'
 import { type Repository, useRepositories } from '../api/repositories.ts'
 import { ApiErrorMessage } from '../components/ApiErrorMessage.tsx'
 import { providerDisplayName, syncStatusText } from './repositories/format.ts'
+import { UpstreamLink } from './repositories/UpstreamLink.tsx'
 import { DocumentTree } from './repository/DocumentTree.tsx'
 
 // /repositories/:repoId: the repository's documents as a tree, with the
@@ -17,17 +16,14 @@ export function RepositoryPage() {
   const repoId = parseId(params.repoId)
   const documentId = parseId(params.documentId)
   const outlet = useOutlet()
-  // Polled while a sync runs, so the page sees it end (useRefetchAfterSync).
+  // Polled while a sync runs, so the page sees it end, and the documents it
+  // replaced are refetched (useRepositories marks them stale).
   const repositories = useRepositories({ poll: true })
   // Only for the provider's name: the page never waits for it.
   const providers = useProviders()
 
-  const repository =
-    repoId === null
-      ? undefined
-      : repositories.data?.find((r) => r.id === repoId)
+  const repository = repositories.data?.find((r) => r.id === repoId)
   const documents = useDocuments(repository?.id)
-  useRefetchAfterSync(repository)
 
   const back = (
     <p>
@@ -109,15 +105,7 @@ export function RepositoryPage() {
           Branch <code>{repository.tracked_branch}</code>
         </span>
         <span aria-live="polite">{syncStatusText(repository)}</span>
-        <a
-          href={repository.html_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`${fullName} on ${displayName}`}
-        >
-          {displayName}
-          <span aria-hidden="true"> ↗</span>
-        </a>
+        <UpstreamLink repository={repository} displayName={displayName} />
       </div>
       <div className="repository-browser">
         <div>{tree}</div>
@@ -161,29 +149,4 @@ function EmptyState({ repository }: { repository: Repository }) {
         </p>
       )
   }
-}
-
-// Refetches the repository's documents when a sync of it succeeds, which
-// is when last_sync_at takes a new value. A failed sync leaves it alone, and
-// so does the first value the page sees: the documents load with it.
-function useRefetchAfterSync(repository: Repository | undefined) {
-  const queryClient = useQueryClient()
-  const seen = useRef<Pick<Repository, 'id' | 'last_sync_at'> | null>(null)
-  const id = repository?.id
-  const lastSyncAt = repository?.last_sync_at ?? null
-
-  useEffect(() => {
-    if (id === undefined) {
-      return
-    }
-    const previous = seen.current
-    seen.current = { id, last_sync_at: lastSyncAt }
-    if (
-      previous?.id === id &&
-      lastSyncAt !== null &&
-      lastSyncAt !== previous.last_sync_at
-    ) {
-      void queryClient.invalidateQueries({ queryKey: documentsQueryKey(id) })
-    }
-  }, [queryClient, id, lastSyncAt])
 }

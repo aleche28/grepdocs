@@ -19,13 +19,17 @@ export interface Document {
   upstream_commit: string | null
 }
 
+// Every documents query sits under ['documents']; one repository's list
+// under ['documents', 'repository', id].
 export function documentsQueryKey(repoId: number | undefined) {
-  return ['documents', { repoId }] as const
+  return ['documents', 'repository', repoId] as const
 }
 
 // The documents of one tracked repository, sorted by path by the API. Not
 // fetched while repoId is undefined, such as before the page knows the
-// repository is the user's.
+// repository is the user's. They change only when a sync succeeds, and
+// useRepositories marks them stale then, so they are not refetched on mount
+// or focus; untracking removes them.
 export function useDocuments(repoId: number | undefined) {
   return useQuery({
     queryKey: documentsQueryKey(repoId),
@@ -33,5 +37,6 @@ export function useDocuments(repoId: number | undefined) {
       repoId === undefined
         ? skipToken
         : () => apiFetch<Document[]>(`/documents?repo_id=${repoId}`),
+    staleTime: Infinity,
   })
 }
