@@ -131,6 +131,26 @@ An unknown `sync_status` reads as `pending`, as on the repositories page.
   replaces them; the page refetches when that sync ends. Between the two, the tree still shows the
   old branch's files under the new branch's name (see Risks).
 
+### As built
+
+The page implements the plan above, with these differences. Where they conflict, this list and the
+code win.
+
+- **The header's failed status names the last good sync**: "Sync failed. Last synced <date>.", so
+  a tree shown beside it reads as the last successful sync's. `syncStatusText` in
+  `pages/repositories/format.ts` holds every status text; the repositories row uses it for all
+  but `failed`, where it adds the error and its fix.
+- **The refresh** is `useRefetchAfterSync` in `RepositoryPage.tsx`: it remembers the repository's
+  ID and `last_sync_at`, and invalidates the documents when the same repository gets a new
+  non-null value. The first value the page sees never refetches.
+- **IDs from the URL** go through `parseId` (`src/api/ids.ts`), which `parseAccountId` now calls
+  too, so `/repositories/abc` and `/repositories/0` are "not tracked" without a request.
+- **`useDocuments`** uses `skipToken` while the repository is unknown, rather than `enabled`.
+- **Tests:** the fixture is `trackedDocument()` (`document` would shadow the DOM global), with
+  `mockDocumentsApi` and `renderRepositoryPage` in `src/test/documents.tsx`. `renderRoute` takes
+  `children`, for a page with nested routes. Moving back to a document in a directory the user
+  closed opens it again.
+
 ## Tests
 
 Vitest + Testing Library + MSW, through `renderRoute`, endpoints from `apiUrl()`:
