@@ -338,3 +338,57 @@ button.link {
   gap: 0.5rem;
   margin: 0;
 }
+
+/* RepositoryPage */
+
+.repository-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 1rem;
+}
+
+.repository-heading h1 {
+  overflow-wrap: anywhere;
+}
+
+.repository-browser {
+  display: grid;
+  grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 40rem) {
+  .repository-browser {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.document-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.document-tree ul ul {
+  padding-left: 1rem;
+}
+
+.document-tree li {
+  padding: 0.125rem 0;
+  overflow-wrap: anywhere;
+}
+
+.document-tree summary {
+  cursor: pointer;
+}
+
+.document-tree a {
+  color: inherit;
+}
+
+.document-tree a[aria-current='page'] {
+  font-weight: 600;
+  color: LinkText;
+}
