@@ -9,6 +9,7 @@ import type { Repository } from '../api/repositories.ts'
 import { TrackRepositoryPage } from '../pages/TrackRepositoryPage.tsx'
 import { github } from './accounts.tsx'
 import { renderRoute } from './renderRoute.tsx'
+import { repository } from './repositories.tsx'
 import { server } from './server.ts'
 
 // Fixtures and helpers for the TrackRepositoryPage tests. Accounts come from
@@ -33,19 +34,21 @@ export function discovered(
 
 // The tracked repository the API would create from a discovered one.
 export function trackedFrom(
-  repository: AccountRepository,
+  discovered: AccountRepository,
   id = 12,
   accountId: number | null = 3,
 ): Repository {
-  return {
+  return repository({
     id,
     account_id: accountId,
-    provider: repository.provider,
-    provider_repo_id: repository.provider_repo_id,
-    full_name: repository.full_name,
-    default_branch: repository.default_branch,
-    tracked_branch: repository.default_branch,
-  }
+    provider: discovered.provider,
+    provider_repo_id: discovered.provider_repo_id,
+    full_name: discovered.full_name,
+    html_url: discovered.html_url,
+    is_private: discovered.is_private,
+    default_branch: discovered.default_branch,
+    tracked_branch: discovered.default_branch,
+  })
 }
 
 export function errorResponse(
