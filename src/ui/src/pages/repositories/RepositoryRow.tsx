@@ -7,7 +7,7 @@ import {
   useSyncStarting,
 } from '../../api/repositories.ts'
 import { formatDateTime } from '../accounts/format.ts'
-import { providerDisplayName } from './format.ts'
+import { providerDisplayName, syncStatusText } from './format.ts'
 import { SyncError } from './SyncError.tsx'
 
 interface RepositoryRowProps {
@@ -108,39 +108,31 @@ interface SyncStateProps {
   onChangeBranch: () => void
 }
 
-// The sync_status in words. An unknown status reads as pending. The error is
-// shown only once the sync failed: the API keeps it while a retry is queued.
+// The sync_status in words, with the error and its fix once the sync
+// failed. Not while a retry is queued: the API keeps the error until then.
 function SyncState({
   repository,
   provider,
   account,
   onChangeBranch,
 }: SyncStateProps) {
-  const lastSync = formatDateTime(repository.last_sync_at)
-
-  switch (repository.sync_status) {
-    case 'queued':
-      return <p>Waiting to sync…</p>
-    case 'running':
-      return <p>Syncing…</p>
-    case 'ok':
-      return <p>{lastSync ? `Synced ${lastSync}` : 'Synced'}</p>
-    case 'failed':
-      return (
-        <div className="warning">
-          <p>
-            <strong>Sync failed.</strong>
-            {lastSync && ` Last synced ${lastSync}.`}
-          </p>
-          <SyncError
-            repository={repository}
-            provider={provider}
-            account={account}
-            onChangeBranch={onChangeBranch}
-          />
-        </div>
-      )
-    default:
-      return <p>Not synced yet</p>
+  if (repository.sync_status !== 'failed') {
+    return <p>{syncStatusText(repository)}</p>
   }
+
+  const lastSync = formatDateTime(repository.last_sync_at)
+  return (
+    <div className="warning">
+      <p>
+        <strong>Sync failed.</strong>
+        {lastSync && ` Last synced ${lastSync}.`}
+      </p>
+      <SyncError
+        repository={repository}
+        provider={provider}
+        account={account}
+        onChangeBranch={onChangeBranch}
+      />
+    </div>
+  )
 }
