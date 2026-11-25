@@ -25,7 +25,7 @@ process.
 
 ### 2. Load the standards
 
-- `AGENTS.md` — conventions, deliberate architecture decisions, known inconsistencies.
+- `AGENTS.md` and the `docs/agents/` files it points to — conventions, deliberate architecture decisions, known inconsistencies.
 - `REVIEW-RUBRIC.md` — the lenses and their repo-specific patterns.
 - `docs/api.md` — target shape/status for any endpoint involved.
 - Open `tech-debt` issues (`gh issue list --label tech-debt --state open`) — if a finding matches

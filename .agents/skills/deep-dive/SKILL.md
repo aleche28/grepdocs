@@ -51,7 +51,7 @@ the full picture:
 - **Git history** — `git log --follow -p <file>`, `git log -L <start>,<end>:<file>`, `git blame`,
   `git show <sha>` to find *why* something looks the way it does (a fix commit, a follow-up
   migration).
-- **Repo docs** — `AGENTS.md` records deliberate decisions and the rules behind them;
+- **Repo docs** — `AGENTS.md` and the `docs/agents/` files it points to record deliberate decisions and the rules behind them;
   `docs/api.md` (target contract), open `tech-debt` issues (known open problems:
   `gh issue list --label tech-debt --state open`), `docs/howto/`. Connect the code to its intended design.
 - **Dependency and stdlib source** — find a module's source with
