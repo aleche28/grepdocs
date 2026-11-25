@@ -392,3 +392,88 @@ button.link {
   font-weight: 600;
   color: LinkText;
 }
+
+/* DocumentPage */
+
+.document h2 {
+  margin-top: 0;
+  overflow-wrap: anywhere;
+}
+
+.document-origin {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1rem;
+  margin: 0 0 0.75rem;
+}
+
+.document-modes {
+  display: flex;
+  gap: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid color-mix(in srgb, CanvasText 15%, transparent);
+}
+
+.document-modes a {
+  color: inherit;
+  opacity: 0.7;
+}
+
+.document-modes a[aria-current='page'] {
+  font-weight: 600;
+  opacity: 1;
+}
+
+.document-raw {
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* MarkdownView: the rendered document. */
+
+.markdown {
+  overflow-wrap: break-word;
+}
+
+.markdown img {
+  max-width: 100%;
+}
+
+.markdown pre {
+  overflow-x: auto;
+  padding: 0.75rem 1rem;
+  background: color-mix(in srgb, CanvasText 5%, transparent);
+}
+
+.markdown code {
+  font-size: 0.9em;
+}
+
+.markdown :not(pre) > code {
+  padding: 0.1em 0.3em;
+  background: color-mix(in srgb, CanvasText 8%, transparent);
+}
+
+.markdown blockquote {
+  margin: 1rem 0;
+  padding: 0 1rem;
+  border-left: 3px solid color-mix(in srgb, CanvasText 25%, transparent);
+  opacity: 0.85;
+}
+
+.markdown table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.markdown th,
+.markdown td {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
+}
+
+.markdown .contains-task-list {
+  padding-left: 1.25rem;
+  list-style: none;
+}

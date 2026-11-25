@@ -1,4 +1,4 @@
-import { Link, useOutlet, useParams } from 'react-router'
+import { Link, Outlet, useOutlet, useParams } from 'react-router'
 import { useProviders } from '../api/accounts.ts'
 import { useDocuments } from '../api/documents.ts'
 import { parseId } from '../api/ids.ts'
@@ -6,6 +6,7 @@ import { type Repository, useRepositories } from '../api/repositories.ts'
 import { ApiErrorMessage } from '../components/ApiErrorMessage.tsx'
 import { providerDisplayName, syncStatusText } from './repositories/format.ts'
 import { UpstreamLink } from './repositories/UpstreamLink.tsx'
+import type { RepositoryContext } from './repository/context.ts'
 import { DocumentTree } from './repository/DocumentTree.tsx'
 
 // /repositories/:repoId: the repository's documents as a tree, with the
@@ -15,7 +16,6 @@ export function RepositoryPage() {
   const params = useParams()
   const repoId = parseId(params.repoId)
   const documentId = parseId(params.documentId)
-  const outlet = useOutlet()
   // Polled while a sync runs, so the page sees it end, and the documents it
   // replaced are refetched (useRepositories marks them stale).
   const repositories = useRepositories({ poll: true })
@@ -24,6 +24,7 @@ export function RepositoryPage() {
 
   const repository = repositories.data?.find((r) => r.id === repoId)
   const documents = useDocuments(repository?.id)
+  const outlet = useOutlet()
 
   const back = (
     <p>
@@ -109,7 +110,20 @@ export function RepositoryPage() {
       </div>
       <div className="repository-browser">
         <div>{tree}</div>
-        <div>{outlet ?? <p className="muted">Choose a document.</p>}</div>
+        <div>
+          {outlet ? (
+            <Outlet
+              context={
+                {
+                  repository,
+                  documents: documents.data,
+                } satisfies RepositoryContext
+              }
+            />
+          ) : (
+            <p className="muted">Choose a document.</p>
+          )}
+        </div>
       </div>
     </>
   )

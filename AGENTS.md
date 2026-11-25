@@ -18,8 +18,9 @@ only code that needs no database (`writeProviderError`, `installDetails`, ID par
 `GET /providers`, the linking redirect helpers, and the linking-flow paths that end before a DB call); other handlers and
 `reposync` stay untested because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
 UI tests (Vitest) cover the API client, the auth helpers, the accounts page (`/settings/accounts`), the track page
-(`/repositories/track`), the repositories page (`/repositories`), and the repository page with
-its document tree (`/repositories/:repoId`); see Web UI for the setup.
+(`/repositories/track`), the repositories page (`/repositories`), the repository page with
+its document tree (`/repositories/:repoId`), and the document viewer
+(`/repositories/:repoId/documents/:documentId`); see Web UI for the setup.
 
 ## Commands
 

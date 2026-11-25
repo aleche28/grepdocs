@@ -40,3 +40,30 @@ export function useDocuments(repoId: number | undefined) {
     staleTime: Infinity,
   })
 }
+
+// GET /documents/{id}: a document with its content, as of the last
+// successful sync.
+export interface DocumentDetail extends Document {
+  content: string
+}
+
+// Under its repository's documents key (the repository the URL names), so
+// the invalidation after a sync and the removal on untrack, which match by
+// prefix, reach it too.
+function documentQueryKey(repoId: number, documentId: number | null) {
+  return [...documentsQueryKey(repoId), 'document', documentId] as const
+}
+
+// One document of a repository the page already knows is the user's. Not
+// fetched while documentId is null (not a valid ID, see parseId). Like the
+// list, it changes only when a sync succeeds.
+export function useDocument(repoId: number, documentId: number | null) {
+  return useQuery({
+    queryKey: documentQueryKey(repoId, documentId),
+    queryFn:
+      documentId === null
+        ? skipToken
+        : () => apiFetch<DocumentDetail>(`/documents/${documentId}`),
+    staleTime: Infinity,
+  })
+}

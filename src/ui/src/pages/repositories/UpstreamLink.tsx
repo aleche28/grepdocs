@@ -1,4 +1,5 @@
 import type { Repository } from '../../api/repositories.ts'
+import { ExternalLink } from '../../components/ExternalLink.tsx'
 
 interface UpstreamLinkProps {
   repository: Pick<Repository, 'full_name' | 'html_url'>
@@ -10,14 +11,11 @@ interface UpstreamLinkProps {
 // "acme/docs on GitHub" for screen readers.
 export function UpstreamLink({ repository, displayName }: UpstreamLinkProps) {
   return (
-    <a
+    <ExternalLink
       href={repository.html_url}
-      target="_blank"
-      rel="noopener noreferrer"
       aria-label={`${repository.full_name} on ${displayName}`}
     >
       {displayName}
-      <span aria-hidden="true"> ↗</span>
-    </a>
+    </ExternalLink>
   )
 }
