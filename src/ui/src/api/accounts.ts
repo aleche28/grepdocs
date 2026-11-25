@@ -193,7 +193,8 @@ export function parseLinkOutcome(params: URLSearchParams): LinkOutcome | null {
   return null
 }
 
-function parseAccountId(value: string | null): number | null {
+// An account ID from the URL: a positive integer in plain decimal, or null.
+export function parseAccountId(value: string | null): number | null {
   if (value === null || !/^[1-9][0-9]*$/.test(value)) {
     return null
   }

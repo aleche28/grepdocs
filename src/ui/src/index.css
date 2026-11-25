@@ -165,6 +165,31 @@ main {
   }
 }
 
+/* TrackRepositoryPage */
+
+.filter input {
+  min-width: 16rem;
+}
+
+.repository-list {
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.repository-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto 6rem;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid color-mix(in srgb, CanvasText 15%, transparent);
+}
+
+.repository-row a {
+  overflow-wrap: anywhere;
+}
+
 /* Banner */
 
 .banner {
