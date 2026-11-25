@@ -14,6 +14,7 @@ import { useAutoSync } from './repositories/autoSync.ts'
 import { EditDialog } from './repositories/EditDialog.tsx'
 import { byFullName } from './repositories/format.ts'
 import { RepositoryRow } from './repositories/RepositoryRow.tsx'
+import { UntrackDialog } from './repositories/UntrackDialog.tsx'
 
 // What the banner above the list reports: the outcome of the last action,
 // one at a time, replaced by the next.
@@ -24,7 +25,7 @@ type Notice =
 // The dialog open on a repository. The repository is the one the dialog
 // opened on, used when a refetch no longer lists it.
 interface DialogTarget {
-  kind: 'edit'
+  kind: 'edit' | 'untrack'
   repository: Repository
 }
 
@@ -115,6 +116,7 @@ export function RepositoriesPage() {
                 account={accountOf(repository)}
                 onSyncError={onSyncError}
                 onEdit={() => setDialog({ kind: 'edit', repository })}
+                onUntrack={() => setDialog({ kind: 'untrack', repository })}
               />
             ))}
           </ul>
@@ -152,7 +154,7 @@ export function RepositoriesPage() {
           ))}
       </div>
       {content}
-      {dialog && dialogRepository && (
+      {dialog?.kind === 'edit' && dialogRepository && (
         <EditDialog
           // A fresh form, and mutation, per repository.
           key={dialogRepository.id}
@@ -161,6 +163,23 @@ export function RepositoriesPage() {
           account={accountOf(dialogRepository)}
           onClose={() => setDialog(null)}
           onSaved={onSaved}
+          fallbackFocus={noticeRef}
+        />
+      )}
+      {dialog?.kind === 'untrack' && dialogRepository && (
+        <UntrackDialog
+          key={dialogRepository.id}
+          repository={dialogRepository}
+          provider={providerOf(dialogRepository)}
+          onClose={() => setDialog(null)}
+          onUntracked={() => {
+            setDialog(null)
+            setNotice({
+              tone: 'success',
+              message: `${dialogRepository.full_name} is no longer tracked.`,
+            })
+          }}
+          // The row that opened it is gone: focus goes to the message.
           fallbackFocus={noticeRef}
         />
       )}

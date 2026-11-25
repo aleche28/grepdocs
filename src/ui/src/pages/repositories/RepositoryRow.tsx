@@ -15,6 +15,7 @@ interface RepositoryRowProps {
   // A sync request failed; the page decides what to show.
   onSyncError: (repository: Repository, error: Error) => void
   onEdit: () => void
+  onUntrack: () => void
 }
 
 export function RepositoryRow({
@@ -23,6 +24,7 @@ export function RepositoryRow({
   account,
   onSyncError,
   onEdit,
+  onUntrack,
 }: RepositoryRowProps) {
   // One per row, so each Sync button knows whether its own request runs.
   const sync = useSyncRepository()
@@ -83,6 +85,13 @@ export function RepositoryRow({
         </button>
         <button type="button" onClick={onEdit} aria-label={`Edit ${fullName}`}>
           Edit
+        </button>
+        <button
+          type="button"
+          onClick={onUntrack}
+          aria-label={`Untrack ${fullName}`}
+        >
+          Untrack
         </button>
       </div>
     </li>
