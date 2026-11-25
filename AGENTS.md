@@ -17,7 +17,8 @@ worker pool (on `testing/synctest`, so its timeouts run on a fake clock). `route
 only code that needs no database (`writeProviderError`, `installDetails`, ID parsing, `isValidRedirectPath`, the docs routes,
 `GET /providers`, the linking redirect helpers, and the linking-flow paths that end before a DB call); other handlers and
 `reposync` stay untested because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
-UI tests (Vitest) cover the API client, the auth helpers, and the accounts page (`/settings/accounts`); see Web UI for the setup.
+UI tests (Vitest) cover the API client, the auth helpers, the accounts page (`/settings/accounts`), and the track page
+(`/repositories/track`); see Web UI for the setup.
 
 ## Commands
 

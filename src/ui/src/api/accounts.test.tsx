@@ -6,10 +6,13 @@ import { describe, expect, test } from 'vitest'
 import { createTestQueryClient } from '../test/queryClient.ts'
 import { server } from '../test/server.ts'
 import {
+  type AccountRepository,
+  accountRepositoriesQueryKey,
   accountsQueryKey,
   linkUrl,
   parseLinkOutcome,
   relinkUrl,
+  useAccountRepositories,
   useUnlinkAccount,
 } from './accounts.ts'
 import { apiUrl } from './client.ts'
@@ -157,5 +160,78 @@ describe('useUnlinkAccount', () => {
     await waitFor(() => expect(result.current.isError).toBe(true))
     expect(isInvalidated(accountsQueryKey)).toBe(false)
     expect(isInvalidated(repositoriesQueryKey)).toBe(false)
+  })
+})
+
+describe('useAccountRepositories', () => {
+  const discovered: AccountRepository[] = [
+    {
+      provider: 'github',
+      provider_repo_id: '1001',
+      name: 'docs',
+      full_name: 'acme/docs',
+      html_url: 'https://github.com/acme/docs',
+      is_private: false,
+      default_branch: 'main',
+    },
+  ]
+
+  function renderAccountRepositories(
+    account: { id: number; provider: string } | null,
+  ) {
+    const queryClient = createTestQueryClient()
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const { result } = renderHook(() => useAccountRepositories(account), {
+      wrapper,
+    })
+    return { result, queryClient }
+  }
+
+  test("requests the account's repositories by its id", async () => {
+    const requested: string[] = []
+    server.use(
+      http.get(apiUrl('/accounts/github/repositories'), ({ request }) => {
+        requested.push(new URL(request.url).search)
+        return HttpResponse.json(discovered)
+      }),
+    )
+    const { result } = renderAccountRepositories({ id: 3, provider: 'github' })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data).toEqual(discovered)
+    expect(requested).toEqual(['?account_id=3'])
+  })
+
+  test('requests nothing without an account', () => {
+    // setup.ts fails the test on any request, since no handler is declared.
+    const { result } = renderAccountRepositories(null)
+
+    expect(result.current.fetchStatus).toBe('idle')
+    expect(result.current.data).toBeUndefined()
+  })
+
+  test('invalidating the accounts also invalidates the list', async () => {
+    server.use(
+      http.get(apiUrl('/accounts/github/repositories'), () =>
+        HttpResponse.json(discovered),
+      ),
+    )
+    const { result, queryClient } = renderAccountRepositories({
+      id: 3,
+      provider: 'github',
+    })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    // Without refetching, so the state stays invalidated for the assertion.
+    void queryClient.invalidateQueries(
+      { queryKey: accountsQueryKey },
+      { cancelRefetch: false },
+    )
+
+    expect(
+      queryClient.getQueryState(accountRepositoriesQueryKey(3))?.isInvalidated,
+    ).toBe(true)
   })
 })

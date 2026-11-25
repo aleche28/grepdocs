@@ -12,7 +12,10 @@ function repository(id: number, accountId: number | null): Repository {
     id,
     account_id: accountId,
     provider: 'github',
+    provider_repo_id: String(1000 + id),
     full_name: `octocat/repo-${id}`,
+    default_branch: 'main',
+    tracked_branch: 'main',
   }
 }
 
