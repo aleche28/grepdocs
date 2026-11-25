@@ -1,6 +1,6 @@
 # PRD: Track a repository (#68)
 
-Status: **proposed**. Milestone: Phase 4 — Read-only MVP. Replaces user stories S2.1, S2.2 and S2.3
+Status: **done** — built on `feat/68-track-repository`. Milestone: Phase 4 — Read-only MVP. Replaces user stories S2.1, S2.2 and S2.3
 (UI side).
 
 ## Problem
@@ -154,6 +154,37 @@ focus moves to the banner, since the button that had it is gone.
 - The repositories page placeholder gets a "Track a repository" link to `/repositories/track`
   (#69 builds the rest of the page around it).
 - The accounts page already links here after a new link (#67, D13).
+
+### As built
+
+The page implements the plan above, with these differences. Where they conflict, this list and the
+code win.
+
+- **Discovery lives in `accounts.ts`.** `AccountRepository` and `useAccountRepositories` sit next
+  to the other `/accounts` calls, not in `repositories.ts`: `accounts.ts` already imports
+  `repositoriesQueryKey`, so the other way round would be an import cycle. The query key is
+  `accountRepositoriesQueryKey(id)` = `['accounts', id, 'repositories']`, as planned.
+- **The public form is GitHub only** (refines D8). It appears when `GET /providers` lists `github`,
+  since its `owner/name` rules are GitHub's; a provider choice comes with a second provider. Its
+  label is "Public GitHub repository". It also refuses `.` and `..` as names, and a full URL.
+- **Accounts of a provider `GET /providers` does not list** are left out of the picker (they cannot
+  list repositories). With several providers, each option also names its provider.
+- **Wording names the account.** The expired account reads "The access of @octocat expired.", and
+  a `403 forbidden` reads "GitHub no longer accepts the access of @octocat." with "Re-link
+  @octocat", on the list and on a track failure alike.
+- **Focus** moves to the outcome message only after tracking from the list, where the button that
+  had it turns into "Tracked". The public form keeps it: its button stays.
+- **A generic track failure** (`ApiErrorMessage`, "Could not track acme/docs") has no dismiss
+  button; the next attempt replaces it, like every other outcome.
+- **The pending row** is matched by `full_name`, since the mutation's request carries `owner` and
+  `name`, not `provider_repo_id`. A request from the form disables the list's buttons and the other
+  way round, but only the button that sent it reads "Tracking…".
+- **Helpers** (`repositoryKey`, `ownerOf`, `parseOwnerAndName`, `retryAfterText`, `installUrlOf`)
+  are in `pages/track/messages.ts`: a component file may export only components (fast refresh).
+- **Tests** are split in three page files (`TrackRepositoryPage.test.tsx` for accounts and the
+  list, `.track.test.tsx` for tracking from the list, `.public.test.tsx` for the form), with
+  fixtures in `src/test/track.tsx`, plus `pages/track/messages.test.ts` and
+  `api/repositories.test.tsx`.
 
 ## Tests
 
