@@ -317,3 +317,37 @@ button.link {
   text-decoration: underline;
   cursor: pointer;
 }
+
+button.primary {
+  border: 1px solid #2563eb;
+  border-radius: 4px;
+  background: #2563eb;
+  color: #fff;
+}
+
+button.primary:disabled {
+  opacity: 0.6;
+}
+
+/* EditDialog */
+
+.edit-repository {
+  display: grid;
+  gap: 1rem;
+}
+
+.edit-repository label {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.edit-repository p {
+  margin: 0.25rem 0 0;
+}
+
+.edit-repository .checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}

@@ -14,7 +14,7 @@ interface SyncErrorProps {
   // The repository's account, when it has one and GET /accounts lists it.
   account: ExternalAccount | undefined
   // Opens the edit dialog, to pick another branch.
-  onChangeBranch?: () => void
+  onChangeBranch: () => void
 }
 
 // Why the last sync failed (sync_error), and what fixes it. The codes are
@@ -52,15 +52,10 @@ export function SyncError({
       return (
         <p>
           {displayName} can't find {fullName} or its branch{' '}
-          {repository.tracked_branch} any more.
-          {onChangeBranch && (
-            <>
-              {' '}
-              <button type="button" className="link" onClick={onChangeBranch}>
-                Change branch
-              </button>
-            </>
-          )}
+          {repository.tracked_branch} any more.{' '}
+          <button type="button" className="link" onClick={onChangeBranch}>
+            Change branch
+          </button>
         </p>
       )
     case 'app_not_installed':

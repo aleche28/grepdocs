@@ -2,11 +2,16 @@ import { type ReactNode, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { useAccounts, useProviders } from '../api/accounts.ts'
 import { ApiError } from '../api/client.ts'
-import { type Repository, useRepositories } from '../api/repositories.ts'
+import {
+  type Repository,
+  useRepositories,
+  useSyncRepository,
+} from '../api/repositories.ts'
 import { ApiErrorMessage } from '../components/ApiErrorMessage.tsx'
 import { Banner } from '../components/Banner.tsx'
 import { retryAfterText } from '../components/errorText.ts'
 import { useAutoSync } from './repositories/autoSync.ts'
+import { EditDialog } from './repositories/EditDialog.tsx'
 import { byFullName } from './repositories/format.ts'
 import { RepositoryRow } from './repositories/RepositoryRow.tsx'
 
@@ -16,6 +21,13 @@ type Notice =
   | { tone: 'success' | 'error'; message: ReactNode }
   | { error: unknown; title: string }
 
+// The dialog open on a repository. The repository is the one the dialog
+// opened on, used when a refetch no longer lists it.
+interface DialogTarget {
+  kind: 'edit'
+  repository: Repository
+}
+
 // /repositories: the tracked repositories with their sync status. The list
 // is polled while a sync runs, so each row follows it to the end.
 export function RepositoriesPage() {
@@ -24,7 +36,11 @@ export function RepositoriesPage() {
   const providers = useProviders()
   const accounts = useAccounts()
   const [notice, setNotice] = useState<Notice | null>(null)
+  const [dialog, setDialog] = useState<DialogTarget | null>(null)
+  // Takes focus when a dialog closes and its row is gone.
   const noticeRef = useRef<HTMLDivElement>(null)
+  // The sync that follows a branch change.
+  const syncAfterEdit = useSyncRepository()
 
   useAutoSync(repositories.data, (count) =>
     setNotice({
@@ -44,6 +60,36 @@ export function RepositoriesPage() {
       setNotice(next)
     }
   }
+
+  const providerOf = (repository: Repository) =>
+    providers.data?.find((p) => p.name === repository.provider)
+  const accountOf = (repository: Repository) =>
+    repository.account_id === null
+      ? undefined
+      : accounts.data?.find((a) => a.id === repository.account_id)
+
+  const onSaved = (repository: Repository, branchChanged: boolean) => {
+    setDialog(null)
+    setNotice({
+      tone: 'success',
+      message: branchChanged
+        ? `${repository.full_name} now tracks ${repository.tracked_branch}.`
+        : `Saved ${repository.full_name}.`,
+    })
+    // The documents still come from the old branch until a sync.
+    if (branchChanged) {
+      syncAfterEdit.mutate(repository.id, {
+        onError: (error) => onSyncError(repository, error),
+      })
+    }
+  }
+
+  // The current row of the dialog's repository, so it shows what a poll
+  // brought in.
+  const dialogRepository =
+    dialog &&
+    (repositories.data?.find((r) => r.id === dialog.repository.id) ??
+      dialog.repository)
 
   let content
   if (sorted) {
@@ -65,15 +111,10 @@ export function RepositoriesPage() {
               <RepositoryRow
                 key={repository.id}
                 repository={repository}
-                provider={providers.data?.find(
-                  (p) => p.name === repository.provider,
-                )}
-                account={
-                  repository.account_id === null
-                    ? undefined
-                    : accounts.data?.find((a) => a.id === repository.account_id)
-                }
+                provider={providerOf(repository)}
+                account={accountOf(repository)}
                 onSyncError={onSyncError}
+                onEdit={() => setDialog({ kind: 'edit', repository })}
               />
             ))}
           </ul>
@@ -111,6 +152,18 @@ export function RepositoriesPage() {
           ))}
       </div>
       {content}
+      {dialog && dialogRepository && (
+        <EditDialog
+          // A fresh form, and mutation, per repository.
+          key={dialogRepository.id}
+          repository={dialogRepository}
+          provider={providerOf(dialogRepository)}
+          account={accountOf(dialogRepository)}
+          onClose={() => setDialog(null)}
+          onSaved={onSaved}
+          fallbackFocus={noticeRef}
+        />
+      )}
     </>
   )
 }

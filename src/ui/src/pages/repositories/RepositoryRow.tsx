@@ -14,6 +14,7 @@ interface RepositoryRowProps {
   account: ExternalAccount | undefined
   // A sync request failed; the page decides what to show.
   onSyncError: (repository: Repository, error: Error) => void
+  onEdit: () => void
 }
 
 export function RepositoryRow({
@@ -21,6 +22,7 @@ export function RepositoryRow({
   provider,
   account,
   onSyncError,
+  onEdit,
 }: RepositoryRowProps) {
   // One per row, so each Sync button knows whether its own request runs.
   const sync = useSyncRepository()
@@ -63,6 +65,7 @@ export function RepositoryRow({
           repository={repository}
           provider={provider}
           account={account}
+          onChangeBranch={onEdit}
         />
       </div>
       <div className="actions">
@@ -78,6 +81,9 @@ export function RepositoryRow({
         >
           {sync.isPending ? 'Starting…' : 'Sync'}
         </button>
+        <button type="button" onClick={onEdit} aria-label={`Edit ${fullName}`}>
+          Edit
+        </button>
       </div>
     </li>
   )
@@ -87,11 +93,17 @@ interface SyncStateProps {
   repository: Repository
   provider: Provider | undefined
   account: ExternalAccount | undefined
+  onChangeBranch: () => void
 }
 
 // The sync_status in words. An unknown status reads as pending. The error is
 // shown only once the sync failed: the API keeps it while a retry is queued.
-function SyncState({ repository, provider, account }: SyncStateProps) {
+function SyncState({
+  repository,
+  provider,
+  account,
+  onChangeBranch,
+}: SyncStateProps) {
   const lastSync = formatDateTime(repository.last_sync_at)
 
   switch (repository.sync_status) {
@@ -112,6 +124,7 @@ function SyncState({ repository, provider, account }: SyncStateProps) {
             repository={repository}
             provider={provider}
             account={account}
+            onChangeBranch={onChangeBranch}
           />
         </div>
       )
