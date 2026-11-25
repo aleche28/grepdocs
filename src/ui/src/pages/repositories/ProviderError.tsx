@@ -1,14 +1,11 @@
 import { Link } from 'react-router'
-import {
-  type ExternalAccount,
-  type Provider,
-  relinkUrl,
-} from '../../api/accounts.ts'
+import type { ExternalAccount, Provider } from '../../api/accounts.ts'
 import { ApiError } from '../../api/client.ts'
 import type { Repository } from '../../api/repositories.ts'
 import { ApiErrorMessage } from '../../components/ApiErrorMessage.tsx'
 import { installUrlOf, retryAfterText } from '../../components/errorText.ts'
-import { accountName } from '../accounts/format.ts'
+import { providerDisplayName } from './format.ts'
+import { RelinkPrompt } from './RelinkPrompt.tsx'
 
 interface ProviderErrorProps {
   error: Error
@@ -34,7 +31,7 @@ export function ProviderError({
   branch,
   onRetry,
 }: ProviderErrorProps) {
-  const displayName = provider?.display_name ?? repository.provider
+  const displayName = providerDisplayName(provider, repository)
   const { full_name: fullName } = repository
 
   let message
@@ -42,15 +39,7 @@ export function ProviderError({
     switch (error.code) {
       case 'forbidden':
         if (account) {
-          const name = accountName(account, displayName)
-          message = (
-            <>
-              {displayName} no longer accepts the access of {name}.{' '}
-              <a href={relinkUrl(account.provider, account.id)}>
-                Re-link {name}
-              </a>
-            </>
-          )
+          message = <RelinkPrompt account={account} displayName={displayName} />
         } else {
           message = (
             <>
@@ -90,18 +79,12 @@ export function ProviderError({
     }
   }
 
-  if (!message) {
-    return <ApiErrorMessage error={error} title={title} onRetry={onRetry} />
-  }
   return (
-    <div role="alert" className="error">
-      <strong>{title}</strong>
-      <p>{message}</p>
-      {onRetry && (
-        <button type="button" onClick={onRetry}>
-          Try again
-        </button>
-      )}
-    </div>
+    <ApiErrorMessage
+      error={error}
+      title={title}
+      message={message}
+      onRetry={onRetry}
+    />
   )
 }

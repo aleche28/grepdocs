@@ -10,14 +10,9 @@ import {
   renderRepositoriesPage,
   repository,
 } from '../test/repositories.tsx'
+import { errorResponse, findRow } from '../test/helpers.ts'
 import { server } from '../test/server.ts'
-import { errorResponse } from '../test/track.tsx'
-import { formatDateTime } from './repositories/format.ts'
-
-async function findRow(fullName: string) {
-  const link = await screen.findByRole('link', { name: fullName })
-  return within(link.closest('li')!)
-}
+import { formatDateTime } from './accounts/format.ts'
 
 describe('RepositoriesPage', () => {
   test('lists the tracked repositories by name', async () => {

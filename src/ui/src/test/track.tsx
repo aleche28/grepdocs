@@ -51,18 +51,6 @@ export function trackedFrom(
   })
 }
 
-export function errorResponse(
-  status: number,
-  code: string,
-  message: string,
-  { details, headers }: { details?: object; headers?: HeadersInit } = {},
-) {
-  return HttpResponse.json(
-    { error: details ? { code, message, details } : { code, message } },
-    { status, headers },
-  )
-}
-
 interface TrackApi {
   providers?: Provider[]
   accounts?: ExternalAccount[]

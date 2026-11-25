@@ -1,11 +1,8 @@
 import { Link } from 'react-router'
-import {
-  type ExternalAccount,
-  type Provider,
-  relinkUrl,
-} from '../../api/accounts.ts'
+import type { ExternalAccount, Provider } from '../../api/accounts.ts'
 import type { Repository } from '../../api/repositories.ts'
-import { accountName } from '../accounts/format.ts'
+import { providerDisplayName } from './format.ts'
+import { RelinkPrompt } from './RelinkPrompt.tsx'
 
 interface SyncErrorProps {
   repository: Repository
@@ -26,17 +23,15 @@ export function SyncError({
   account,
   onChangeBranch,
 }: SyncErrorProps) {
-  const displayName = provider?.display_name ?? repository.provider
+  const displayName = providerDisplayName(provider, repository)
   const { full_name: fullName } = repository
 
   switch (repository.sync_error) {
     case 'reauth_required': {
       if (account) {
-        const name = accountName(account, displayName)
         return (
           <p>
-            {displayName} no longer accepts the access of {name}.{' '}
-            <a href={relinkUrl(account.provider, account.id)}>Re-link {name}</a>
+            <RelinkPrompt account={account} displayName={displayName} />
           </p>
         )
       }

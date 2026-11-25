@@ -1,18 +1,13 @@
+import type { Provider } from '../../api/accounts.ts'
 import type { Repository } from '../../api/repositories.ts'
 
-const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-})
-
-// A timestamp from the API as a date and time in the user's locale, or null
-// when there is none or it does not parse (format would throw on it).
-export function formatDateTime(value: string | null): string | null {
-  if (value === null) {
-    return null
-  }
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : dateTimeFormat.format(date)
+// How messages name a repository's provider: its display name, or the raw
+// name when GET /providers does not list it (or has not loaded).
+export function providerDisplayName(
+  provider: Provider | undefined,
+  repository: Pick<Repository, 'provider'>,
+): string {
+  return provider?.display_name ?? repository.provider
 }
 
 // The list in a stable order, so a row does not move when its status

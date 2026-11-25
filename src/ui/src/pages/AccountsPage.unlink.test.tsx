@@ -6,6 +6,7 @@ import { apiUrl } from '../api/client.ts'
 import type { Repository } from '../api/repositories.ts'
 import { account, github, renderAccountsPage } from '../test/accounts.tsx'
 import { repository as fixture } from '../test/repositories.tsx'
+import { gate } from '../test/helpers.ts'
 import { server } from '../test/server.ts'
 
 function repository(id: number, accountId: number | null): Repository {
@@ -15,16 +16,6 @@ function repository(id: number, accountId: number | null): Repository {
     provider_repo_id: String(1000 + id),
     full_name: `octocat/repo-${id}`,
   })
-}
-
-// A response the test releases when it is ready, to look at the page while
-// the request is still in flight.
-function gate() {
-  let release!: () => void
-  const released = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  return { released, release }
 }
 
 interface ApiState {

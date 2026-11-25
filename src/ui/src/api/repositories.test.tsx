@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { createTestQueryClient } from '../test/queryClient.ts'
 import { repository as fixture } from '../test/repositories.tsx'
+import { errorResponse } from '../test/helpers.ts'
 import { server } from '../test/server.ts'
 import { apiUrl } from './client.ts'
 import {
@@ -31,22 +32,8 @@ function repository(id: number, fullName: string): Repository {
 }
 
 describe('useTrackRepository', () => {
-  // Seeds the tracked list (unless told not to), so the test can see how the
-  // mutation changes it.
   function renderTrack(tracked: Repository[] | null = []) {
-    const queryClient = createTestQueryClient()
-    if (tracked) {
-      queryClient.setQueryData(repositoriesQueryKey, tracked)
-    }
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    )
-    const { result } = renderHook(() => useTrackRepository(), { wrapper })
-    const cached = () =>
-      queryClient.getQueryData<Repository[]>(repositoriesQueryKey)
-    const isInvalidated = () =>
-      queryClient.getQueryState(repositoriesQueryKey)?.isInvalidated
-    return { result, tracked: cached, isInvalidated }
+    return renderWithList(() => useTrackRepository(), tracked)
   }
 
   // Answers POST /repositories with `response`, recording each body.
@@ -171,13 +158,6 @@ function renderWithList<T>(hook: () => T, tracked: Repository[] | null) {
   }
 }
 
-function envelope(status: number, code: string) {
-  return HttpResponse.json(
-    { error: { code, message: `${code} message` } },
-    { status },
-  )
-}
-
 describe('pollInterval', () => {
   const idle = { sync_status: 'ok' as const }
   const busy = { sync_status: 'running' as const }
@@ -292,14 +272,15 @@ describe('useSyncRepository', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(paths).toEqual([apiUrl('/repositories/12/sync')])
     expect(tracked()).toEqual([queued, handbook])
-    expect(isInvalidated()).toBe(true)
+    // The response is the new row: no refetch.
+    expect(isInvalidated()).toBe(false)
   })
 
   test.each([
     [409, 'conflict'],
     [404, 'not_found'],
   ])('refetches the list on %i', async (status, code) => {
-    mockSync(() => envelope(status, code))
+    mockSync(() => errorResponse(status, code))
     const { result, tracked, isInvalidated } = renderWithList(
       () => useSyncRepository(),
       [docs],
@@ -313,7 +294,7 @@ describe('useSyncRepository', () => {
   })
 
   test('refetches nothing when the queue is full', async () => {
-    mockSync(() => envelope(503, 'service_unavailable'))
+    mockSync(() => errorResponse(503, 'service_unavailable'))
     const { result, isInvalidated } = renderWithList(
       () => useSyncRepository(),
       [docs],
@@ -351,7 +332,8 @@ describe('useUpdateRepository', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(bodies).toEqual([{ tracked_branch: 'release' }])
     expect(tracked()).toEqual([updated])
-    expect(isInvalidated()).toBe(true)
+    // The response is the new row: no refetch.
+    expect(isInvalidated()).toBe(false)
   })
 })
 
@@ -361,7 +343,7 @@ describe('useUntrackRepository', () => {
 
   test.each([
     ['204', () => new HttpResponse(null, { status: 204 })],
-    ['404 (already untracked)', () => envelope(404, 'not_found')],
+    ['404 (already untracked)', () => errorResponse(404, 'not_found')],
   ])('removes the row on %s', async (_, response) => {
     server.use(http.delete(apiUrl('/repositories/12'), response))
     const { result, tracked, isInvalidated } = renderWithList(
@@ -378,7 +360,9 @@ describe('useUntrackRepository', () => {
 
   test('keeps the row on any other error', async () => {
     server.use(
-      http.delete(apiUrl('/repositories/12'), () => envelope(500, 'internal')),
+      http.delete(apiUrl('/repositories/12'), () =>
+        errorResponse(500, 'internal'),
+      ),
     )
     const { result, tracked } = renderWithList(
       () => useUntrackRepository(),

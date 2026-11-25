@@ -4,8 +4,10 @@ import {
   isBusy,
   type Repository,
   useSyncRepository,
+  useSyncStarting,
 } from '../../api/repositories.ts'
-import { formatDateTime } from './format.ts'
+import { formatDateTime } from '../accounts/format.ts'
+import { providerDisplayName } from './format.ts'
 import { SyncError } from './SyncError.tsx'
 
 interface RepositoryRowProps {
@@ -26,10 +28,11 @@ export function RepositoryRow({
   onEdit,
   onUntrack,
 }: RepositoryRowProps) {
-  // One per row, so each Sync button knows whether its own request runs.
-  const sync = useSyncRepository()
+  const { mutateAsync: sync } = useSyncRepository()
+  // Also true for a sync the auto-sync or a branch change started.
+  const starting = useSyncStarting(repository.id)
   const { full_name: fullName } = repository
-  const displayName = provider?.display_name ?? repository.provider
+  const displayName = providerDisplayName(provider, repository)
 
   return (
     <li
@@ -74,14 +77,14 @@ export function RepositoryRow({
         <button
           type="button"
           onClick={() =>
-            sync.mutate(repository.id, {
-              onError: (error) => onSyncError(repository, error),
-            })
+            void sync(repository.id).catch((error: Error) =>
+              onSyncError(repository, error),
+            )
           }
-          disabled={sync.isPending || isBusy(repository)}
+          disabled={starting || isBusy(repository)}
           aria-label={`Sync ${fullName}`}
         >
-          {sync.isPending ? 'Starting…' : 'Sync'}
+          {starting ? 'Starting…' : 'Sync'}
         </button>
         <button type="button" onClick={onEdit} aria-label={`Edit ${fullName}`}>
           Edit

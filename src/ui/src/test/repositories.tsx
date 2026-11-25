@@ -3,7 +3,7 @@ import type { ExternalAccount, Provider } from '../api/accounts.ts'
 import { apiUrl } from '../api/client.ts'
 import type { Repository } from '../api/repositories.ts'
 import { RepositoriesPage } from '../pages/RepositoriesPage.tsx'
-import { account, github } from './accounts.tsx'
+import { account, github, mockAccountsApi } from './accounts.tsx'
 import { renderRoute } from './renderRoute.tsx'
 import { server } from './server.ts'
 
@@ -43,11 +43,11 @@ interface RepositoriesApi {
 }
 
 // The lists the page loads, as state a test can change between requests
-// (a sync moving on, a row going away), and each request the page made, as
-// "METHOD path".
+// (a sync moving on, a row going away), and how many times the page fetched
+// the repositories.
 export interface RepositoriesApiState {
   repositories: Repository[]
-  requests: string[]
+  fetches: number
 }
 
 export function mockRepositoriesApi({
@@ -55,12 +55,11 @@ export function mockRepositoriesApi({
   providers = [github],
   accounts = [account()],
 }: RepositoriesApi): RepositoriesApiState {
-  const state: RepositoriesApiState = { repositories, requests: [] }
+  const state: RepositoriesApiState = { repositories, fetches: 0 }
+  mockAccountsApi({ providers, accounts })
   server.use(
-    http.get(apiUrl('/providers'), () => HttpResponse.json(providers)),
-    http.get(apiUrl('/accounts'), () => HttpResponse.json(accounts)),
-    http.get(apiUrl('/repositories'), ({ request }) => {
-      state.requests.push(`GET ${new URL(request.url).pathname}`)
+    http.get(apiUrl('/repositories'), () => {
+      state.fetches++
       return HttpResponse.json(state.repositories)
     }),
   )
@@ -83,6 +82,28 @@ export function update(
     throw new Error(`no repository ${id}`)
   }
   return updated
+}
+
+// Answers POST /repositories/:id/sync with `respond`, recording each path.
+export function mockSync(
+  respond: (id: number) => Response | Promise<Response>,
+): string[] {
+  const paths: string[] = []
+  server.use(
+    http.post(apiUrl('/repositories/:id/sync'), ({ request, params }) => {
+      paths.push(new URL(request.url).pathname)
+      return respond(Number(params.id))
+    }),
+  )
+  return paths
+}
+
+// A 202 that queues the repository in `state`, like the API.
+export function queue(state: RepositoriesApiState) {
+  return (id: number) =>
+    HttpResponse.json(update(state, id, { sync_status: 'queued' }), {
+      status: 202,
+    })
 }
 
 export function renderRepositoriesPage() {

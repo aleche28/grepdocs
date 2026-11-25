@@ -1,5 +1,4 @@
 import { type RefObject, useRef } from 'react'
-import type { Provider } from '../../api/accounts.ts'
 import { ApiError } from '../../api/client.ts'
 import {
   type Repository,
@@ -10,7 +9,8 @@ import { Dialog } from '../../components/Dialog.tsx'
 
 interface UntrackDialogProps {
   repository: Repository
-  provider: Provider | undefined
+  // The provider's display name, for "Nothing changes on GitHub."
+  displayName: string
   onClose: () => void
   // Also called on a 404: another tab untracked it already.
   onUntracked: () => void
@@ -20,14 +20,13 @@ interface UntrackDialogProps {
 // Confirms untracking a repository, which deletes its synced documents.
 export function UntrackDialog({
   repository,
-  provider,
+  displayName,
   onClose,
   onUntracked,
   fallbackFocus,
 }: UntrackDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null)
   const untrack = useUntrackRepository()
-  const displayName = provider?.display_name ?? repository.provider
 
   const confirm = () =>
     untrack.mutate(repository.id, {

@@ -8,6 +8,7 @@ import {
   useUpdateRepository,
 } from '../../api/repositories.ts'
 import { Dialog } from '../../components/Dialog.tsx'
+import { providerDisplayName } from './format.ts'
 import { ProviderError } from './ProviderError.tsx'
 
 interface EditDialogProps {
@@ -38,7 +39,7 @@ export function EditDialog({
   // repository meanwhile does not reset the form.
   const [branch, setBranch] = useState(repository.tracked_branch)
   const [autoSync, setAutoSync] = useState(repository.auto_sync)
-  const displayName = provider?.display_name ?? repository.provider
+  const displayName = providerDisplayName(provider, repository)
   const tracked = repository.tracked_branch
 
   // The tracked branch first, then the others in the provider's order. Kept

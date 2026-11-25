@@ -105,14 +105,21 @@ main {
   background: color-mix(in srgb, CanvasText 8%, transparent);
 }
 
-.button.primary {
-  border-color: #2563eb;
+.button.primary,
+button.primary {
+  border: 1px solid #2563eb;
+  border-radius: 4px;
   background: #2563eb;
   color: #fff;
 }
 
-.button.primary:hover {
+.button.primary:hover,
+button.primary:hover:enabled {
   background: #1d4ed8;
+}
+
+button.primary:disabled {
+  opacity: 0.6;
 }
 
 .warning {
@@ -190,11 +197,7 @@ main {
   overflow-wrap: anywhere;
 }
 
-.public-repository label {
-  display: block;
-  margin-bottom: 0.25rem;
-}
-
+.public-repository label,
 .public-repository input {
   min-width: 16rem;
 }
@@ -318,27 +321,11 @@ button.link {
   cursor: pointer;
 }
 
-button.primary {
-  border: 1px solid #2563eb;
-  border-radius: 4px;
-  background: #2563eb;
-  color: #fff;
-}
-
-button.primary:disabled {
-  opacity: 0.6;
-}
-
 /* EditDialog */
 
 .edit-repository {
   display: grid;
   gap: 1rem;
-}
-
-.edit-repository label {
-  display: block;
-  margin-bottom: 0.25rem;
 }
 
 .edit-repository p {

@@ -7,13 +7,15 @@ import type { Branch, Repository } from '../api/repositories.ts'
 import { account } from '../test/accounts.tsx'
 import {
   mockRepositoriesApi,
+  mockSync,
+  queue,
   type RepositoriesApiState,
   renderRepositoriesPage,
   repository,
   update,
 } from '../test/repositories.tsx'
+import { errorResponse } from '../test/helpers.ts'
 import { server } from '../test/server.ts'
-import { errorResponse } from '../test/track.tsx'
 
 function branch(name: string): Branch {
   return { name, commit: `sha-${name}`, protected: false }
@@ -54,20 +56,6 @@ function mockPatch(state: RepositoriesApiState, respond?: () => Response) {
     }),
   )
   return bodies
-}
-
-function mockSync(state: RepositoriesApiState) {
-  const paths: string[] = []
-  server.use(
-    http.post(apiUrl('/repositories/:id/sync'), ({ request, params }) => {
-      paths.push(new URL(request.url).pathname)
-      return HttpResponse.json(
-        update(state, Number(params.id), { sync_status: 'queued' }),
-        { status: 202 },
-      )
-    }),
-  )
-  return paths
 }
 
 async function openEdit(
@@ -138,7 +126,7 @@ describe('RepositoriesPage edit', () => {
     })
     mockBranches([branch('main'), branch('release')])
     const bodies = mockPatch(state)
-    const syncs = mockSync(state)
+    const syncs = mockSync(queue(state))
     const { user } = renderRepositoriesPage()
 
     const dialog = await openEdit(user)

@@ -202,18 +202,24 @@ GitHub." with *Untrack* (danger) and *Cancel*. Focus starts on *Cancel*.
 The page implements the plan above, with these differences. Where they conflict, this list and the
 code win.
 
-- **Branches are not under `['repositories']`.** Their key is
-  `repositoryBranchesQueryKey(id)` = `['repository-branches', id]`: every mutation invalidates
-  `['repositories']`, which would otherwise call the provider again while the edit dialog is open.
-- **The Sync button** reads "Starting…" only while its own request runs; it is disabled while the
-  repository is busy, and the status line says "Waiting to sync…" or "Syncing…". With both reading
-  "Syncing…" the row repeated itself.
+- **No refetch after a success** of `POST /sync` or `PATCH`: the response is the new row, and a
+  queued one starts the poll. The list is refetched only when it is stale (`404`, `409`). Branches
+  stay under `['repositories']` as planned, kept for a minute and not refetched on window focus,
+  since each fetch calls the provider.
+- **One sync mutation** (`mutationKey: ['sync-repository']`) serves the rows, the auto-sync and
+  the sync after a branch change, so the cache update and the `404`/`409` handling live once in
+  the hook, and callers use `mutateAsync`.
+- **The Sync button** reads "Starting…" while any sync request for its repository runs, whoever
+  sent it (`useSyncStarting`, from `useMutationState`); it is disabled while the repository is
+  busy, and the status line says "Waiting to sync…" or "Syncing…". With both reading "Syncing…"
+  the row repeated itself.
 - **The branch select is enabled while the branches load or failed**, with the tracked branch as
   its only option, so it can take focus when the dialog opens. It is disabled only while saving.
   Picking another branch shows "Saving starts a sync of release. Until it ends, the documents still
   come from main."
 - **Auto-sync failures other than `503`** change nothing on screen and are not logged to the
-  console either.
+  console either. The list is not refetched once the requests end: each `202` already replaced
+  its row.
 - **Rows mark auto-sync** with a muted "Auto-sync", so the user sees which repositories sync on
   opening without opening Edit.
 - **Wording:** `ok` without `last_sync_at` reads "Synced". The `rate_limited` hint for a repository
@@ -227,11 +233,15 @@ code win.
   runs) moved from `UnlinkDialog` to `src/components/Dialog.tsx`, which the three dialogs use, and
   `retryAfterText` / `installUrlOf` moved from `pages/track/messages.ts` to
   `src/components/errorText.ts`. Provider failures of the edit dialog are one component,
-  `pages/repositories/ProviderError.tsx`.
+  `pages/repositories/ProviderError.tsx`, which passes its message to `ApiErrorMessage` (new
+  `message` prop) instead of copying its markup; the re-link sentence is `RelinkPrompt`, shared
+  with `SyncError`. `formatDateTime` sits next to `formatDate` in `pages/accounts/format.ts`.
 - **Tests:** the poll interval and the polling itself are tested on the hooks
   (`api/repositories.test.tsx`), with fake timers; the page tests follow a sync with fake timers
-  too. Fixtures (`repository()`, `mockRepositoriesApi`) are in `src/test/repositories.tsx`, and the
-  track page fixtures build on them.
+  too. Fixtures (`repository()`, `mockRepositoriesApi`, `mockSync`, `queue`) are in
+  `src/test/repositories.tsx`, and the track page fixtures build on them. `errorResponse`, `gate`
+  and `findRow` moved to `src/test/helpers.ts` for every page test, and `renderRoute` takes extra
+  `routes` for a test that leaves the page.
 
 ## Tests
 

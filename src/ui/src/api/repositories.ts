@@ -1,6 +1,7 @@
 import {
   type QueryClient,
   useMutation,
+  useMutationState,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
@@ -112,25 +113,25 @@ export function useRepositories({ poll = false }: { poll?: boolean } = {}) {
   })
 }
 
-// The branches of a tracked repository, read live from the provider. Not
-// under repositoriesQueryKey: invalidating the list (as every mutation here
-// does) would otherwise call the provider again.
+// The branches of a tracked repository, read live from the provider, so
+// kept for a minute and not refetched on window focus. The mutations below
+// refetch the list only when it is stale, so this sits under its key.
 export function repositoryBranchesQueryKey(repositoryId: number) {
-  return ['repository-branches', repositoryId] as const
+  return [...repositoriesQueryKey, repositoryId, 'branches'] as const
 }
 
 export function useRepositoryBranches(repositoryId: number) {
   return useQuery({
     queryKey: repositoryBranchesQueryKey(repositoryId),
     queryFn: () => apiFetch<Branch[]>(`/repositories/${repositoryId}/branches`),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   })
 }
 
-// Puts a repository the API returned in place of its cached row.
-export function replaceRepository(
-  queryClient: QueryClient,
-  repository: Repository,
-) {
+// Puts a repository the API returned in place of its cached row. The
+// response is the new row, so the list is not refetched.
+function replaceRepository(queryClient: QueryClient, repository: Repository) {
   queryClient.setQueryData<Repository[]>(repositoriesQueryKey, (old) =>
     old?.map((r) => (r.id === repository.id ? repository : r)),
   )
@@ -146,25 +147,25 @@ function refetchRepositories(queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: repositoriesQueryKey })
 }
 
-// POST /repositories/{id}/sync: the repository comes back queued.
-export function syncRepository(repositoryId: number): Promise<Repository> {
-  return apiFetch<Repository>(`/repositories/${repositoryId}/sync`, {
-    method: 'POST',
-  })
-}
+// Every sync request, whoever sends it (a row, the auto-sync, the sync
+// after a branch change), so a row can tell one runs for its repository.
+const syncMutationKey = ['sync-repository'] as const
 
-// Starts a sync. The queued repository replaces its row, which starts the
-// list's polling (useRepositories with poll). A 409 (already busy, such as
-// from another tab) and a 404 (untracked meanwhile) mean the list is stale.
+// POST /repositories/{id}/sync. The queued repository replaces its row,
+// which starts the list's polling (useRepositories with poll). A 409
+// (already busy, such as from another tab) and a 404 (untracked meanwhile)
+// mean the list is stale. Callers use mutateAsync, which settles for every
+// call, where mutate's own callbacks run only for the latest one.
 export function useSyncRepository() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: syncRepository,
-    onSuccess: (repository) => {
-      replaceRepository(queryClient, repository)
-      refetchRepositories(queryClient)
-    },
+    mutationKey: syncMutationKey,
+    mutationFn: (repositoryId: number) =>
+      apiFetch<Repository>(`/repositories/${repositoryId}/sync`, {
+        method: 'POST',
+      }),
+    onSuccess: (repository) => replaceRepository(queryClient, repository),
     onError: (error) => {
       if (
         error instanceof ApiError &&
@@ -174,6 +175,15 @@ export function useSyncRepository() {
       }
     },
   })
+}
+
+// Whether a sync request for the repository is in flight, from any caller.
+export function useSyncStarting(repositoryId: number): boolean {
+  const pending = useMutationState({
+    filters: { mutationKey: syncMutationKey, status: 'pending' },
+    select: (mutation) => mutation.state.variables,
+  })
+  return pending.includes(repositoryId)
 }
 
 // PATCH /repositories/{id} body: only the fields that change.
@@ -197,10 +207,7 @@ export function useUpdateRepository() {
         method: 'PATCH',
         json: changes,
       }),
-    onSuccess: (repository) => {
-      replaceRepository(queryClient, repository)
-      refetchRepositories(queryClient)
-    },
+    onSuccess: (repository) => replaceRepository(queryClient, repository),
     onError: (error) => {
       if (error instanceof ApiError && error.status === 404) {
         refetchRepositories(queryClient)
@@ -217,9 +224,6 @@ export function useUntrackRepository() {
 
   const untracked = (repositoryId: number) => {
     removeRepository(queryClient, repositoryId)
-    queryClient.removeQueries({
-      queryKey: repositoryBranchesQueryKey(repositoryId),
-    })
     refetchRepositories(queryClient)
   }
 

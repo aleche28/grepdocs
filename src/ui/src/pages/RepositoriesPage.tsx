@@ -12,7 +12,7 @@ import { Banner } from '../components/Banner.tsx'
 import { retryAfterText } from '../components/errorText.ts'
 import { useAutoSync } from './repositories/autoSync.ts'
 import { EditDialog } from './repositories/EditDialog.tsx'
-import { byFullName } from './repositories/format.ts'
+import { byFullName, providerDisplayName } from './repositories/format.ts'
 import { RepositoryRow } from './repositories/RepositoryRow.tsx'
 import { UntrackDialog } from './repositories/UntrackDialog.tsx'
 
@@ -79,9 +79,9 @@ export function RepositoriesPage() {
     })
     // The documents still come from the old branch until a sync.
     if (branchChanged) {
-      syncAfterEdit.mutate(repository.id, {
-        onError: (error) => onSyncError(repository, error),
-      })
+      void syncAfterEdit
+        .mutateAsync(repository.id)
+        .catch((error: Error) => onSyncError(repository, error))
     }
   }
 
@@ -170,7 +170,10 @@ export function RepositoriesPage() {
         <UntrackDialog
           key={dialogRepository.id}
           repository={dialogRepository}
-          provider={providerOf(dialogRepository)}
+          displayName={providerDisplayName(
+            providerOf(dialogRepository),
+            dialogRepository,
+          )}
           onClose={() => setDialog(null)}
           onUntracked={() => {
             setDialog(null)

@@ -8,8 +8,8 @@ import {
   renderRepositoriesPage,
   repository,
 } from '../test/repositories.tsx'
+import { errorResponse, gate } from '../test/helpers.ts'
 import { server } from '../test/server.ts'
-import { errorResponse } from '../test/track.tsx'
 
 const docs = repository({ id: 12, full_name: 'acme/docs' })
 const handbook = repository({ id: 13, full_name: 'acme/handbook' })
@@ -101,10 +101,7 @@ describe('RepositoriesPage untrack', () => {
 
   test('keeps the dialog open while the request runs', async () => {
     const state = mockRepositoriesApi({ repositories: [docs] })
-    let release!: () => void
-    const released = new Promise<void>((resolve) => {
-      release = resolve
-    })
+    const { released, release } = gate()
     mockDelete(state, async () => {
       await released
       return new HttpResponse(null, { status: 204 })

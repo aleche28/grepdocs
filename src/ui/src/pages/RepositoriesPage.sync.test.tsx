@@ -1,50 +1,20 @@
-import { QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
-import { http, HttpResponse } from 'msw/http'
-import { StrictMode } from 'react'
-import { createMemoryRouter, Link } from 'react-router'
-import { RouterProvider } from 'react-router/dom'
+import { screen, waitFor, within } from '@testing-library/react'
+import { HttpResponse } from 'msw/http'
+import { Link } from 'react-router'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { apiUrl } from '../api/client.ts'
 import { fastPollMs } from '../api/repositories.ts'
-import { createTestQueryClient } from '../test/queryClient.ts'
+import { errorResponse, findRow, gate } from '../test/helpers.ts'
+import { renderRoute } from '../test/renderRoute.tsx'
 import {
   mockRepositoriesApi,
-  type RepositoriesApiState,
+  mockSync,
+  queue,
   renderRepositoriesPage,
   repository,
   update,
 } from '../test/repositories.tsx'
-import { server } from '../test/server.ts'
-import { errorResponse } from '../test/track.tsx'
 import { RepositoriesPage } from './RepositoriesPage.tsx'
-
-async function findRow(fullName: string) {
-  const link = await screen.findByRole('link', { name: fullName })
-  return within(link.closest('li')!)
-}
-
-// Answers POST /repositories/:id/sync with `respond`, recording each path.
-function mockSync(
-  respond: (id: number) => Response | Promise<Response>,
-): string[] {
-  const paths: string[] = []
-  server.use(
-    http.post(apiUrl('/repositories/:id/sync'), ({ request, params }) => {
-      paths.push(new URL(request.url).pathname)
-      return respond(Number(params.id))
-    }),
-  )
-  return paths
-}
-
-// A 202 that queues the repository in `state`, like the API.
-function queue(state: RepositoriesApiState) {
-  return (id: number) =>
-    HttpResponse.json(update(state, id, { sync_status: 'queued' }), {
-      status: 202,
-    })
-}
 
 afterEach(() => {
   vi.useRealTimers()
@@ -181,10 +151,7 @@ describe('RepositoriesPage sync', () => {
         repository({ id: 13, full_name: 'acme/handbook' }),
       ],
     })
-    let release!: () => void
-    const released = new Promise<void>((resolve) => {
-      release = resolve
-    })
+    const { released, release } = gate()
     mockSync(async () => {
       await released
       return errorResponse(500, 'internal', 'internal server error')
@@ -260,9 +227,7 @@ describe('RepositoriesPage auto-sync', () => {
     expect(paths.toSorted()).toEqual(
       [1, 2, 3, 4].map((id) => apiUrl(`/repositories/${id}/sync`)),
     )
-    // The list is refetched once every request has ended.
-    await waitFor(() => expect(state.requests.length).toBeGreaterThanOrEqual(2))
-    expect(paths).toHaveLength(4)
+    expect(state.fetches).toBe(1)
   })
 
   test('does not sync again when the page opens again', async () => {
@@ -274,43 +239,27 @@ describe('RepositoriesPage auto-sync', () => {
       update(state, id, { sync_status: 'ok' })
       return HttpResponse.json(state.repositories[0], { status: 202 })
     })
-    const queryClient = createTestQueryClient()
-    const router = createMemoryRouter(
-      [
-        {
-          path: '/repositories',
-          element: (
-            <>
-              <Link to="/elsewhere">Elsewhere</Link>
-              <RepositoriesPage />
-            </>
-          ),
-        },
-        {
-          path: '/elsewhere',
-          element: <Link to="/repositories">Back</Link>,
-        },
+    const { router } = renderRoute({
+      path: '/repositories',
+      element: (
+        <>
+          <Link to="/elsewhere">Elsewhere</Link>
+          <RepositoriesPage />
+        </>
+      ),
+      routes: [
+        { path: '/elsewhere', element: <Link to="/repositories">Back</Link> },
       ],
-      { initialEntries: ['/repositories'] },
-    )
-    render(
-      <StrictMode>
-        <QueryClientProvider client={queryClient}>
-          <RouterProvider router={router} />
-        </QueryClientProvider>
-      </StrictMode>,
-    )
+    })
 
     await waitFor(() => expect(paths).toHaveLength(1))
-    // The refetch that follows the auto-sync.
-    await waitFor(() => expect(state.requests).toHaveLength(2))
     await router.navigate('/elsewhere')
     // Rendered, so the page unmounted.
     await screen.findByRole('link', { name: 'Back' })
     await router.navigate('/repositories')
     // The page mounts on the cached list, idle again, and refetches it; an
     // auto-sync would have been sent on mount, before this refetch ends.
-    await waitFor(() => expect(state.requests).toHaveLength(3))
+    await waitFor(() => expect(state.fetches).toBe(2))
     await findRow('acme/docs')
     expect(paths).toHaveLength(1)
   })

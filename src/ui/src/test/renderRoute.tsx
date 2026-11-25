@@ -2,7 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { type ReactNode, StrictMode } from 'react'
-import { createMemoryRouter } from 'react-router'
+import { createMemoryRouter, type RouteObject } from 'react-router'
 import { RouterProvider } from 'react-router/dom'
 import { createTestQueryClient } from './queryClient.ts'
 
@@ -12,6 +12,8 @@ interface RenderRouteOptions {
   element: ReactNode
   // The URL the test starts on, with its query. Defaults to `path`.
   url?: string
+  // Other routes, for a test that leaves the page and comes back.
+  routes?: RouteObject[]
 }
 
 // Renders one page at its route, the way the app would after the auth guard
@@ -21,9 +23,14 @@ interface RenderRouteOptions {
 //
 // Returns the router, to assert on navigation (router.state.location), and a
 // userEvent instance, to drive the page.
-export function renderRoute({ path, element, url = path }: RenderRouteOptions) {
+export function renderRoute({
+  path,
+  element,
+  url = path,
+  routes = [],
+}: RenderRouteOptions) {
   const queryClient = createTestQueryClient()
-  const router = createMemoryRouter([{ path, element }], {
+  const router = createMemoryRouter([{ path, element }, ...routes], {
     initialEntries: [url],
   })
   const user = userEvent.setup()
