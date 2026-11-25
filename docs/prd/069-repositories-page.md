@@ -290,17 +290,18 @@ Vitest + Testing Library + MSW, through `renderRoute`, endpoints from `apiUrl()`
   MVP; a `sync_started_at` in the DTO would let the page say "taking longer than usual".
 - **Branch names differing only in case:** `PATCH` compares the new branch with
   `strings.EqualFold`, so changing `main` to `Main` (a different branch on GitHub) is silently
-  ignored. Rare; see Follow-up issues.
+  ignored. Rare; #142.
 
 ## Follow-up issues
 
-To propose (not created yet):
+- #142 `fix(api): a tracked_branch change that differs only in case is ignored`.
+- #143 `feat(api): change the account of a tracked repository`: would replace the `409` advice to
+  untrack and track again.
+- #144 `feat(api): queue a sync when PATCH changes tracked_branch`: would replace the page's sync
+  after a branch change (D5).
+- #145 `feat(api): expose sync_started_at in the repository DTO`: would replace the client-side
+  `busySince` of the poll interval (D3).
 
-- `fix(api): tracked_branch change ignores a branch that differs only in case` — `PATCH` uses
-  `strings.EqualFold`; git branch names are case-sensitive.
-- `feat(api): change the account of a tracked repository` — `PATCH account_id`, so a private
-  repository whose account was unlinked can be moved to another one instead of re-tracked (the
-  `409` above).
-
-Related open issues: #70 (document tree), #99 (anonymous rate limits), #134 (shared re-link on
+Related open issues: #70 (document tree), #90 (server-side auto-sync; the "sync on opening" half
+is this page's D7), #98 (stuck syncs), #99 (anonymous rate limits), #134 (shared re-link on
 `403`).
