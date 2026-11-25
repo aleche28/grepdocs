@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { apiUrl } from '../api/client.ts'
 import { fastPollMs, type SyncStatus } from '../api/repositories.ts'
 import {
+  documentDetail,
   mockDocumentsApi,
   renderRepositoryPage,
   trackedDocument,
@@ -88,7 +89,7 @@ describe('RepositoryPage', () => {
 
   test('highlights the selected document and opens its directories', async () => {
     mockRepositoriesApi({ repositories: [synced] })
-    const setup = trackedDocument({ path: 'docs/guides/setup.md' })
+    const setup = documentDetail({ path: 'docs/guides/setup.md' })
     mockDocumentsApi([
       trackedDocument({ path: 'docs/api/auth.md' }),
       setup,
@@ -105,15 +106,17 @@ describe('RepositoryPage', () => {
       'aria-current',
     )
     // The document route renders beside the tree.
-    expect(screen.getByText(`Document ${setup.id}`)).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: setup.path }),
+    ).toBeInTheDocument()
     expect(screen.queryByText('Choose a document.')).not.toBeInTheDocument()
   })
 
   test('moves between documents and keeps the tree as the user left it', async () => {
     mockRepositoriesApi({ repositories: [synced] })
-    const readme = trackedDocument({ path: 'README.md' })
-    const setup = trackedDocument({ path: 'docs/guides/setup.md' })
-    const auth = trackedDocument({ path: 'docs/api/auth.md' })
+    const readme = documentDetail({ path: 'README.md' })
+    const setup = documentDetail({ path: 'docs/guides/setup.md' })
+    const auth = documentDetail({ path: 'docs/api/auth.md' })
     const api = mockDocumentsApi([readme, setup, auth])
     const { user, router } = renderRepositoryPage(
       `/repositories/12/documents/${setup.id}`,
@@ -128,7 +131,9 @@ describe('RepositoryPage', () => {
     expect(router.state.location.pathname).toBe(
       `/repositories/12/documents/${auth.id}`,
     )
-    expect(await screen.findByText(`Document ${auth.id}`)).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: auth.path }),
+    ).toBeInTheDocument()
     expect(tree().getByRole('link', { name: 'auth.md' })).toHaveAttribute(
       'aria-current',
       'page',
@@ -138,7 +143,9 @@ describe('RepositoryPage', () => {
 
     // Back to a document in the closed directory: it opens again.
     await router.navigate(-1)
-    expect(await screen.findByText(`Document ${setup.id}`)).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: setup.path }),
+    ).toBeInTheDocument()
     await waitFor(() => expect(directory('guides')).toHaveAttribute('open'))
     expect(api.requests).toEqual(['12'])
   })

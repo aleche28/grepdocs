@@ -42,6 +42,12 @@ if (typeof HTMLDialogElement.prototype.showModal !== 'function') {
   }
 }
 
+// jsdom does not lay out the page, so it has no scrollIntoView(). A stub,
+// which a test can spy on.
+if (typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = function () {}
+}
+
 let unpatchedFetch: typeof fetch
 
 // Each request no handler matched in the current test, with MSW's message.

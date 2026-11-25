@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from 'react'
 import { NavLink } from 'react-router'
 import type { Document } from '../../api/documents.ts'
+import { documentRoute } from './links.ts'
 import { ancestorPaths, buildTree, type TreeNode } from './tree.ts'
 
 interface DocumentTreeProps {
@@ -88,9 +89,7 @@ function TreeList({ nodes, repositoryId, open, onToggle }: TreeListProps) {
               />
             </details>
           ) : (
-            <NavLink
-              to={`/repositories/${repositoryId}/documents/${node.document.id}`}
-            >
+            <NavLink to={documentRoute(repositoryId, node.document.id)}>
               {node.name}
             </NavLink>
           )}
