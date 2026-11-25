@@ -1,6 +1,6 @@
 # PRD: Document viewer with rendered and raw modes (#71)
 
-Status: **proposed**. Milestone: Phase 4 — Read-only MVP. Replaces user stories S4.1 (view
+Status: **done** — built on `feat/71-document-viewer`. Milestone: Phase 4 — Read-only MVP. Replaces user stories S4.1 (view
 rendered Markdown), S4.2 (view raw Markdown) and S4.4 (see a document's repository and branch).
 
 ## Problem
@@ -123,6 +123,48 @@ URL and is tested on its own:
 | The document's `repository_id` is not `:repoId` | "This document is in another repository." with a link to its own URL                   |
 | Empty `content`                                 | "This document is empty." in both views                                                |
 | Repository syncing or failed                    | The document, unchanged: the page header already says it is the last good sync's       |
+
+### As built
+
+The page implements the plan above, with these differences. Where they conflict, this list and the
+code win.
+
+- **Provider URLs** (D11) are `providerFileUrl(repository, ref, path, kind)` in
+  `pages/repository/links.ts`, next to `resolveLink`, rather than `documentUrls(repository,
+document)`: relative links and images need URLs for other paths than the document's.
+- **The outlet context** (D9) is `{ repository, documents }`, passed with `<Outlet context>`; its
+  type and `useRepositoryContext()` are in `pages/repository/context.ts`. The document route is
+  built by `documentRoute(repoId, documentId)` (`links.ts`), which the tree uses too.
+- **Footnotes:** remark-rehype prefixes footnote IDs itself, and the sanitizer would prefix them a
+  second time, so `MarkdownView` sets remark-rehype's `clobberPrefix` to `''`. Footnote links are
+  then `#fn-1`, which the fragment rule turns into `#user-content-fn-1`.
+- **URLs are rewritten in react-markdown's `urlTransform`**, which runs after every rehype plugin,
+  so the sanitizer sees the URLs as written. After it, an `href` starting with `/` is an app route
+  (a React Router `<Link>`), `#` is in the document, and anything else is absolute (`http(s)` opens
+  in a new tab).
+- **Queries and fragments:** a link to a synced document keeps its fragment (prefixed) and drops
+  its query. A GitHub URL keeps both as written (`?raw=true`, and an unprefixed fragment, which
+  GitHub's page resolves itself).
+- **An `<a>` without `href`** (a dropped URL, or an anchor from inline HTML) stays an `<a>`, so a
+  `<a name="…">` anchor still works.
+- **`<input>`:** the sanitizer turns any input into a disabled checkbox, as GitHub does for task
+  lists; forms are removed.
+- **Scrolling to a fragment:** `MarkdownView` scrolls to the heading the URL's fragment names once
+  the content has rendered (the browser looked for it before). jsdom has no `scrollIntoView`, so
+  `src/test/setup.ts` stubs it.
+- **Bundle:** `MarkdownView` builds to its own chunk, 358 kB (105 kB gzipped). `DocumentPage`
+  starts loading it when it mounts, alongside the document, rather than once the document arrives.
+- **Parsing only when needed:** react-markdown parses on every render, so the parsing part of
+  `MarkdownView` is memoized, `links` depends only on the repository fields it reads (the polled
+  row is a new object on every sync status change), and the scroll to a fragment lives outside the
+  memoized part, once per document and fragment.
+- **The sanitizer's `clobberPrefix`** is set to `idPrefix` explicitly, rather than relying on its
+  default being the same string.
+- **New-tab links** ("View on GitHub", `UpstreamLink`) use a shared `ExternalLink`
+  (`src/components/`).
+- **Tests:** `documentDetail()` in `src/test/documents.tsx`, and `mockDocumentsApi` serves both
+  `GET /documents` and `GET /documents/{id}` from one list (a document without `content` reads
+  as empty), as the API serves both from one table.
 
 ## Tests
 
