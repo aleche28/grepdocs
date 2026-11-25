@@ -1,7 +1,7 @@
 import { relinkUrl, type ExternalAccount } from '../../api/accounts.ts'
 import { ApiError } from '../../api/client.ts'
 import { ApiErrorMessage } from '../../components/ApiErrorMessage.tsx'
-import { installUrlOf, retryAfterText } from './messages.ts'
+import { installUrlOf, retryAfterText } from '../../components/errorText.ts'
 
 interface ListErrorProps {
   error: Error

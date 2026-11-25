@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { ownerOf, parseOwnerAndName, retryAfterText } from './messages.ts'
+import { ownerOf, parseOwnerAndName } from './messages.ts'
 
 describe('parseOwnerAndName', () => {
   test.each([
@@ -31,17 +31,5 @@ describe('parseOwnerAndName', () => {
 describe('ownerOf', () => {
   test('is the part before the first slash', () => {
     expect(ownerOf({ full_name: 'acme/docs' })).toBe('acme')
-  })
-})
-
-describe('retryAfterText', () => {
-  test.each([
-    [undefined, 'Try again later.'],
-    [0, 'Try again in a minute.'],
-    [60, 'Try again in a minute.'],
-    [61, 'Try again in 2 minutes.'],
-    [3600, 'Try again in 60 minutes.'],
-  ])('%j seconds', (seconds, want) => {
-    expect(retryAfterText(seconds)).toBe(want)
   })
 })
