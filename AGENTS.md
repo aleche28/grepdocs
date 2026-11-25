@@ -1,7 +1,17 @@
 # AGENTS.md
 
 Guidance for AI coding agents working in this repository. Written to be tool-agnostic — any agent
-that picks up an `AGENTS.md` (or is pointed at one) should be able to work from this file alone.
+that picks up an `AGENTS.md` (or is pointed at one) should be able to work from this file and the
+files it points to. This file holds the rules most tasks need; the detail behind them, and the rules
+for specific areas, live in `docs/agents/`. Read the matching file before changing that area.
+
+| Before you change…                                                      | Read                             |
+| ----------------------------------------------------------------------- | -------------------------------- |
+| Request pipeline, sessions, DAL, token encryption, `httpx`, Go tests    | `docs/agents/backend.md`         |
+| Providers, `credentials`, token refresh/revocation, account linking     | `docs/agents/git-providers.md`   |
+| Anything in `src/ui`, UI tests                                          | `docs/agents/web-ui.md`          |
+| Workflows, lint config, pinned tool versions, Go/Node versions          | `docs/agents/ci.md`              |
+| Dev container, Makefile, local infra, Swagger UI                        | `docs/agents/dev-environment.md` |
 
 ## Project
 
@@ -10,17 +20,8 @@ multiple git repositories, committing edits back to source control. The backend 
 module `grepdocs/api`); the web UI is `src/ui` (React + TypeScript, built with Vite), being built in
 Phase 4 of `docs/roadmap.md`.
 
-GitHub Actions runs the quality gates on every PR and push to `main` (see CI and code quality);
-`make ci` runs the same checks locally — run it before pushing. Unit tests cover sessions, auth
-middleware, providers, credentials, response envelopes, the session model, and the `syncqueue`
-worker pool (on `testing/synctest`, so its timeouts run on a fake clock). `routers` tests cover
-only code that needs no database (`writeProviderError`, `installDetails`, ID parsing, `isValidRedirectPath`, the docs routes,
-`GET /providers`, the linking redirect helpers, and the linking-flow paths that end before a DB call); other handlers and
-`reposync` stay untested because they hold a concrete `*pgxpool.Pool`, so there is no DB seam yet.
-UI tests (Vitest) cover the API client, the auth helpers, the accounts page (`/settings/accounts`), the track page
-(`/repositories/track`), the repositories page (`/repositories`), the repository page with
-its document tree (`/repositories/:repoId`), and the document viewer
-(`/repositories/:repoId/documents/:documentId`); see Web UI for the setup.
+GitHub Actions runs the quality gates on every PR and push to `main`; `make ci` runs the same checks
+locally — run it before pushing.
 
 ## Commands
 
@@ -54,370 +55,59 @@ commands from `src/ui`. The Makefile at the repo root wraps them and handles the
 | UI dependency audit    | `make ui-audit`                      |
 | Every UI check CI runs | `make ui-ci`                         |
 
-Makefile caveats:
+- The `ui-*` targets, and `make ci` (it runs `ui-ci`), need `node_modules`: run `make ui-install`
+  once, and again after `package-lock.json` changes.
+- The dev container has no Docker CLI on purpose: run `make infra-*` on the host.
+- Health check: <http://localhost:3000/api/ping> returns `pong`.
 
-- `make fmt` rewrites files; `make fmt-check` and `make tidy-check` only print a diff and fail.
-- The `ui-*` targets need `node_modules`, and so does `make ci` (it runs `ui-ci`): run
-  `make ui-install` once, and again after `package-lock.json` changes. Only CI installs on its own.
-- `make migrate-*` parses `DATABASE_URL` out of `src/api/.env` with `sed` and requires the
-  `postgres://` URL form (golang-migrate cannot read pgx keyword/value strings). Override on the
-  command line with `make migrate-up DATABASE_URL=...`.
+## Rules most tasks need
 
-Prerequisites beyond Go and Docker: `golang-migrate`, `sqlc`, and `golangci-lint` on `PATH` (see
-README), and Node.js at the version in `src/ui/.nvmrc` for the UI. govulncheck needs no install: it is a `tool` directive in `go.mod`, run with `go tool`.
-The dev container (`.devcontainer/`) has all of them, at the versions pinned in its `Dockerfile`.
+### Backend (`src/api`)
 
-Dev container rules worth preserving:
-
-- It layers `.devcontainer/docker-compose.yml` on the root `docker-compose.yml`, whose fixed
-  `name: grepdocs` makes the container and `make infra-up` share containers and volumes. Do not add
-  `container_name` back: fixed names break that sharing.
-- Inside it, `DATABASE_URL` and `REDIS_ADDR` are set by compose to the service names (`postgres`,
-  `redis`). This relies on `godotenv.Load` not overriding set variables and on the Makefile's
-  `DATABASE_URL ?=`; switching to `godotenv.Overload` would break it.
-- Ports 3000 and 5173 use `requireLocalPort`: the OAuth redirect URLs and `FRONTEND_URL` name them.
-- Vite binds `127.0.0.1` (`vite.config.ts`), not the default `localhost`: Node resolves that to
-  `::1`, and the forwarded port connects over IPv4, so the UI hangs. Servers in the container must
-  listen on IPv4 loopback or on all addresses (the API listens on `:3000`).
-- `devcontainer-lock.json` pins the features by digest; Dependabot updates it with the features.
-- Claude Code is installed by `post-create.sh` and keeps its state in the `claude-config` volume
-  through `CLAUDE_CONFIG_DIR`; the Dockerfile creates `/home/vscode/.claude` so the volume starts
-  owned by `vscode`, like the Go cache volumes. The `anthropic.claude-code` extension shares that
-  directory, so its login survives a rebuild too. Keep the native installer rather than the
-  `claude-code` dev container feature: the feature needs npm at build time, when the image has
-  only nvm, and would install a second, outdated Node (details in `post-create.sh`).
-- The image has no Docker CLI or socket on purpose: it keeps agents running inside the container away
-  from the host's Docker daemon. Run `make infra-*` on the host.
-Health check: <http://localhost:3000/api/ping> returns `pong`.
-
-Interactive API docs (Swagger UI) are at <http://localhost:3000/api/docs>, mounted only when `ENV`
-is not `production`. Sign in first at <http://localhost:3000/api/auth/google/login>: requests from
-the page carry the browser's session cookie, so no cookie copying is needed.
-
-Infra (`make infra-up`) starts Postgres on `5432`, Redis on `6379`, pgAdmin on `8080`. The server
-needs both Postgres and Redis, and exits at startup if `DATABASE_URL` is unset. Their data lives in
-named volumes (`grepdocs_pgdata`, `grepdocs_cache`): `make infra-down` keeps it, `docker compose
-down -v` deletes it. Postgres 18+ images mount the volume at `/var/lib/postgresql`, not `.../data`.
-
-## Architecture
-
-### Request pipeline
-
-`main.go` wires everything; there is no DI container. The only service is `credentials.Service`
-(see Git providers), built once in `main.go` and injected into the routers that call providers.
-
-```
-http.Server (explicit timeouts, graceful shutdown on SIGINT/SIGTERM)
-  └─ sm.Handle          session middleware — loads/creates session, writes cookie, saves on the way out
-      └─ chi router      middleware.Logger / RequestID / Recoverer
-          └─ /api
-              ├─ GET /ping                          (public)
-              ├─ /auth          routers.AuthRoutes             (public: Google OAuth login/callback, logout)
-              ├─ /users         routers.UserRoutes             (RequireAuth)
-              ├─ /providers     routers.ProvidersRoutes        (RequireAuth)
-              ├─ /accounts      routers.ExternalAccountsRoutes (RequireAuth)
-              ├─ /repositories  routers.RepositoriesRoutes     (RequireAuth)
-              └─ /docs          routers.DocsRoutes             (public; not mounted in production)
-```
-
-Each `routers.*Routes(...)` constructor builds a handler struct holding `*pgxpool.Pool` and
-`*session.SessionManager`, then returns a `chi.Router` (`DocsRoutes` has no dependencies). Handlers
-are receiver methods; they open a `dal.New(h.dbPool)` query set per request and always pass
-`r.Context()` to DB and outbound calls.
-
-### Sessions (`src/api/session`, `src/api/models/session.go`)
-
-Hand-rolled, deliberately — do not swap in `scs` or another library unilaterally (there is a TODO in
-`main.go` about it, but it is a decision, not a chore).
-
-- `SessionManager.Handle` wraps every request: reads the cookie, loads from the store, attaches the
-  `*models.Session` to the request context under a private key, and saves it after the handler runs.
-- `sessionResponseWriter` exists so the `Set-Cookie` header is always written *before* any status
-  code or body, regardless of what the handler does.
-- `RedisSessionStore` is the only store; it relies on Redis TTL, so `NeedsGC()` returns false and the
-  GC goroutine never starts. Idle (1h) and absolute (12h) expirations are enforced both in the
-  manager (`isValid`) and via the Redis TTL.
-- Session helpers live on the model: `SetUserID` also flips `Authenticated`; `GetOAuthStateToken`
-  and `GetUIRedirectPage` are **single-use reads** that delete the key as a side effect.
-- `middleware.RequireAuth(sm)` rejects unauthenticated requests and stashes the user ID in the
-  request context; handlers read it with `middleware.CurrentUserID(r)`, never from the session.
-
-### Data access (`src/api/dal`) — generated, never hand-edited
-
-Two steps, in this order:
-
-1. Write a migration in `src/api/database/migrations/` as `NNNNNN_name.up.sql` + `.down.sql`.
-   Never edit an existing migration — add a new one (see `000003`, which fixes `000002`).
-   `sqlc.yaml` uses the migrations folder as its schema source, so the migration *is* the schema.
-2. Add or change a query in `src/api/database/queries.sql` (`-- name: Foo :one|:many|:exec`), then
-   run `make sqlc-generate`. Schema and query changes are invisible to Go code until you do.
-
-`.agents/skills/migration-generator/SKILL.md` documents a naming/scaffolding convention for new
-migration files (sequence numbering, column/type syntax, automatic indexes and down-migrations).
-Most agents will not auto-load it — read it directly when generating a migration, and follow its
-rules: never modify existing migrations, and never run migrations or `sqlc generate` on the user's
-behalf; write the files and tell them the commands.
-
-sqlc overrides map `timestamptz` to `time.Time` / `*time.Time` rather than `pgtype` wrappers.
-
-### Token encryption (`src/api/secrets`)
-
-Provider `access_token`/`refresh_token` are encrypted at rest with app-level AES-256-GCM; the DB
-only ever sees base64 ciphertext prefixed `v1:`. The `secrets.Cipher` interface is the seam — a
-KMS-envelope implementation can replace `AESGCMCipher` without touching call sites. `main.go`
-reads `TOKEN_ENCRYPTION_KEY` (base64, 32 bytes), validates it at startup, and **fatals** if it is
-missing, malformed, or the wrong length.
-
-Rules:
-
-- Never commit a key. Generate with `openssl rand -base64 32` and keep it in `.env`; the key must
-  stay stable or every stored token becomes unreadable.
-- Encrypt before every write to `external_git_accounts` and decrypt after every read. Writes happen
-  in `providerCallback` (link/re-link) and `credentials.Service` (refresh); reads go through
-  `credentials.Service`, the only decrypt site. `secrets` is not wired into the DAL automatically,
-  so new write paths must not forget this, and new read paths should get tokens from `credentials`
-  instead of decrypting themselves.
-- Keep the `v1:` prefix on ciphertext; it is what makes format/key rotation possible.
-- Unit tests live in `secrets/aesgcm_test.go` (round-trip, tamper, wrong key, malformed input).
-
-### HTTP responses (`src/api/httpx`)
-
-Every response goes through `httpx`. Never use `http.Error` or hand-rolled JSON encoding.
-
-- `WriteJSON(w, status, data)`
-- `WriteError(w, status, code, message)` — emits `{"error":{"code","message"}}`, where `code` is one
-  of the stable `httpx.Code*` constants and is the machine-readable discriminator. The UI mirrors
-  them by hand in `ApiErrorCode` (`src/ui/src/api/client.ts`): add a code to both in one change.
-- `WriteErrorWithDetails(w, status, code, message, details)` — same envelope plus an optional
-  `details` object, omitted when `details` is empty. `WriteError` calls it with `nil`.
-- `WriteInternalError(w, err)` — logs the real error server-side and returns a generic `internal`
-  envelope. Internal error strings must never reach the client.
-
-Handlers build response DTOs explicitly (mostly inline `map[string]any`; `providerDTO` is a typed
-struct). Token fields from
-`external_git_accounts` must be stripped at the DTO layer — see `listExternalAccounts`.
+- `main.go` wires everything; there is no DI container. Handlers are receiver methods on a struct
+  holding `*pgxpool.Pool` and `*session.SessionManager`; they open a `dal.New(h.dbPool)` query set
+  per request and always pass `r.Context()` to DB and outbound calls.
+- Sessions are hand-rolled on purpose: do not swap in `scs` or another library unilaterally.
+  Handlers read the user ID with `middleware.CurrentUserID(r)`, never from the session.
+- `src/api/dal` is generated, never hand-edited. Schema change: a new migration in
+  `src/api/database/migrations/` (never edit an existing one), then the query in
+  `src/api/database/queries.sql`, then `make sqlc-generate`. Follow
+  `.agents/skills/migration-generator/SKILL.md`, and never run migrations or `sqlc generate` on the
+  user's behalf: write the files and tell them the commands.
+- Every response goes through `httpx` (`WriteJSON`, `WriteError`, `WriteErrorWithDetails`,
+  `WriteInternalError`); never `http.Error` or hand-rolled JSON. Internal error strings never reach
+  the client. A new `httpx.Code*` constant is added to `ApiErrorCode` (`src/ui/src/api/client.ts`)
+  in the same change.
+- Token fields from `external_git_accounts` are stripped at the DTO layer, encrypted before every
+  write, and read only through `credentials.Service` — never decrypt them yourself.
+- New providers go in `src/api/providers/` behind `providers.Provider`; capabilities not every
+  provider has are optional interfaces checked with a type assertion.
 
 ### Web UI (`src/ui`)
 
-React + TypeScript, built with Vite, React Router for routes, TanStack Query for data from the API.
+- Every API call goes through `apiFetch` / `apiFetchText` (`src/api/client.ts`), never `fetch`.
+  Data from the API lives in TanStack Query through the shared `queryClient`, not component state.
+- Routes are in `src/router.tsx`, one component per route in `src/pages/`. Show a failed API call
+  with `ApiErrorMessage`, a just-happened message with `Banner`, a confirmation or small form with
+  `Dialog` (all in `src/components/`).
+- Tests are Vitest + Testing Library next to the code, with the API mocked by MSW and pages rendered
+  with `renderRoute`. Vitest does not type-check: run `make ui-typecheck` too.
 
-- Locally, the browser only talks to the Vite dev server on `:5173`, which proxies `/api` to the API
-  on `:3000` (`vite.config.ts`), so API calls are same-origin and need no CORS. The API redirects to
-  `FRONTEND_URL` (default `http://localhost:5173`) after login and after linking an account, so the
-  dev server uses `strictPort`. The OAuth callbacks stay on `:3000`: browsers do not separate
-  cookies by port, so the cookie set there reaches `:5173`.
-- Every API call goes through `apiFetch` / `apiFetchText` (`src/api/client.ts`), never `fetch`
-  directly, the same way every API response goes through `httpx`. Paths omit the `/api` prefix.
-  Non-2xx responses become an `ApiError` with the envelope's `code`, `message`, `details`, and
-  `retryAfter`; `network_error` (status 0) and `unexpected_response` (no envelope, such as the
-  proxy's `502` with the API down) are client-only codes.
-- Data from the API lives in TanStack Query, through the shared `queryClient`
-  (`src/api/queryClient.ts`), not in component state. Queries retry on network errors and 5xx,
-  never on 4xx.
-- Routes are in `src/router.tsx`, one component per route in `src/pages/`. Pages that need a
-  signed-in user sit under the `AppLayout` route. `/settings/accounts` is fixed by the API, which
-  redirects there after linking an account.
-- Auth (`src/api/auth.ts`): `AppLayout` is the guard. It renders nothing until the shared
-  `useCurrentUser()` query (`GET /users/me`) resolves, and sends a `not_authenticated` user to
-  `/login?redirect=<path>`; any other error shows a retry, never the login page. Any query or
-  mutation that fails with `not_authenticated` refetches that query (`queryClient.ts`), so a
-  session that expires mid-use also ends on the login page. Signing in is a plain link to
-  `apiUrl('/auth/google/login')`, the one deliberate exception to `apiFetch`: only a full-page
-  navigation can follow the redirect to Google. Logout calls `queryClient.clear()` so the next user
-  in the tab sees none of the previous one's data. A redirect path read from the URL goes through
-  `safeRedirectPath` before any client-side navigation.
-- `AppLayout` is also the app shell (navigation, current user, sign out). Pages show a failed API
-  call with `ApiErrorMessage` (`src/components/`), never by hand: it shows the envelope's message,
-  offers a retry, and renders nothing for `not_authenticated`, which the guard handles. Errors that
-  need a page-specific action (`app_not_installed`'s `install_url`, `rate_limited`'s
-  `retryAfter`) are handled by that page. A dismissible message about something that just
-  happened (a link attempt, an unlink) is a `Banner` (`src/components/`): a status for a success,
-  an alert for a failure. A confirmation or a small form is a `Dialog` (`src/components/`), open
-  for as long as the page renders it, which keeps it open while its request runs.
-- Formatting is Prettier (no semicolons, single quotes), linting ESLint. Run `make ui-fmt`.
-- Tests are Vitest in jsdom, with Testing Library, next to the code they test (`*.test.ts(x)`).
-  The API is mocked with MSW (`src/test/server.ts`), so requests go through `apiFetch` exactly as
-  in the app: each test declares its endpoints with `server.use(...)`, with paths from `apiUrl()`.
-  `src/test/setup.ts` fails a test that makes a request no handler matches; it also blocks the
-  request, which MSW would otherwise send to the real network. It resolves relative URLs for
-  Node's `fetch`, which rejects them, so `apiUrl` stays relative. Render a page with
-  `renderRoute` (`src/test/renderRoute.tsx`): a memory router and a fresh `QueryClient` without
-  retries, in `StrictMode` like `main.tsx`, and no `AppLayout`, so no `GET /users/me` handler is
-  needed. jsdom has no modal dialogs: `setup.ts` stubs `showModal()` / `close()` and Esc, and
-  queues `close` as browsers do. Vitest does not
-  type-check, so a test run passes code that `make ui-typecheck` rejects (such as MSW 2's
-  `onUnhandledRequest`, renamed `onUnhandledFrame` in MSW 3, which MSW then ignores).
+### Code quality
 
-### Git providers
-
-Only GitHub is implemented, behind the `providers.Provider` interface + `Registry` (new providers
-go in `src/api/providers/`, not inline in handlers). Provider failures are normalized to
-`ErrInvalidToken`/`ErrRateLimited`/`ErrNotFound`/`ErrAppNotInstalled` and mapped by callers to
-`403`/`429`/`404`/`403 app_not_installed`. When adding Bitbucket, build a `Refresher`
-implementation rather than adding a second inline flow.
-
-Capabilities not every provider has are optional interfaces checked with a type assertion, not
-methods on `Provider`: `Refresher` (token refresh), `Installer` (`InstallURL()`, for providers
-whose access depends on an app installation), and `Revoker` (token revocation).
-`routers.installURL` reads `InstallURL()` (empty when the provider is not an `Installer` or there is
-no `GITHUB_APP_SLUG`); `installDetails` turns it into the `details.install_url` of an error, omitting
-the key rather than sending it empty, and `GET /providers` sends it as `install_url` or `null`.
-
-Every provider has a `DisplayName()` for the UI. `Registry.List()` returns the providers sorted by
-name (it is what `GET /providers` lists), and `NewRegistry` panics on a duplicate name: it runs
-once at startup. `AuthCodeURL(state, AuthOptions)` takes `SelectAccount` (GitHub:
-`prompt=select_account`) and `LoginHint` (GitHub: `login=`).
-
-Handlers and background jobs get provider access tokens from `credentials.Service`
-(`src/api/credentials`), never from the token columns directly: `ResolveAccount` picks the account,
-`ForAccount` / `ForRepository` return a usable token. It writes no HTTP responses; it returns
-`ErrAccountNotFound`, `ErrAccountAmbiguous`, and `ErrReauthRequired`, and each caller maps them
-(the status for the same error differs per endpoint — check `docs/api.md`).
-
-Token refresh lives in `credentials` and is invisible to callers. `ForAccount` refreshes a token
-that expires within `refreshMargin` (5 min) when the provider implements `providers.Refresher`.
-Rules worth preserving:
-
-- Refresh tokens are single-use, so refreshes are serialized per account with
-  `GetExternalGitAccountByIdForUpdate` (`SELECT … FOR UPDATE`) inside a transaction. After taking
-  the lock, every decision uses the locked row — another caller may already have refreshed.
-- The locked section runs on `context.WithoutCancel` plus its own timeout: a client disconnect
-  after the provider rotated the tokens but before the commit would otherwise lose them.
-- Only a dead refresh token is `ErrReauthRequired` (the provider maps it to
-  `providers.ErrInvalidToken`; for GitHub, `bad_refresh_token`). Network errors, provider outages,
-  and bad client credentials stay plain errors (`500`), never "re-link".
-- On a rejected refresh, `ClearExternalGitAccountTokens` empties both tokens in the same
-  transaction, so later calls fail fast without contacting the provider. `credentials` logs the
-  rejection (account id and provider error code, never a token), since callers turn
-  `ErrReauthRequired` into a `403` without logging.
-- An empty refresh token passed to `UpdateExternalGitAccountTokens` means "keep the stored one and
-  its expiry". oauth2 echoes the sent refresh token when the provider did not rotate it; that case
-  is treated as empty. Never encrypt an empty value — the ciphertext would not be empty.
-- No retry on `401` from provider calls: with an unexpired token it means revoked access, which a
-  refresh cannot fix.
-
-Token revocation also lives in `credentials` (`Service.Revoke`, called on unlink and on a re-link
-that replaces a stored token). Rules worth preserving:
-
-- Change the database first, then revoke. Revoking first and then failing the write would leave a
-  stored token that no longer works.
-- Revocation is best-effort: callers log the error and never fail the request. It runs on
-  `context.WithoutCancel` plus `revokeTimeout`, so a client disconnect does not skip it.
-- A live access token is revoked directly. One that `needsRefresh` (expired or within the margin)
-  is not: revoking it would leave its refresh token alive. `Revoke` instead spends the refresh
-  token on a new pair (refresh tokens are single-use, so the old one dies) and revokes the new
-  access token, which also kills the new refresh token. The new pair is never stored. Nothing is
-  sent when the provider is not a `Refresher` or `canRefresh` is false (no refresh token, expired,
-  or cleared after a rejected refresh), and a refresh rejected with `ErrInvalidToken` means the
-  token was already dead, so it returns `nil`. `revokeTimeout` covers both calls.
-- A token issued during a linking flow that then stores nothing is revoked with
-  `Service.RevokeAccessToken(ctx, provider, token)`: plaintext, never stored, best-effort like
-  `Revoke`. It is only for a freshly issued (live) token, so no refresh-then-revoke is needed.
-- Unlink deletes with `DeleteExternalGitAccountByIdAndUserId` (`DELETE … RETURNING *`): ownership
-  is in the `WHERE`, so another user's account is a `404`, and the delete waits for a refresh
-  holding the row lock, so it returns the post-refresh tokens. Do not go back to read-then-delete.
-- Re-link reads the old row with `GetExternalGitAccountByIdentity` before the upsert. It is a plain
-  read: a refresh in between can rotate the token, and the new one is not revoked. Accepted as rare.
-- GitHub revokes with `DELETE /applications/{client_id}/token` (Basic auth with the client
-  credentials); `204`, `404` (unknown token, e.g. from the old OAuth App) and `422` are success.
-  Revoking a live access token also revokes its refresh token; revoking an expired one does not
-  (both verified manually), hence the refresh-then-revoke above. GitHub has no endpoint that revokes
-  a refresh token directly. Never use `/applications/{client_id}/grant` instead: it revokes the
-  GitHub identity's authorization for every GrepDocs user who linked it.
-
-The linking flow (`providerLogin` / `providerCallback`) is a full-page navigation, so it never
-answers with an error envelope, except `501` for an unregistered provider and `401` from
-`RequireAuth` (#133). Rules worth preserving:
-
-- Every callback outcome, and every login failure, is a `307` to `FRONTEND_URL/settings/accounts`
-  with `result=` or `error=` (and `account_id`). The codes are constants in
-  `routers/account_link.go` and listed in `docs/api.md` → Linking and re-linking; the UI mirrors
-  them in `LinkResult` / `LinkErrorCode` (`src/ui/src/api/accounts.ts`), so add a code to both in
-  one change. The UI shows an unknown error code as `server_error`. Build the URL with `linkRedirectURL`, and never put
-  provider-supplied text in it.
-- A re-link (`?account_id=`) stores its target in the session with `SetRelinkAccountID`, as a
-  string (the session round-trips through JSON, which turns numbers into `float64`). A plain link
-  sets it to `0`, clearing a target left by an abandoned re-link. The callback reads the state and
-  the target (both single-use) before any early return, and never takes the target from its URL.
-- A re-link stores only the target's identity: any other is `identity_mismatch` and changes nothing.
-- Once the code is exchanged, every failure that stores nothing revokes the new token (`discard`
-  in `linkCallback`), so no live token is left behind.
-- The provider's `error` parameter is read before `code`.
-
-GitHub specifics worth preserving: the shared `httpClient` from `routers/http.go` (10s timeout),
-`newGitHubGetRequest` / `newGitHubDeleteRequest` for auth, accept, and content-type headers,
-`io.LimitReader` bounding every decode, `Link`-header pagination with a page cap, and returning the
-upstream HTTP status so callers can distinguish a revoked token (401/403 → "re-link your account")
-from a real failure. With a GitHub App token, `/user/repos` lists only repositories the app is
-installed on, so `ListRepositories` checks `/user/installations` when the list is empty and returns
-`ErrAppNotInstalled` when there are none (`total_count` is the total, not the page size). The token
-refresh and revocation flows are described above, under `credentials`.
-
-## CI and code quality
-
-Two workflows in `.github/workflows/`, both calling `make` from the repo root (the Makefile does the
-`cd src/api`, so do not set a default `working-directory`):
-
-- `ci.yml` — job `check` (`tidy-check`, `vet`, `build`, `test-race`), job `lint`
-  (`golangci-lint-action`, which also reports formatting, so `fmt-check` is not run separately,
-  then `make openapi-lint`), and job `ui` (`ui-install`, `ui-fmt-check`, `ui-lint`, `ui-test`,
-  `ui-build`, which also type-checks).
-- `security.yml` — `make vuln` (govulncheck) and `make ui-audit` (`npm audit`) on PRs, pushes to
-  `main`, a weekly cron, and manually.
-
-Rules worth preserving:
-
-- Linting is configured in `src/api/.golangci.yml`. Fix findings rather than suppress them; when a
-  finding is a false positive, use `//nolint:<linter> // <reason>` on the line (or the line above).
-  `nolintlint` rejects directives without a linter or reason, and flags unused ones. Prefer a
-  per-line directive over a global exclusion, so new occurrences are still caught.
-- Formatting is gofumpt + gci (imports: standard, third-party, then `grepdocs/api`). Run `make fmt`.
-  `gofumpt.module-path` must stay set: without a dot in its first element, `grepdocs/api` looks
-  like a standard-library path to gofumpt, and it then fights gci over import groups. Editors hit
-  the same trap (gofumpt on stdin cannot see `go.mod`), so `.vscode/settings.json` and `.nvim.lua`
-  format Go with `golangci-lint fmt` and this config instead; `.nvim.lua` needs `'exrc'` and `:trust`.
-- The Go version is the `toolchain` line in `src/api/go.mod`. CI reads it via `go-version-file`
-  (setup-go sets `GOTOOLCHAIN=local`), so bumping that line is how CI's Go changes.
-- The UI's Node version is `src/ui/.nvmrc`, which CI reads via `node-version-file`, so bumping it
-  is how CI's Node changes. `engines` in `package.json` is the minimum the dependencies need, not
-  the version to use.
-- `make ui-audit` is `npm audit --omit=dev`: runtime dependencies only, like govulncheck's
-  reachable-only report. Dev tooling (ESLint, Vite) never ships to the browser, and a finding there
-  would fail the build with no runtime impact.
-- After any `go get`, check the `go` line in the diff: a dependency (or a `go tool` dependency,
-  which shares the module graph) requiring a newer Go raises it silently.
-- Versions: govulncheck is pinned by the `tool` directive in `go.mod`, UI packages by
-  `package-lock.json`, actions by commit SHA with a `# vX.Y.Z` comment, and images by tag in
-  `docker-compose.yml` and the `FROM` lines of `.devcontainer/Dockerfile`; Dependabot
-  (`.github/dependabot.yml`) bumps all of them, and the dev container features, weekly.
-- golangci-lint, sqlc, golang-migrate and vacuum are pinned by the `ARG`s in
-  `.devcontainer/Dockerfile`, each with the sha256 of its linux amd64 and arm64 release archive. It
-  is the single place for these versions: CI reads `GOLANGCI_LINT_VERSION`, `VACUUM_VERSION` and
-  `VACUUM_SHA256_AMD64` from it, and the Makefile reads `VACUUM_VERSION`. Dependabot does not touch
-  them: bump a version together with both checksums (take them from the release's checksum file, or
-  `shasum -a 256` the archives; sqlc publishes none), and update your local golangci-lint too. Keep
-  `SQLC_VERSION` equal to the version in the header of the generated `src/api/dal` files.
-- The Dockerfile's `golang` tag should follow the `toolchain` line in `go.mod`. A mismatch is not an
-  error (`GOTOOLCHAIN` stays `auto`, so the newer one is downloaded), only slower.
-- The OpenAPI linter is vacuum, run with `go run …@$(VACUUM_VERSION)` from the Makefile (no install
-  needed). It is not a `tool` directive on purpose: it requires a newer `go` line than the API's
-  and would add its dependencies to the API's module graph. CI downloads the release binary
-  instead (compiling it took ~5 min per run), checks it against `VACUUM_SHA256_AMD64` from
-  `.devcontainer/Dockerfile`, and calls `make openapi-lint VACUUM=vacuum`; the dev container image
-  has the same binary and sets `VACUUM=vacuum`. Bump it in the Dockerfile (see the rule above); a
-  checksum mismatch fails the install step. Warnings fail the build (`--fail-severity warn`): fix the spec rather
-  than disabling a rule. The ruleset is `src/api/openapi/vacuum.yaml` (recommended rules); it turns
-  off only rules that conflict with a project convention, each with its reason. Locally, the first
-  run downloads and compiles vacuum (slow); Go caches the binary, so later runs are fast.
-- Workflows get `permissions: contents: read` and `persist-credentials: false`; widen per job only
-  when a step needs it.
+- Fix lint findings rather than suppress them; for a false positive use
+  `//nolint:<linter> // <reason>` on the line. Run `make fmt` / `make ui-fmt`.
+- After any `go get`, check the `go` line in the diff: a dependency can raise it silently.
+- Tool versions are pinned in `.devcontainer/Dockerfile` with checksums: read
+  `docs/agents/ci.md` before bumping one.
 
 ## Conventions
 
 - Conventional commit messages (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, `feat!:`).
 - API paths kebab-case, JSON fields `snake_case`.
 - `last_refreshed_at` is spelled that way everywhere (migration + queries) — not a typo to "fix".
-- `.env` is gitignored and holds real OAuth secrets — never commit, print, or echo it.
+- `.env` is gitignored and holds real OAuth secrets — never commit, print, or echo it. Never commit
+  a `TOKEN_ENCRYPTION_KEY`.
 
 ## Skills
 
@@ -438,6 +128,7 @@ under `.agents/skills`, never inside `.claude/skills`.
 
 ## Documentation map
 
+- `docs/agents/` — the detailed agent guidance this file points to (see the table at the top).
 - `src/api/openapi/openapi.yaml` — OpenAPI 3.1 spec of the **implemented** endpoints, hand-written
   (spec-first), embedded with `go:embed` and served with Swagger UI at `/api/docs`. Nothing checks
   it against the handlers yet (#107 will generate the server from it with oapi-codegen), so update
@@ -472,4 +163,5 @@ rather than adding a TODO list to a doc. Reference issues as `#NN` from docs and
 ## Known inconsistencies
 
 - `CLAUDE.md` is only a pointer to this file (Claude Code reads it via an `@AGENTS.md` import).
-  This file is the single source of truth — put new guidance here.
+  This file is the single source of truth for agent guidance — put new guidance here, or in the
+  `docs/agents/` file for its area.
