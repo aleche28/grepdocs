@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-query'
 import { useRef } from 'react'
 import { apiFetch, ApiError } from './client.ts'
+import { documentsQueryKey } from './documents.ts'
 
 // Where a repository is in its sync (docs/api.md → Sync status and errors).
 // queued and running are busy: a sync cannot start until it ends.
@@ -89,16 +90,50 @@ export function pollInterval(
   }
 }
 
+// Marks stale the documents of every repository a sync succeeded for between
+// two lists, which is when last_sync_at takes a new value (a failed sync
+// leaves it alone). Without a previous list there is nothing to compare: the
+// documents, if cached, are refetched on their own once stale.
+function invalidateSyncedDocuments(
+  queryClient: QueryClient,
+  previous: Repository[] | undefined,
+  next: Repository[],
+) {
+  for (const repository of next) {
+    const before = previous?.find((r) => r.id === repository.id)
+    if (
+      before &&
+      repository.last_sync_at !== null &&
+      repository.last_sync_at !== before.last_sync_at
+    ) {
+      void queryClient.invalidateQueries({
+        queryKey: documentsQueryKey(repository.id),
+      })
+    }
+  }
+}
+
 // The tracked repositories. With poll, the list is refetched while one of
 // them is syncing, so its status follows the sync until it ends; TanStack
-// Query pauses the refetch while the tab is hidden.
+// Query pauses the refetch while the tab is hidden. Each fetch also marks
+// stale the documents a finished sync replaced, for every page that shows
+// them.
 export function useRepositories({ poll = false }: { poll?: boolean } = {}) {
+  const queryClient = useQueryClient()
   // Since when a repository of the list has been busy, across refetches.
   const busySince = useRef<number | null>(null)
 
   return useQuery({
     queryKey: repositoriesQueryKey,
-    queryFn: () => apiFetch<Repository[]>('/repositories'),
+    queryFn: async () => {
+      const repositories = await apiFetch<Repository[]>('/repositories')
+      invalidateSyncedDocuments(
+        queryClient,
+        queryClient.getQueryData<Repository[]>(repositoriesQueryKey),
+        repositories,
+      )
+      return repositories
+    },
     refetchInterval: poll
       ? (query) => {
           const next = pollInterval(
@@ -217,13 +252,14 @@ export function useUpdateRepository() {
 }
 
 // DELETE /repositories/{id}, which also deletes its documents. A 404 means
-// another tab untracked it already: the row leaves the list either way, and
-// the caller decides what to show.
+// another tab untracked it already: the row and its documents leave the
+// cache either way, and the caller decides what to show.
 export function useUntrackRepository() {
   const queryClient = useQueryClient()
 
   const untracked = (repositoryId: number) => {
     removeRepository(queryClient, repositoryId)
+    queryClient.removeQueries({ queryKey: documentsQueryKey(repositoryId) })
     refetchRepositories(queryClient)
   }
 

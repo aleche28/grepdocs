@@ -5,6 +5,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import { apiFetch, ApiError, apiUrl } from './client.ts'
+import { parseId } from './ids.ts'
 import { repositoriesQueryKey } from './repositories.ts'
 
 // GET /providers item: a provider accounts can be linked with.
@@ -176,7 +177,7 @@ export const linkOutcomeParams = ['result', 'error', 'account_id'] as const
 // so a newer API never leaves the user without a message. An unknown result
 // is ignored: claiming a success that may not be one would be worse.
 export function parseLinkOutcome(params: URLSearchParams): LinkOutcome | null {
-  const accountId = parseAccountId(params.get('account_id'))
+  const accountId = parseId(params.get('account_id'))
 
   const error = params.get('error')
   if (error !== null) {
@@ -191,13 +192,4 @@ export function parseLinkOutcome(params: URLSearchParams): LinkOutcome | null {
     return { result, accountId }
   }
   return null
-}
-
-// An account ID from the URL: a positive integer in plain decimal, or null.
-export function parseAccountId(value: string | null): number | null {
-  if (value === null || !/^[1-9][0-9]*$/.test(value)) {
-    return null
-  }
-  const id = Number(value)
-  return Number.isSafeInteger(id) ? id : null
 }

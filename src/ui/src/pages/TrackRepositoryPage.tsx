@@ -3,13 +3,13 @@ import { Link, useSearchParams } from 'react-router'
 import {
   type AccountRepository,
   type ExternalAccount,
-  parseAccountId,
   type Provider,
   relinkUrl,
   useAccountRepositories,
   useAccounts,
   useProviders,
 } from '../api/accounts.ts'
+import { parseId } from '../api/ids.ts'
 import { useRepositories, useTrackRepository } from '../api/repositories.ts'
 import { ApiErrorMessage } from '../components/ApiErrorMessage.tsx'
 import { accountName } from './accounts/format.ts'
@@ -43,7 +43,7 @@ export function TrackRepositoryPage() {
     () => selectableAccounts(providers.data, accounts.data),
     [providers.data, accounts.data],
   )
-  const requestedId = parseAccountId(searchParams.get('account_id'))
+  const requestedId = parseId(searchParams.get('account_id'))
   // An ID naming no account (unlinked meanwhile, or typed by hand) is no
   // selection; a single account needs none.
   const selected =

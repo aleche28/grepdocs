@@ -8,6 +8,7 @@ import { repository as fixture } from '../test/repositories.tsx'
 import { errorResponse } from '../test/helpers.ts'
 import { server } from '../test/server.ts'
 import { apiUrl } from './client.ts'
+import { documentsQueryKey } from './documents.ts'
 import {
   fastPollMs,
   fastPollPeriodMs,
@@ -152,6 +153,7 @@ function renderWithList<T>(hook: () => T, tracked: Repository[] | null) {
   const { result } = renderHook(hook, { wrapper })
   return {
     result,
+    queryClient,
     tracked: () => queryClient.getQueryData<Repository[]>(repositoriesQueryKey),
     isInvalidated: () =>
       queryClient.getQueryState(repositoriesQueryKey)?.isInvalidated,
@@ -241,6 +243,45 @@ describe('useRepositories', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     await vi.advanceTimersByTimeAsync(slowPollMs * 2)
     expect(requests).toBe(1)
+  })
+
+  test('marks stale the documents of the repositories a sync replaced', async () => {
+    const before = [
+      fixture({ id: 12, last_sync_at: '2026-11-25T10:00:00Z' }),
+      fixture({ id: 13, last_sync_at: '2026-11-25T10:00:00Z' }),
+      fixture({ id: 14, last_sync_at: '2026-11-25T10:00:00Z' }),
+    ]
+    server.use(
+      http.get(apiUrl('/repositories'), () =>
+        HttpResponse.json([
+          // Synced again: its documents are stale.
+          { ...before[0], last_sync_at: '2026-11-25T11:00:00Z' },
+          // Failed: last_sync_at stays.
+          { ...before[1], sync_status: 'failed', sync_error: 'internal' },
+          // Branch changed: reset to null, documents not replaced yet.
+          { ...before[2], last_sync_at: null },
+        ]),
+      ),
+    )
+    const { result, queryClient } = renderWithList(
+      () => useRepositories(),
+      before,
+    )
+    for (const id of [12, 13, 14]) {
+      queryClient.setQueryData(documentsQueryKey(id), [])
+    }
+    const isStale = (id: number) =>
+      queryClient.getQueryState(documentsQueryKey(id))?.isInvalidated
+
+    // The list was set by hand, so the hook fetches it on mount.
+    await waitFor(() =>
+      expect(result.current.data?.[0].last_sync_at).toBe(
+        '2026-11-25T11:00:00Z',
+      ),
+    )
+    expect(isStale(12)).toBe(true)
+    expect(isStale(13)).toBe(false)
+    expect(isStale(14)).toBe(false)
   })
 })
 
@@ -344,18 +385,22 @@ describe('useUntrackRepository', () => {
   test.each([
     ['204', () => new HttpResponse(null, { status: 204 })],
     ['404 (already untracked)', () => errorResponse(404, 'not_found')],
-  ])('removes the row on %s', async (_, response) => {
+  ])('removes the row and its documents on %s', async (_, response) => {
     server.use(http.delete(apiUrl('/repositories/12'), response))
-    const { result, tracked, isInvalidated } = renderWithList(
+    const { result, tracked, isInvalidated, queryClient } = renderWithList(
       () => useUntrackRepository(),
       [docs, handbook],
     )
+    queryClient.setQueryData(documentsQueryKey(12), [])
+    queryClient.setQueryData(documentsQueryKey(13), [])
 
     result.current.mutate(12)
 
     await waitFor(() => expect(result.current.isPending).toBe(false))
     expect(tracked()).toEqual([handbook])
     expect(isInvalidated()).toBe(true)
+    expect(queryClient.getQueryData(documentsQueryKey(12))).toBeUndefined()
+    expect(queryClient.getQueryData(documentsQueryKey(13))).toEqual([])
   })
 
   test('keeps the row on any other error', async () => {
