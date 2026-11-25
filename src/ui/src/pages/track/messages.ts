@@ -41,3 +41,21 @@ export function ownerOf(
     ? repository.full_name
     : repository.full_name.slice(0, slash)
 }
+
+export interface OwnerAndName {
+  owner: string
+  name: string
+}
+
+// GitHub's rules: an owner is letters, digits and hyphens; a repository name
+// is letters, digits, ".", "_" and "-", but not "." or "..".
+const ownerAndName = /^([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+)$/
+
+// "owner/name" as the user typed it, or null when it cannot be one.
+export function parseOwnerAndName(value: string): OwnerAndName | null {
+  const match = ownerAndName.exec(value.trim())
+  if (!match || match[2] === '.' || match[2] === '..') {
+    return null
+  }
+  return { owner: match[1], name: match[2] }
+}

@@ -190,6 +190,20 @@ main {
   overflow-wrap: anywhere;
 }
 
+.public-repository label {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.public-repository input {
+  min-width: 16rem;
+}
+
+.field-error {
+  margin: 0.25rem 0 0;
+  color: #b91c1c;
+}
+
 /* Banner */
 
 .banner {

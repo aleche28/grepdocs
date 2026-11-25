@@ -15,7 +15,8 @@ import { ApiErrorMessage } from '../components/ApiErrorMessage.tsx'
 import { accountName } from './accounts/format.ts'
 import { type AccountOption, AccountPicker } from './track/AccountPicker.tsx'
 import { ListError } from './track/ListError.tsx'
-import { ownerOf, repositoryKey } from './track/messages.ts'
+import { type OwnerAndName, ownerOf, repositoryKey } from './track/messages.ts'
+import { PublicRepositoryForm } from './track/PublicRepositoryForm.tsx'
 import { RepositoryList } from './track/RepositoryList.tsx'
 import { TrackOutcome } from './track/TrackOutcome.tsx'
 
@@ -34,6 +35,7 @@ export function TrackRepositoryPage() {
   const track = useTrackRepository()
   const [searchParams, setSearchParams] = useSearchParams()
   const sectionHeadingId = useId()
+  const publicHeadingId = useId()
   // Takes focus after a success, when the Track button that had it is gone.
   const outcomeRef = useRef<HTMLDivElement>(null)
 
@@ -83,6 +85,12 @@ export function TrackRepositoryPage() {
       },
       { onSuccess: () => outcomeRef.current?.focus() },
     )
+
+  const trackPublic = (repository: OwnerAndName, onSuccess: () => void) =>
+    track.mutate({ provider: 'github', ...repository }, { onSuccess })
+
+  // The owner/name rules of the public form are GitHub's.
+  const publicProvider = providers.data?.find((p) => p.name === 'github')
 
   let content
   if (providers.data && accounts.data) {
@@ -163,6 +171,19 @@ export function TrackRepositoryPage() {
         <h2 id={sectionHeadingId}>From a linked account</h2>
         {content}
       </section>
+      {publicProvider && (
+        <section aria-labelledby={publicHeadingId}>
+          <h2 id={publicHeadingId}>A public repository</h2>
+          <PublicRepositoryForm
+            providerDisplayName={publicProvider.display_name}
+            busy={track.isPending}
+            pending={
+              track.isPending && track.variables.account_id === undefined
+            }
+            onTrack={trackPublic}
+          />
+        </section>
+      )}
     </>
   )
 }
