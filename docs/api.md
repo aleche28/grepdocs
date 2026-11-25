@@ -341,7 +341,8 @@ repository `id` returns `404 not_found`, never `403`.
 | POST   | `/repositories/{id}/commits`       | Y    | Proposed                          | Push selected drafts back to the repo                             |
 | GET    | `/repositories/{id}/commits`       | Y    | Proposed                          | Commit history for this repo                                      |
 
-`DELETE` only removes the `repositories` row today; resolved docs and drafts do not exist yet.
+`DELETE` also deletes the repository's documents (`ON DELETE CASCADE`, migration `000007`); drafts
+do not exist yet.
 
 `POST /api/repositories` body — a repository can be tracked from a linked account **or** by public
 `owner`/`name` (public GitHub repos need no linked account, per requirements):
@@ -400,6 +401,10 @@ A new `tracked_branch` must exist upstream (`400 bad_request` otherwise), and ch
 the sync state (`synced_commit` → `null`, `sync_status` → `pending`, `sync_error` → `null`,
 `last_sync_at` → `null`). A sync queued or running for the old branch is discarded without storing
 anything; trigger a new one for the new branch.
+
+`auto_sync` is only stored: nothing on the server reads it. The web UI gives it its meaning, "sync
+when I open GrepDocs": once per page load, the repositories page triggers a sync for each
+`auto_sync` repository that is idle and did not fail for a reason only the user can fix.
 
 ### Sync
 

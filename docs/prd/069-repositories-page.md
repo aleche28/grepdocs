@@ -1,6 +1,6 @@
 # PRD: Repositories page with sync status (#69)
 
-Status: **proposed**. Milestone: Phase 4 — Read-only MVP. Replaces user stories S2.4, S2.5, S8.2,
+Status: **done** — built on `feat/69-repositories-page`. Milestone: Phase 4 — Read-only MVP. Replaces user stories S2.4, S2.5, S8.2,
 S8.3 (UI side) and S8.4 (auto-sync on opening, run by the UI).
 
 ## Problem
@@ -196,6 +196,42 @@ GitHub." with *Untrack* (danger) and *Cancel*. Focus starts on *Cancel*.
   console only and change nothing on screen.
 - Opening the app on another page (a document link) does not run it; the index route redirects to
   `/repositories`, so a normal start does.
+
+### As built
+
+The page implements the plan above, with these differences. Where they conflict, this list and the
+code win.
+
+- **Branches are not under `['repositories']`.** Their key is
+  `repositoryBranchesQueryKey(id)` = `['repository-branches', id]`: every mutation invalidates
+  `['repositories']`, which would otherwise call the provider again while the edit dialog is open.
+- **The Sync button** reads "Starting…" only while its own request runs; it is disabled while the
+  repository is busy, and the status line says "Waiting to sync…" or "Syncing…". With both reading
+  "Syncing…" the row repeated itself.
+- **The branch select is enabled while the branches load or failed**, with the tracked branch as
+  its only option, so it can take focus when the dialog opens. It is disabled only while saving.
+  Picking another branch shows "Saving starts a sync of release. Until it ends, the documents still
+  come from main."
+- **Auto-sync failures other than `503`** change nothing on screen and are not logged to the
+  console either.
+- **Rows mark auto-sync** with a muted "Auto-sync", so the user sees which repositories sync on
+  opening without opening Edit.
+- **Wording:** `ok` without `last_sync_at` reads "Synced". The `rate_limited` hint for a repository
+  without an account says "Untrack it and track it again from a linked account", since a tracked
+  repository cannot change its account. `reauth_required` with no known account reads "GitHub no
+  longer accepts the access of the account this repository syncs with." with "Link a GitHub
+  account". A `403` on the branches with no account links "Go to linked accounts".
+- **A generic sync failure** (`ApiErrorMessage`, "Could not sync acme/docs") has no dismiss
+  button, as on the track page; the next outcome replaces it.
+- **Shared code:** the dialog behaviour (`showModal`, focus return, no closing while a request
+  runs) moved from `UnlinkDialog` to `src/components/Dialog.tsx`, which the three dialogs use, and
+  `retryAfterText` / `installUrlOf` moved from `pages/track/messages.ts` to
+  `src/components/errorText.ts`. Provider failures of the edit dialog are one component,
+  `pages/repositories/ProviderError.tsx`.
+- **Tests:** the poll interval and the polling itself are tested on the hooks
+  (`api/repositories.test.tsx`), with fake timers; the page tests follow a sync with fake timers
+  too. Fixtures (`repository()`, `mockRepositoriesApi`) are in `src/test/repositories.tsx`, and the
+  track page fixtures build on them.
 
 ## Tests
 
