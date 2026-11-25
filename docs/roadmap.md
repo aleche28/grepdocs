@@ -163,7 +163,7 @@ browses and reads their documentation in a browser. This is the first point a re
 exists.
 
 Status: **document API + re-link flag + UI project setup + logout fix + UI sign-in + app shell +
-linked accounts page + track page done** — `GET /documents`, `GET /documents/{id}` and `/raw` are implemented, `GET /accounts` flags
+linked accounts page + track page + repositories page done** — `GET /documents`, `GET /documents/{id}` and `/raw` are implemented, `GET /accounts` flags
 accounts that need re-linking (`needs_relink`), and `POST /auth/logout` ends the session. `src/ui` is a Vite + React + TypeScript app with routing (placeholder pages), an API client
 that reads the error envelope, a shared TanStack Query client, and its own CI job; locally it runs
 beside the API through the Vite dev-server proxy. Signing in with Google returns the user to the
@@ -174,8 +174,11 @@ accounts page is done: it lists accounts by provider with their GitHub login, li
 unlinks them, offers the GitHub App install link, and reports every linking outcome the API
 redirects with; the UI has Vitest tests with MSW. The track page lists a linked account's
 repositories with a client-side filter and tracks one on its default branch, or a public repository
-by `owner/name`. Still open in this phase: CORS + rate limiting (#64), sending Google sign-in
-failures back to the UI (#119; the GitHub linking half is done), and the UI screens (#69–#71).
+by `owner/name`. The repositories page lists tracked repositories with their sync status and a
+readable message for every `sync_error`, starts a sync and polls until it ends, changes the
+branch and `auto_sync`, untracks, and syncs the `auto_sync` repositories once per page load. Still
+open in this phase: CORS + rate limiting (#64), sending Google sign-in failures back to the UI
+(#119; the GitHub linking half is done), and the document tree and viewer (#70, #71).
 
 - **Document API (read only)**: `GET /documents` (metadata, filter by `repo_id`) and
   `GET /documents/{id}` + `/raw`, with the repository and branch the document comes from. No
@@ -203,8 +206,10 @@ failures back to the UI (#119; the GitHub linking half is done), and the UI scre
   (**done**); linked accounts (**done**, see above); track a repository (**done** —
   `docs/prd/068-track-repository.md`: pick an account, filter its repositories client-side, mark
   the ones already tracked, track on the default branch, or a public repository by `owner/name`;
-  choosing the branch moved to the repositories page); repositories page with sync status, trigger
-  and polling, branch and `auto_sync` changes, untrack; a repository's document tree built from `GET /documents`; a document viewer with
+  choosing the branch moved to the repositories page); repositories page (**done** —
+  `docs/prd/069-repositories-page.md`: sync status and `sync_error` messages with their action,
+  trigger and polling, branch and `auto_sync` changes, untrack, and auto-sync on opening, run by
+  the UI; API follow-ups #142–#145); a repository's document tree built from `GET /documents`; a document viewer with
   rendered (client-side, sanitized) and raw modes. The project itself is **done** (routing, API
   client, query client, lint/format, CI); the screens are not.
 - A documented way to run the API and the UI together locally (dev-server proxy, so the session
@@ -280,8 +285,9 @@ These live in the "Later" milestone.
 - **Bitbucket / GitLab providers** — Phase 1's provider abstraction sets this up, but no phase is
   committed yet. Revisit once the interface has been proven with GitHub plus multi-account in
   production use.
-- **Automatic sync** — honor `auto_sync` by syncing when the user opens the app and/or on GitHub
-  push webhooks.
+- **Automatic sync** (#90) — honor `auto_sync` by syncing when the user opens the app and/or on
+  GitHub push webhooks. The "on opening" half is done in the UI (Phase 4, repositories page);
+  what remains is a server-side sync (webhooks or a schedule).
 - **Several sign-in identities per user** (e.g. email + GitHub merged into one account) — an
   external proposal, not yet planned.
 - **Container-native deployment** — a distroless production image (#122) that serves the UI build

@@ -13,13 +13,30 @@ export function accountName(
 }
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
+const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+})
 
-// A timestamp from the API as a date in the user's locale, or null when
-// there is none or it does not parse (format would throw on it).
-export function formatDate(value: string | null): string | null {
+// A timestamp from the API in the user's locale, or null when there is none
+// or it does not parse (format would throw on it).
+function formatTimestamp(
+  value: string | null,
+  format: Intl.DateTimeFormat,
+): string | null {
   if (value === null) {
     return null
   }
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : dateFormat.format(date)
+  return Number.isNaN(date.getTime()) ? null : format.format(date)
+}
+
+// "Mar 2, 2026"
+export function formatDate(value: string | null): string | null {
+  return formatTimestamp(value, dateFormat)
+}
+
+// "Mar 2, 2026, 10:11 AM"
+export function formatDateTime(value: string | null): string | null {
+  return formatTimestamp(value, dateTimeFormat)
 }

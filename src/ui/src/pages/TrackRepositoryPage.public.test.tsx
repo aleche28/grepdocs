@@ -3,10 +3,10 @@ import { http, HttpResponse } from 'msw/http'
 import { describe, expect, test } from 'vitest'
 import { apiUrl } from '../api/client.ts'
 import { account } from '../test/accounts.tsx'
+import { errorResponse } from '../test/helpers.ts'
 import { server } from '../test/server.ts'
 import {
   discovered,
-  errorResponse,
   mockTrackApi,
   renderTrackPage,
   trackedFrom,

@@ -13,7 +13,7 @@ import type {
 import { ApiErrorMessage } from '../../components/ApiErrorMessage.tsx'
 import { Banner } from '../../components/Banner.tsx'
 import { accountName } from '../accounts/format.ts'
-import { installUrlOf, retryAfterText } from './messages.ts'
+import { installUrlOf, retryAfterText } from '../../components/errorText.ts'
 
 interface TrackOutcomeProps {
   track: UseMutationResult<Repository, Error, TrackRepositoryRequest>

@@ -26,7 +26,10 @@ reading documentation; editing, search, and groups arrive afterwards, each with 
 ## Next
 
 - **A first web app for reading documentation.** Sign in, connect GitHub, pick repositories, and
-  browse and read their documentation — formatted or as plain source — in one place.
+  browse and read their documentation — formatted or as plain source — in one place. Already
+  there: connecting accounts, picking repositories, and a page that shows whether each one is up
+  to date, updates it on request or each time you open GrepDocs, and lets you change its branch or
+  stop following it. Still to come: browsing and reading the documents.
 
 ## Later
 
@@ -44,7 +47,8 @@ reading documentation; editing, search, and groups arrive afterwards, each with 
 
 - **Bitbucket and GitLab support.** GrepDocs is being built so additional providers can be added
   later; GitHub is the only one supported for now.
-- **Automatic updates.** Keeping documentation up to date without asking, for example whenever the
+- **Automatic updates.** Updating each time you open GrepDocs comes with the first web app.
+  Beyond that: keeping documentation up to date without asking, for example whenever the
   repository changes.
 - **Ready-to-deploy package.** GrepDocs as a single package that can run on a server or a cloud
   platform, with the health checks and logs those platforms expect, built and security-checked

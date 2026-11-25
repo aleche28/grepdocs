@@ -5,10 +5,10 @@ import { relinkUrl } from '../api/accounts.ts'
 import { apiUrl } from '../api/client.ts'
 import type { Repository } from '../api/repositories.ts'
 import { account } from '../test/accounts.tsx'
+import { errorResponse, findRow } from '../test/helpers.ts'
 import { server } from '../test/server.ts'
 import {
   discovered,
-  errorResponse,
   mockTrackApi,
   renderTrackPage,
   trackedFrom,
@@ -39,11 +39,6 @@ function renderTracking(respond: () => Response | Promise<Response>) {
     }),
   )
   return { bodies, tracked, ...renderTrackPage() }
-}
-
-async function findRow(fullName: string) {
-  const link = await screen.findByRole('link', { name: fullName })
-  return within(link.closest('li')!)
 }
 
 async function clickTrack(
