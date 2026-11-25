@@ -1,6 +1,6 @@
 # PRD: Linked accounts page (#67)
 
-Status: PR 1 (API) merged as #139; PR 2 (UI) in review. Milestone: Phase 4 — Read-only MVP. Replaces user stories S1.2, S1.4
+Status: **done** — PR 1 (API) merged as #139, PR 2 (UI) as #140. Milestone: Phase 4 — Read-only MVP. Replaces user stories S1.2, S1.4
 and S1.5 (UI side).
 
 ## Problem
