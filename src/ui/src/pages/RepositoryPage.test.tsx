@@ -43,9 +43,14 @@ async function findTreeLink(name: string) {
   return tree().findByRole('link', { name, hidden: true })
 }
 
+// A directory's name in its <summary>, which toggles it when clicked.
+function summary(name: string) {
+  return screen.getByText(name, { selector: 'summary .tree-name' })
+}
+
 // The <details> of a directory, found by its <summary>.
 function directory(name: string) {
-  return screen.getByText(name, { selector: 'summary' }).closest('details')!
+  return summary(name).closest('details')!
 }
 
 describe('RepositoryPage', () => {
@@ -124,8 +129,8 @@ describe('RepositoryPage', () => {
     await findTreeLink('setup.md')
 
     // Open api, close guides (which holds the selected document).
-    await user.click(screen.getByText('api', { selector: 'summary' }))
-    await user.click(screen.getByText('guides', { selector: 'summary' }))
+    await user.click(summary('api'))
+    await user.click(summary('guides'))
     await user.click(tree().getByRole('link', { name: 'auth.md' }))
 
     expect(router.state.location.pathname).toBe(
@@ -148,6 +153,43 @@ describe('RepositoryPage', () => {
     ).toBeInTheDocument()
     await waitFor(() => expect(directory('guides')).toHaveAttribute('open'))
     expect(api.requests).toEqual(['12'])
+  })
+
+  test('filters the tree by path, opening the directories that match', async () => {
+    mockRepositoriesApi({ repositories: [synced] })
+    mockDocumentsApi([
+      trackedDocument({ path: 'README.md' }),
+      trackedDocument({ path: 'docs/guides/Setup.md' }),
+      trackedDocument({ path: 'docs/api/auth.md' }),
+    ])
+    const { user } = renderRepositoryPage('/repositories/12')
+    await findTreeLink('README.md')
+    const filter = screen.getByRole('searchbox', { name: 'Filter documents' })
+
+    await user.type(filter, 'setup')
+
+    expect(tree().getByRole('link', { name: 'Setup.md' })).toBeVisible()
+    expect(
+      tree().queryByRole('link', { name: 'README.md', hidden: true }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('api')).not.toBeInTheDocument()
+    expect(directory('docs')).toHaveAttribute('open')
+    expect(directory('guides')).toHaveAttribute('open')
+
+    await user.clear(filter)
+    await user.type(filter, 'nothing')
+
+    expect(
+      tree().getByText('No documents match “nothing”.'),
+    ).toBeInTheDocument()
+    expect(tree().queryByRole('link', { hidden: true })).not.toBeInTheDocument()
+
+    // Cleared, the tree is back as it was: every directory closed.
+    await user.clear(filter)
+
+    expect(tree().getByRole('link', { name: 'README.md' })).toBeVisible()
+    expect(directory('docs')).not.toHaveAttribute('open')
+    expect(directory('api')).not.toHaveAttribute('open')
   })
 
   test('highlights nothing for a document that is not in the list', async () => {

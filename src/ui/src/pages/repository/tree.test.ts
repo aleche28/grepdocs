@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { trackedDocument } from '../../test/documents.tsx'
-import { ancestorPaths, buildTree, type TreeNode } from './tree.ts'
+import { ancestorPaths, buildTree, filterTree, type TreeNode } from './tree.ts'
 
 // The tree as nested names, directories ending in "/", to compare at a
 // glance.
@@ -92,5 +92,49 @@ describe('ancestorPaths', () => {
       'docs/guides',
     ])
     expect(ancestorPaths('README.md')).toEqual([])
+  })
+})
+
+describe('filterTree', () => {
+  const tree = treeOf(
+    'README.md',
+    'docs/guides/Setup.md',
+    'docs/guides/faq.md',
+    'docs/api/auth.md',
+  )
+
+  test('keeps everything for an empty or blank query', () => {
+    expect(filterTree(tree, '')).toBe(tree)
+    expect(filterTree(tree, '  ')).toBe(tree)
+  })
+
+  test('keeps the files whose path matches, ignoring case, and their directories', () => {
+    expect(outline(filterTree(tree, ' setup '))).toEqual([
+      { 'docs/': [{ 'guides/': ['Setup.md'] }] },
+    ])
+  })
+
+  test('matches directory names in the path', () => {
+    expect(outline(filterTree(tree, 'guides/'))).toEqual([
+      { 'docs/': [{ 'guides/': ['faq.md', 'Setup.md'] }] },
+    ])
+  })
+
+  test('is empty when nothing matches', () => {
+    expect(filterTree(tree, 'nothing')).toEqual([])
+  })
+
+  test('leaves the tree it filters unchanged', () => {
+    filterTree(tree, 'auth')
+
+    expect(outline(tree)).toEqual([
+      {
+        'docs/': [
+          { 'api/': ['auth.md'] },
+          { 'guides/': ['faq.md', 'Setup.md'] },
+        ],
+      },
+      'README.md',
+    ])
   })
 })

@@ -167,32 +167,119 @@
   }
 }
 
+/* DocumentTree */
+
+.tree-filter {
+  position: relative;
+}
+
+.tree-filter svg {
+  position: absolute;
+  top: 50%;
+  left: 0.625rem;
+  color: var(--fg-subtle);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.tree-filter input {
+  width: 100%;
+  padding-left: 1.875rem;
+  border-color: var(--border);
+}
+
+.tree-empty {
+  margin: 0;
+  padding: var(--space-2);
+  color: var(--fg-subtle);
+  font-size: var(--text-sm);
+}
+
 .document-tree ul {
+  display: grid;
+  gap: 1px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.document-tree ul ul {
-  padding-left: var(--space-4);
+/* The first row of a directory's list sits 1px below its own. */
+.document-tree details > ul {
+  margin-top: 1px;
 }
 
-.document-tree li {
-  padding: 0.125rem 0;
-  overflow-wrap: anywhere;
-}
-
-.document-tree summary {
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  box-sizing: border-box;
+  height: 1.75rem;
+  padding: 0 var(--space-2) 0 calc(0.375rem + var(--depth, 0) * 1rem);
+  border-radius: 5px;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
-.document-tree a {
-  color: inherit;
+.tree-row:hover {
+  background: var(--bg-muted);
+  color: var(--fg);
+  text-decoration: none;
 }
 
-.document-tree a[aria-current='page'] {
+summary.tree-row {
+  list-style: none;
+}
+
+summary.tree-row::-webkit-details-marker {
+  display: none;
+}
+
+/* NavLink sets aria-current="page" on the open document. */
+.tree-row[aria-current='page'],
+.tree-row[aria-current='page']:hover {
+  background: var(--accent-soft);
   color: var(--accent-text);
-  font-weight: 600;
+  font-weight: 500;
+}
+
+.tree-chevron {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  color: var(--fg-subtle);
+  transition: transform 0.1s;
+}
+
+details[open] > summary .tree-chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-chevron {
+    transition: none;
+  }
+}
+
+.tree-icon {
+  flex: none;
+  color: var(--fg-subtle);
+}
+
+.tree-row[aria-current='page'] .tree-icon {
+  color: var(--accent-text);
+}
+
+details[open] > summary .tree-icon.closed,
+details:not([open]) > summary .tree-icon.opened {
+  display: none;
+}
+
+.tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* DocumentPage */
