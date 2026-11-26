@@ -3,13 +3,14 @@ import { Link, Outlet, useOutlet, useParams } from 'react-router'
 import { useProviders } from '../api/accounts.ts'
 import { useDocuments } from '../api/documents.ts'
 import { parseId } from '../api/ids.ts'
-import {
-  type Repository,
-  type SyncStatus,
-  useRepositories,
-} from '../api/repositories.ts'
+import { type Repository, useRepositories } from '../api/repositories.ts'
 import { ApiErrorMessage } from '../components/ApiErrorMessage.tsx'
-import { providerDisplayName, syncStatusText } from './repositories/format.ts'
+import { StatusPill } from '../components/StatusPill.tsx'
+import {
+  providerDisplayName,
+  syncStatusText,
+  syncTone,
+} from './repositories/format.ts'
 import { UpstreamLink } from './repositories/UpstreamLink.tsx'
 import { ContentHeader } from './repository/ContentHeader.tsx'
 import type { RepositoryContext } from './repository/context.ts'
@@ -146,13 +147,12 @@ export function RepositoryPage() {
             <span className="visually-hidden">Branch </span>
             <code>{repository.tracked_branch}</code>
           </span>
-          <span
-            className={`status-pill ${syncTone(repository.sync_status)}`}
+          <StatusPill
+            tone={syncTone(repository.sync_status)}
             aria-live="polite"
           >
-            <span className="status-dot" />
             {syncStatusText(repository)}
-          </span>
+          </StatusPill>
           <UpstreamLink repository={repository} displayName={displayName} />
         </div>
         {tree}
@@ -166,21 +166,6 @@ export function RepositoryPage() {
       <div className="docs-content">{content}</div>
     </div>
   )
-}
-
-// The status pill's colour.
-function syncTone(status: SyncStatus): string {
-  switch (status) {
-    case 'ok':
-      return 'ok'
-    case 'queued':
-    case 'running':
-      return 'busy'
-    case 'failed':
-      return 'failed'
-    default:
-      return 'pending'
-  }
 }
 
 // Why a repository has no documents, from its sync status.
