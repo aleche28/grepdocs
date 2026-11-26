@@ -45,15 +45,32 @@ React + TypeScript, built with Vite, React Router for routes, TanStack Query for
   an alert for a failure. A confirmation or a small form is a `Dialog` (`src/components/`), open
   for as long as the page renders it, which keeps it open while its request runs. Actions behind a
   button (the user menu) are a `Menu` (`src/components/`): a disclosure (`aria-expanded`) of plain
-  buttons and links, not an ARIA menu, so it needs no arrow keys. A link to another site is an
-  `ExternalLink`, never a hand-built `target="_blank"` link.
+  buttons and links, not an ARIA menu, so it needs no arrow keys. After an action it gives focus
+  back to its button, so a `Dialog` opened from the menu returns focus there. Destructive items
+  take `menu-item menu-danger` after a `menu-separator`. A link to another site is an
+  `ExternalLink`, never a hand-built `target="_blank"` link (`className="menu-item"` in a menu).
+- Statuses are a `StatusPill` (`src/components/`) with a tone: `ok`, `busy` (its dot pulses),
+  `failed` or `pending`. A repository's tone is `syncTone()` (`src/pages/repositories/format.ts`),
+  so every page colours a sync the same way. A mono fact such as a branch or a commit is a `.chip`
+  (`<span className="chip">` with a lucide icon and a `<code>`). Both are styled in
+  `components.css`. Put a pill that changes while the user waits in an `aria-live="polite"`
+  region, but never a `RelativeTime` ("4 minutes ago", `src/pages/repositories/`): it re-renders
+  every minute, and a live region would read each change out.
+- A list page shows the same three states: `.empty-state` (a short explanation and the action
+  that fills the list, and the page heading drops its own copy of that action), `.empty-state
+  loading` (the same frame, a spinner and "Loading …") and `ApiErrorMessage`. A heading with a
+  count line is `.page-heading` with an h1 and a `.page-subtitle`. Dialog forms use `.dialog-lede`
+  under the title, `.field` and `.field-hint` (tied to the control with `aria-describedby`), and
+  `.check-field` for a checkbox with a description. Footer buttons put Cancel first and the main
+  action last.
 - Styles are plain CSS in `src/styles/`, imported by `main.tsx` in cascade order: `tokens.css`
   (every colour, font, size and radius, with dark values under `prefers-color-scheme`),
   `base.css` (elements and shared controls), `components.css` (the app shell and
   `src/components`), `pages.css`. Never hard-code a colour outside `tokens.css`; its text colours
   pass WCAG AA on every background, so check contrast when adding one. A plain `<button>` is the
   secondary button; `.primary`, `.danger`, `.icon-button` (with an `aria-label`) and `.link` are the
-  variants, and `.button` styles a link as one. Icons come from `lucide-react`, hidden from screen
+  variants, and `.button` styles a link as one. `.spin` turns an icon while something starts, and stops for
+  reduced motion. Icons come from `lucide-react`, hidden from screen
   readers unless given an `aria-label`. Inter and JetBrains Mono are self-hosted through
   `@fontsource-variable`, never loaded from a font CDN.
 - Formatting is Prettier (no semicolons, single quotes), linting ESLint. Run `make ui-fmt`.
