@@ -250,16 +250,38 @@ Google sign-in failures back to the UI (#119; the GitHub linking half is done).
 ## Phase 7 — Search
 
 - `GET /api/search` full-text search across tracked documents, with `repo`/`provider` filters
-  (`group` once Phase 8 lands) and snippet highlighting.
+  (`group` once Phase 9 lands) and snippet highlighting.
 - Start with Postgres full-text search (`tsvector`) kept up to date by sync; revisit only if
   scale/relevance needs outgrow it.
 - UI: search box and results page.
 
-## Phase 8 — Groups
+## Phase 8 — Agent access
+
+Goal: let an LLM agent (Claude, Codex, a custom documentation agent) answer from the user's
+tracked documentation through GrepDocs, so it needs no clone and no access to the repositories
+themselves. It comes after Search because search is what keeps an agent's context small across
+many repositories, and after tracked file selection because that is how the user chooses what the
+agent sees. Shape to be decided in a PRD when the phase starts.
+
+- **Agent credentials**: personal access tokens (read-only, stored hashed, revocable) so a
+  non-browser client can authenticate (#158); UI to create and revoke them (#159). MCP's OAuth
+  authorization flow for remote connectors can follow once tokens prove the tools useful (#162,
+  "Later").
+- **MCP server**: an endpoint in the API (streamable HTTP) over the same DAL and per-user scoping
+  as the REST API, with read-only tools to list repositories and documents, read a document (or a
+  section of it) (#160), search, and grep (#161). Results carry provenance (repository, path,
+  synced commit, link) so the agent can cite sources and tell when a document may be stale.
+- Document content is untrusted (prompt injection): tools stay read-only in this phase. Agent
+  tools that write drafts (never commits) are a later follow-up on top of Phase 6.
+- Depends on rate limiting (#64) being in place; hosted use depends on deployment (see
+  "Explicitly deferred"), but local agents can connect to a local API.
+
+## Phase 9 — Groups
 
 - `GET/POST/PATCH/DELETE /groups`, repo assignment endpoints.
 - Wire `group` filters into `/documents`, `/repositories`, `/search`.
 - UI: manage groups and filter by group.
+- Agent tokens scoped to a group, so an agent sees only part of the tracked documentation (#163).
 
 ## Ongoing, not phase-bound
 

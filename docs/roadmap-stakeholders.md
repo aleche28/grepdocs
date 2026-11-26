@@ -5,7 +5,8 @@ many git repositories, and push edits straight back to source control. This page
 coming, grouped into **Now / Next / Later** — no fixed dates, just the order things arrive in.
 
 A note on availability: the first version of the web interface is in **Next**. It focuses on
-reading documentation; editing, search, and groups arrive afterwards, each with its own screens.
+reading documentation; editing, search, AI assistant access, and groups arrive afterwards, each
+with its own screens.
 
 ## Now
 
@@ -43,8 +44,12 @@ reading documentation; editing, search, and groups arrive afterwards, each with 
   changed upstream in the meantime.
 - **Search across everything you track.** One search box across all your tracked documentation,
   not per-repository.
+- **Let AI assistants answer from your documentation.** Connect an AI assistant (such as Claude
+  or Codex) to GrepDocs so it can find, read and cite the documentation you track, without access
+  to the repositories themselves or copies of them. It can only read, and you can cut off its
+  access at any time.
 - **Organize repositories into groups.** Group related repositories together to keep large sets of
-  documentation navigable.
+  documentation navigable, and limit an AI assistant to just one group.
 
 ## Not yet planned
 
