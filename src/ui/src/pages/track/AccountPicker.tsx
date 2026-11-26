@@ -13,8 +13,8 @@ interface AccountPickerProps {
   onSelect: (accountId: number) => void
 }
 
-// The account to list repositories from. With one account there is nothing
-// to choose, so it is only named.
+// The account to list repositories from, in the list's header. With one
+// account there is nothing to choose, so it is only named.
 export function AccountPicker({
   options,
   selectedId,
@@ -24,15 +24,18 @@ export function AccountPicker({
 
   if (options.length === 1) {
     return (
-      <p>
-        Account: <strong>{options[0].label}</strong>
+      <p className="account-picker">
+        <span className="account-picker-label">Account</span>{' '}
+        <strong>{options[0].label}</strong>
       </p>
     )
   }
 
   return (
-    <p>
-      <label htmlFor={id}>Account </label>
+    <div className="account-picker">
+      <label htmlFor={id} className="account-picker-label">
+        Account
+      </label>
       <select
         id={id}
         value={selectedId ?? ''}
@@ -49,6 +52,6 @@ export function AccountPicker({
           </option>
         ))}
       </select>
-    </p>
+    </div>
   )
 }

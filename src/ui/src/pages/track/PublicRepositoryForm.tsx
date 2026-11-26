@@ -21,6 +21,7 @@ export function PublicRepositoryForm({
   onTrack,
 }: PublicRepositoryFormProps) {
   const inputId = useId()
+  const hintId = useId()
   const errorId = useId()
   const [value, setValue] = useState('')
   const [invalid, setInvalid] = useState(false)
@@ -37,31 +38,38 @@ export function PublicRepositoryForm({
 
   return (
     <form className="public-repository" noValidate onSubmit={submit}>
-      <label htmlFor={inputId}>Public {providerDisplayName} repository</label>
-      <div className="actions">
-        <input
-          id={inputId}
-          type="text"
-          value={value}
-          placeholder="owner/name"
-          autoComplete="off"
-          spellCheck={false}
-          aria-invalid={invalid}
-          aria-describedby={invalid ? errorId : undefined}
-          onChange={(event) => {
-            setValue(event.target.value)
-            setInvalid(false)
-          }}
-        />
-        <button type="submit" disabled={busy}>
-          {pending ? 'Tracking…' : 'Track'}
-        </button>
-      </div>
-      {invalid && (
-        <p id={errorId} className="field-error">
-          Enter the repository as owner/name.
+      <div className="field">
+        <label htmlFor={inputId}>Public {providerDisplayName} repository</label>
+        <div className="public-repository-control">
+          <input
+            id={inputId}
+            type="text"
+            value={value}
+            placeholder="owner/name"
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={invalid}
+            // The error first, so it is read before the hint.
+            aria-describedby={invalid ? `${errorId} ${hintId}` : hintId}
+            onChange={(event) => {
+              setValue(event.target.value)
+              setInvalid(false)
+            }}
+          />
+          <button type="submit" className="primary" disabled={busy}>
+            {pending ? 'Tracking…' : 'Track'}
+          </button>
+        </div>
+        {invalid && (
+          <p id={errorId} className="field-error">
+            Enter the repository as owner/name.
+          </p>
+        )}
+        <p id={hintId} className="field-hint">
+          Read without an account. A private repository must come from a linked
+          account's list.
         </p>
-      )}
+      </div>
     </form>
   )
 }

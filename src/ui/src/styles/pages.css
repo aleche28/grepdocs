@@ -112,32 +112,126 @@
 
 /* TrackRepositoryPage */
 
-.filter input {
-  min-width: 16rem;
+.track-section {
+  margin-bottom: var(--space-8);
 }
 
-.repository-list {
-  margin: 0 0 var(--space-4);
-  padding: 0;
-  list-style: none;
+.track-section h2 {
+  margin-top: 0;
 }
 
-.repository-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto 6rem;
+.account-picker {
+  display: flex;
   align-items: center;
-  gap: var(--space-2) var(--space-4);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border);
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-sm);
 }
 
-.repository-row a {
+.account-picker-label {
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+.account-picker strong {
   overflow-wrap: anywhere;
 }
 
-.public-repository label,
-.public-repository input {
-  min-width: 16rem;
+.account-picker select {
+  min-width: 0;
+  max-width: 20rem;
+}
+
+.track-filter {
+  flex: 0 1 16rem;
+}
+
+.track-filter input {
+  width: 100%;
+}
+
+/* Name, default branch and action: the branch and action columns have fixed
+   widths, so they line up from row to row. */
+.track-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 11rem) 6.5rem;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  min-height: 3.25rem;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-4);
+}
+
+.track-name {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.track-name a {
+  min-width: 0;
+  color: var(--fg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.track-name a:hover {
+  color: var(--fg);
+}
+
+.track-branch {
+  min-width: 0;
+}
+
+.track-action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.public-repository {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.public-repository-control {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.public-repository-control input {
+  flex: 0 1 24rem;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+
+/* The filter takes the header's width, and each row puts its name and
+   action on the first line, the branch below the name. */
+@media (max-width: 40rem) {
+  .track-filter {
+    flex-basis: 100%;
+  }
+
+  .track-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .track-action {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .track-branch {
+    grid-column: 1 / -1;
+    padding-left: 2.375rem;
+  }
+
+  .public-repository-control input {
+    flex: 1 1 auto;
+  }
 }
 
 /* RepositoriesPage: a .list-card whose rows are a grid (Repository, Branch,

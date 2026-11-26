@@ -40,6 +40,9 @@ function renderPublic({
   return { bodies, ...renderTrackPage() }
 }
 
+const hint =
+  "Read without an account. A private repository must come from a linked account's list."
+
 async function findForm() {
   const section = within(
     await screen.findByRole('region', { name: 'A public repository' }),
@@ -94,8 +97,9 @@ describe('TrackRepositoryPage public repository', () => {
       screen.getByText('Enter the repository as owner/name.'),
     ).toBeInTheDocument()
     expect(field).toHaveAttribute('aria-invalid', 'true')
+    // The error first, then the hint.
     expect(field).toHaveAccessibleDescription(
-      'Enter the repository as owner/name.',
+      `Enter the repository as owner/name. ${hint}`,
     )
 
     await user.type(field, 'x')
@@ -103,6 +107,15 @@ describe('TrackRepositoryPage public repository', () => {
       screen.queryByText('Enter the repository as owner/name.'),
     ).not.toBeInTheDocument()
     expect(field).toHaveAttribute('aria-invalid', 'false')
+    expect(field).toHaveAccessibleDescription(hint)
+  })
+
+  test('says what the field reads, as its description', async () => {
+    renderPublic()
+    const { field } = await findForm()
+
+    expect(field).toHaveAccessibleDescription(hint)
+    expect(field).not.toHaveAttribute('aria-invalid', 'true')
   })
 
   test('an empty field is refused too', async () => {

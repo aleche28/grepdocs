@@ -1,3 +1,5 @@
+import { CircleAlert } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { relinkUrl, type ExternalAccount } from '../../api/accounts.ts'
 import { ApiError } from '../../api/client.ts'
 import { ApiErrorMessage } from '../../components/ApiErrorMessage.tsx'
@@ -27,7 +29,7 @@ export function ListError({
       case 'app_not_installed': {
         const installUrl = installUrlOf(error)
         return (
-          <div role="alert" className="error">
+          <Failure>
             <p>
               Install the {providerDisplayName} App to choose which repositories
               GrepDocs can see.
@@ -37,13 +39,13 @@ export function ListError({
                 Install the {providerDisplayName} App
               </ExternalLink>
             )}
-          </div>
+          </Failure>
         )
       }
       // On this endpoint, only a token that no longer works (D6 in the PRD).
       case 'forbidden':
         return (
-          <div role="alert" className="error">
+          <Failure>
             <p>
               {providerDisplayName} no longer accepts the access of{' '}
               {accountName}.
@@ -54,11 +56,11 @@ export function ListError({
             >
               Re-link {accountName}
             </a>
-          </div>
+          </Failure>
         )
       case 'rate_limited':
         return (
-          <div role="alert" className="error">
+          <Failure>
             <p>
               {providerDisplayName}'s rate limit was reached.{' '}
               {retryAfterText(error.retryAfter)}
@@ -66,7 +68,7 @@ export function ListError({
             <button type="button" onClick={onRetry}>
               Try again
             </button>
-          </div>
+          </Failure>
         )
     }
   }
@@ -77,5 +79,15 @@ export function ListError({
       title={`Could not list the repositories of ${accountName}`}
       onRetry={onRetry}
     />
+  )
+}
+
+// The frame of ApiErrorMessage, for a message with its own action.
+function Failure({ children }: { children: ReactNode }) {
+  return (
+    <div role="alert" className="error">
+      <CircleAlert className="notice-icon" size={16} />
+      <div className="notice-body">{children}</div>
+    </div>
   )
 }
