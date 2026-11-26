@@ -5,6 +5,7 @@ import {
   NavLink,
   Outlet,
   useLocation,
+  useMatches,
 } from 'react-router'
 import { ChevronDown, FileSearch, LogOut } from 'lucide-react'
 import {
@@ -17,6 +18,23 @@ import {
 import { ApiErrorMessage } from '../components/ApiErrorMessage.tsx'
 import { Menu } from '../components/Menu.tsx'
 
+// What a route under AppLayout can set in its `handle` (router.tsx).
+export interface LayoutHandle {
+  // 'docs': the page fills the window below the header, without <main>'s
+  // width cap and padding, and the header stays on screen (RepositoryPage's
+  // sidebar and table of contents stick below it).
+  layout?: 'docs'
+}
+
+// Whether the deepest route that sets a layout asks for the docs layout.
+function useDocsLayout(): boolean {
+  const matches = useMatches()
+  const layout = matches
+    .map((match) => (match.handle as LayoutHandle | undefined)?.layout)
+    .findLast((value) => value !== undefined)
+  return layout === 'docs'
+}
+
 // The auth guard and app shell for every page under it: nothing renders until
 // GET /users/me says who is signed in, and a signed-out user goes to the login
 // page, which brings them back here afterwards.
@@ -24,6 +42,7 @@ export function AppLayout() {
   const location = useLocation()
   const { data: user, error, refetch } = useCurrentUser()
   const logout = useLogout()
+  const docsLayout = useDocsLayout()
 
   // Checked before the cached user, which outlives a session that ended.
   if (isNotAuthenticated(error)) {
@@ -54,7 +73,7 @@ export function AppLayout() {
 
   return (
     <>
-      <header className="app-header">
+      <header className={docsLayout ? 'app-header sticky' : 'app-header'}>
         <Link to="/" className="app-name">
           <span className="app-mark">
             <FileSearch size={14} strokeWidth={2.2} />
@@ -97,7 +116,7 @@ export function AppLayout() {
           </Menu>
         </div>
       </header>
-      <main>
+      <main className={docsLayout ? 'docs' : undefined}>
         {logout.error && (
           <ApiErrorMessage error={logout.error} title="Could not sign out" />
         )}

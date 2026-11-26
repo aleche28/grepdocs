@@ -1,6 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router'
 import { AccountsPage } from './pages/AccountsPage.tsx'
-import { AppLayout } from './pages/AppLayout.tsx'
+import { AppLayout, type LayoutHandle } from './pages/AppLayout.tsx'
 import { DocumentPage } from './pages/DocumentPage.tsx'
 import { LoginPage } from './pages/LoginPage.tsx'
 import { NotFoundPage } from './pages/NotFoundPage.tsx'
@@ -28,6 +28,8 @@ export const router = createBrowserRouter([
         // The document tree stays on screen while the viewer changes.
         path: 'repositories/:repoId',
         element: <RepositoryPage />,
+        // Full width, with the tree in a sidebar (AppLayout).
+        handle: { layout: 'docs' } satisfies LayoutHandle,
         children: [
           { path: 'documents/:documentId', element: <DocumentPage /> },
         ],

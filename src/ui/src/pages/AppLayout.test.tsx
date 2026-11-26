@@ -1,11 +1,12 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw/http'
+import { Outlet } from 'react-router'
 import { describe, expect, test } from 'vitest'
 import type { User } from '../api/auth.ts'
 import { apiUrl } from '../api/client.ts'
 import { renderRoute } from '../test/renderRoute.tsx'
 import { server } from '../test/server.ts'
-import { AppLayout } from './AppLayout.tsx'
+import { AppLayout, type LayoutHandle } from './AppLayout.tsx'
 
 const ada: User = {
   id: 1,
@@ -105,5 +106,41 @@ describe('AppLayout user menu', () => {
         screen.getAllByText('ada@example.com').map((el) => el.tagName),
       ).toContain('STRONG'),
     )
+  })
+})
+
+describe('AppLayout docs layout', () => {
+  function renderAt(url: string) {
+    server.use(http.get(apiUrl('/users/me'), () => HttpResponse.json(ada)))
+    return renderRoute({
+      path: '/',
+      element: <AppLayout />,
+      children: [
+        { path: 'list', element: <p>List</p> },
+        {
+          path: 'docs',
+          element: <Outlet />,
+          handle: { layout: 'docs' } satisfies LayoutHandle,
+          children: [{ path: 'page', element: <p>Docs page</p> }],
+        },
+      ],
+      url,
+    })
+  }
+
+  test('keeps the width cap on a page that does not ask for the layout', async () => {
+    renderAt('/list')
+
+    expect(await screen.findByText('List')).toBeInTheDocument()
+    expect(screen.getByRole('main')).not.toHaveClass('docs')
+    expect(screen.getByRole('banner')).not.toHaveClass('sticky')
+  })
+
+  test('drops the width cap below a route that asks for it', async () => {
+    renderAt('/docs/page')
+
+    expect(await screen.findByText('Docs page')).toBeInTheDocument()
+    expect(screen.getByRole('main')).toHaveClass('docs')
+    expect(screen.getByRole('banner')).toHaveClass('sticky')
   })
 })

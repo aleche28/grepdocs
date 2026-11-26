@@ -12,6 +12,17 @@ main {
   }
 }
 
+/* The docs layout (a route's handle, see AppLayout): the page fills the
+   window and lays itself out. */
+main.docs {
+  max-width: none;
+  padding: 0;
+}
+
+main.docs > .error {
+  margin: var(--space-4);
+}
+
 /* App shell (AppLayout) */
 
 .app-header {
@@ -20,10 +31,16 @@ main {
   display: flex;
   align-items: center;
   gap: var(--space-2) var(--space-6);
-  height: 3.25rem;
+  height: var(--header-height);
   padding: 0 var(--space-4);
   border-bottom: 1px solid var(--border);
   background: var(--bg);
+}
+
+/* In the docs layout, so the sidebar can stick below it. */
+.app-header.sticky {
+  position: sticky;
+  top: 0;
 }
 
 .app-name {
