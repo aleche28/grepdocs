@@ -320,30 +320,6 @@
   }
 }
 
-/* EditDialog */
-
-.edit-repository {
-  display: grid;
-  gap: var(--space-4);
-}
-
-/* The branch field: label, select and its notes. */
-.edit-repository > div:first-child {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.edit-repository p {
-  margin: 0;
-}
-
-.edit-repository .checkbox {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-}
-
 /* RepositoryPage: the docs layout, a sidebar and a content column. */
 
 .docs-layout {

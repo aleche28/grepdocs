@@ -40,16 +40,16 @@ export function UntrackDialog({
 
   return (
     <Dialog
-      title={`Stop tracking ${repository.full_name}?`}
+      title={`Untrack ${repository.full_name}?`}
       busy={untrack.isPending}
       onClose={onClose}
-      // Cancel rather than the destructive action, which is first.
+      // Cancel rather than the destructive action.
       initialFocus={cancelRef}
       fallbackFocus={fallbackFocus}
     >
-      <p>
+      <p className="dialog-lede">
         Its synced documents are removed from GrepDocs. Nothing changes on{' '}
-        {displayName}.
+        {displayName}, and you can track it again later.
       </p>
       {untrack.error && (
         <ApiErrorMessage
@@ -60,19 +60,19 @@ export function UntrackDialog({
       <div className="actions">
         <button
           type="button"
-          className="danger"
-          onClick={confirm}
-          disabled={untrack.isPending}
-        >
-          {untrack.isPending ? 'Untracking…' : 'Untrack'}
-        </button>
-        <button
-          type="button"
           ref={cancelRef}
           onClick={onClose}
           disabled={untrack.isPending}
         >
           Cancel
+        </button>
+        <button
+          type="button"
+          className="danger"
+          onClick={confirm}
+          disabled={untrack.isPending}
+        >
+          {untrack.isPending ? 'Untracking…' : 'Untrack'}
         </button>
       </div>
     </Dialog>

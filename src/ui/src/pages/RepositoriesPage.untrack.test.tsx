@@ -42,7 +42,7 @@ async function openUntrack(
   )
   await user.click(screen.getByRole('button', { name: 'Untrack' }))
   return within(
-    await screen.findByRole('dialog', { name: 'Stop tracking acme/docs?' }),
+    await screen.findByRole('dialog', { name: 'Untrack acme/docs?' }),
   )
 }
 
@@ -59,7 +59,7 @@ describe('RepositoriesPage untrack', () => {
 
     expect(
       dialog.getByText(
-        'Its synced documents are removed from GrepDocs. Nothing changes on GitHub.',
+        'Its synced documents are removed from GrepDocs. Nothing changes on GitHub, and you can track it again later.',
       ),
     ).toBeInTheDocument()
     expect(dialog.getByRole('button', { name: 'Cancel' })).toHaveFocus()

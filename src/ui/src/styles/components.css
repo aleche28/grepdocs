@@ -352,7 +352,23 @@ main.docs > .error {
 }
 
 .dialog h2 {
-  margin-top: 0;
+  margin: 0 0 var(--space-2);
+}
+
+/* What the dialog is about, under its title. */
+.dialog-lede {
+  margin: 0 0 1.125rem;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+.dialog-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.dialog-form > .error {
+  margin: 0;
 }
 
 .dialog > .actions,
@@ -361,6 +377,49 @@ main.docs > .error {
   margin-top: var(--space-6);
   padding-top: var(--space-4);
   border-top: 1px solid var(--border);
+}
+
+/* Form fields: a label, the control, and hints below it. */
+
+.field {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.field label {
+  font-size: var(--text-sm);
+}
+
+.field select,
+.field input:not([type='checkbox'], [type='radio']) {
+  width: 100%;
+}
+
+.field select.mono {
+  font-family: var(--font-mono);
+}
+
+.field-hint {
+  margin: 0;
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+
+/* A checkbox, with its label and a description beside it. */
+.check-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+}
+
+.check-field input {
+  flex: none;
+  margin-top: 2px;
+}
+
+.check-field label {
+  font-size: var(--text-sm);
 }
 
 /* An empty list (a short explanation and the action that fills it), and the
