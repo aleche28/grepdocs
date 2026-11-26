@@ -1,3 +1,4 @@
+import { FileSearch, LogIn } from 'lucide-react'
 import { Navigate, useSearchParams } from 'react-router'
 import {
   googleLoginUrl,
@@ -18,10 +19,31 @@ export function LoginPage() {
     return <Navigate to={redirect} replace />
   }
 
+  // Outside AppLayout, so there is no app shell: the page is one card.
   return (
-    <main>
-      <h1>Sign in to GrepDocs</h1>
-      <a href={googleLoginUrl(redirect)}>Sign in with Google</a>
+    <main className="login">
+      <div className="login-card">
+        <p className="login-brand">
+          <span className="app-mark">
+            <FileSearch size={14} strokeWidth={2.2} />
+          </span>
+          GrepDocs
+        </p>
+        <h1>Sign in to GrepDocs</h1>
+        <p className="login-lede">
+          Browse and edit the Markdown documentation across your git
+          repositories.
+        </p>
+        <a href={googleLoginUrl(redirect)} className="button primary">
+          <LogIn size={15} />
+          Sign in with Google
+        </a>
+        {redirect !== '/' && (
+          <p className="login-note">
+            You'll come back to the page you were on.
+          </p>
+        )}
+      </div>
     </main>
   )
 }

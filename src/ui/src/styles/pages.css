@@ -20,6 +20,60 @@
   font-size: var(--text-sm);
 }
 
+/* LoginPage: one card in the middle of the window, without the app shell. */
+
+main.login {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  max-width: none;
+  min-height: 100dvh;
+  padding: var(--space-6) var(--space-4);
+  background: var(--bg-subtle);
+}
+
+.login-card {
+  display: grid;
+  box-sizing: border-box;
+  width: min(23rem, 100%);
+  padding: var(--space-8) var(--space-6) var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-6);
+  font-weight: 600;
+}
+
+.login-card h1 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+}
+
+.login-lede {
+  margin: 0 0 var(--space-6);
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+.login-card .button {
+  height: 2.375rem;
+}
+
+.login-note {
+  margin: var(--space-4) 0 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+}
+
 /* AccountsPage: a .list-card per provider, with a row per account (name,
    status, actions). */
 

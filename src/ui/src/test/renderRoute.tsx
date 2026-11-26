@@ -1,4 +1,4 @@
-import { QueryClientProvider } from '@tanstack/react-query'
+import { type QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { type ReactNode, StrictMode } from 'react'
@@ -16,6 +16,8 @@ interface RenderRouteOptions {
   url?: string
   // Other routes, for a test that leaves the page and comes back.
   routes?: RouteObject[]
+  // A client the test filled first, such as with a cached user.
+  queryClient?: QueryClient
 }
 
 // Renders one page at its route, the way the app would after the auth guard
@@ -31,8 +33,8 @@ export function renderRoute({
   children,
   url = path,
   routes = [],
+  queryClient = createTestQueryClient(),
 }: RenderRouteOptions) {
-  const queryClient = createTestQueryClient()
   const router = createMemoryRouter([{ path, element, children }, ...routes], {
     initialEntries: [url],
   })
