@@ -32,6 +32,10 @@ export function EditDialog({
   fallbackFocus,
 }: EditDialogProps) {
   const branchId = useId()
+  const branchHintId = useId()
+  const branchNoteId = useId()
+  const autoSyncId = useId()
+  const autoSyncHintId = useId()
   const branchRef = useRef<HTMLSelectElement>(null)
   const branches = useRepositoryBranches(repository.id)
   const update = useUpdateRepository()
@@ -84,16 +88,26 @@ export function EditDialog({
       initialFocus={branchRef}
       fallbackFocus={fallbackFocus}
     >
-      <form onSubmit={save} className="edit-repository">
-        <div>
+      <p className="dialog-lede">
+        Changing the branch replaces this repository's documents with the ones
+        on the new branch.
+      </p>
+      <form onSubmit={save} className="dialog-form">
+        <div className="field">
           <label htmlFor={branchId}>Tracked branch</label>
           <select
             id={branchId}
             ref={branchRef}
+            className="mono"
             value={branch}
             onChange={(event) => setBranch(event.target.value)}
             // While the branches load or failed, it offers the tracked one only.
             disabled={update.isPending}
+            aria-describedby={
+              branch !== tracked
+                ? `${branchHintId} ${branchNoteId}`
+                : branchHintId
+            }
           >
             {options.map((name) => (
               <option key={name} value={name}>
@@ -103,9 +117,14 @@ export function EditDialog({
               </option>
             ))}
           </select>
-          {branches.isPending && <p className="muted">Loading branches…</p>}
+          <p id={branchHintId} className="field-hint">
+            GrepDocs syncs the Markdown files on this branch.
+          </p>
+          {branches.isPending && (
+            <p className="field-hint">Loading branches…</p>
+          )}
           {branch !== tracked && (
-            <p className="muted">
+            <p id={branchNoteId} className="field-hint">
               Saving starts a sync of {branch}. Until it ends, the documents
               still come from {tracked}.
             </p>
@@ -121,15 +140,23 @@ export function EditDialog({
             onRetry={() => void branches.refetch()}
           />
         )}
-        <label className="checkbox">
+        <div className="check-field">
           <input
+            id={autoSyncId}
             type="checkbox"
             checked={autoSync}
             onChange={(event) => setAutoSync(event.target.checked)}
             disabled={update.isPending}
+            aria-describedby={autoSyncHintId}
           />
-          Sync when I open GrepDocs
-        </label>
+          <div>
+            <label htmlFor={autoSyncId}>Sync when I open GrepDocs</label>
+            <p id={autoSyncHintId} className="field-hint">
+              Starts a sync each time you open GrepDocs, unless the last one
+              failed in a way only you can fix.
+            </p>
+          </div>
+        </div>
         {update.error && (
           <ProviderError
             error={update.error}
@@ -141,11 +168,11 @@ export function EditDialog({
           />
         )}
         <div className="actions">
-          <button type="submit" className="primary" disabled={update.isPending}>
-            {update.isPending ? 'Saving…' : 'Save'}
-          </button>
           <button type="button" onClick={onClose} disabled={update.isPending}>
             Cancel
+          </button>
+          <button type="submit" className="primary" disabled={update.isPending}>
+            {update.isPending ? 'Saving…' : 'Save'}
           </button>
         </div>
       </form>

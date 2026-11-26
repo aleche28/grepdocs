@@ -1,3 +1,4 @@
+import { FolderGit2, LoaderCircle, Plus, TriangleAlert } from 'lucide-react'
 import { type ReactNode, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { useAccounts, useProviders } from '../api/accounts.ts'
@@ -97,29 +98,41 @@ export function RepositoriesPage() {
     const failed = sorted.filter((r) => r.sync_status === 'failed').length
     content =
       sorted.length === 0 ? (
-        <p>You don't track any repository yet.</p>
+        <EmptyState />
       ) : (
         <>
           {failed > 0 && (
-            <p className="warning">
-              {failed === 1
-                ? '1 repository failed its last sync.'
-                : `${failed} repositories failed their last sync.`}
-            </p>
+            <div className="warning with-icon">
+              <TriangleAlert className="notice-icon" size={16} />
+              <p>
+                {failed === 1
+                  ? '1 repository failed its last sync.'
+                  : `${failed} repositories failed their last sync.`}
+              </p>
+            </div>
           )}
-          <ul className="repository-entries">
-            {sorted.map((repository) => (
-              <RepositoryRow
-                key={repository.id}
-                repository={repository}
-                provider={providerOf(repository)}
-                account={accountOf(repository)}
-                onSyncError={onSyncError}
-                onEdit={() => setDialog({ kind: 'edit', repository })}
-                onUntrack={() => setDialog({ kind: 'untrack', repository })}
-              />
-            ))}
-          </ul>
+          <div className="repository-table">
+            {/* Hidden from screen readers: each row labels its own cells. */}
+            <div className="entry-columns" aria-hidden="true">
+              <span>Repository</span>
+              <span>Branch</span>
+              <span>Status</span>
+              <span>Auto-sync</span>
+            </div>
+            <ul className="repository-entries">
+              {sorted.map((repository) => (
+                <RepositoryRow
+                  key={repository.id}
+                  repository={repository}
+                  provider={providerOf(repository)}
+                  account={accountOf(repository)}
+                  onSyncError={onSyncError}
+                  onEdit={() => setDialog({ kind: 'edit', repository })}
+                  onUntrack={() => setDialog({ kind: 'untrack', repository })}
+                />
+              ))}
+            </ul>
+          </div>
         </>
       )
   } else if (repositories.error) {
@@ -132,16 +145,31 @@ export function RepositoriesPage() {
       />
     )
   } else {
-    content = <p>Loading repositories…</p>
+    content = (
+      <div className="empty-state loading">
+        <LoaderCircle className="spin" size={16} />
+        <p>Loading repositories…</p>
+      </div>
+    )
   }
+
+  const count = sorted?.length
 
   return (
     <>
       <div className="page-heading">
-        <h1>Repositories</h1>
-        <Link to="/repositories/track" className="button primary">
-          Track a repository
-        </Link>
+        <div>
+          <h1>Repositories</h1>
+          {count !== undefined && count > 0 && (
+            <p className="page-subtitle">
+              {count === 1
+                ? '1 tracked repository'
+                : `${count} tracked repositories`}
+            </p>
+          )}
+        </div>
+        {/* The empty state has its own. */}
+        {count !== 0 && <TrackLink />}
       </div>
       <div ref={noticeRef} tabIndex={-1}>
         {notice &&
@@ -187,6 +215,32 @@ export function RepositoriesPage() {
         />
       )}
     </>
+  )
+}
+
+function TrackLink() {
+  return (
+    <Link to="/repositories/track" className="button primary">
+      <Plus size={15} strokeWidth={2.2} />
+      Track a repository
+    </Link>
+  )
+}
+
+// No repository is tracked yet.
+function EmptyState() {
+  return (
+    <div className="empty-state">
+      <span className="empty-icon">
+        <FolderGit2 size={20} />
+      </span>
+      <h2>No repositories yet</h2>
+      <p>
+        Track a repository from a linked account, or any public one, to browse
+        its Markdown documents here.
+      </p>
+      <TrackLink />
+    </div>
   )
 }
 

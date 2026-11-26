@@ -38,10 +38,11 @@ async function openUntrack(
   user: ReturnType<typeof renderRepositoriesPage>['user'],
 ) {
   await user.click(
-    await screen.findByRole('button', { name: 'Untrack acme/docs' }),
+    await screen.findByRole('button', { name: 'More actions for acme/docs' }),
   )
+  await user.click(screen.getByRole('button', { name: 'Untrack' }))
   return within(
-    await screen.findByRole('dialog', { name: 'Stop tracking acme/docs?' }),
+    await screen.findByRole('dialog', { name: 'Untrack acme/docs?' }),
   )
 }
 
@@ -58,7 +59,7 @@ describe('RepositoriesPage untrack', () => {
 
     expect(
       dialog.getByText(
-        'Its synced documents are removed from GrepDocs. Nothing changes on GitHub.',
+        'Its synced documents are removed from GrepDocs. Nothing changes on GitHub, and you can track it again later.',
       ),
     ).toBeInTheDocument()
     expect(dialog.getByRole('button', { name: 'Cancel' })).toHaveFocus()
@@ -68,6 +69,10 @@ describe('RepositoriesPage untrack', () => {
     )
     expect(calls.count).toBe(0)
     expect(screen.getByRole('link', { name: 'acme/docs' })).toBeInTheDocument()
+    // Back on the menu button the dialog was opened from.
+    expect(
+      screen.getByRole('button', { name: 'More actions for acme/docs' }),
+    ).toHaveFocus()
   })
 
   test.each([
