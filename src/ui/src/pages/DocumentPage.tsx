@@ -1,4 +1,11 @@
-import { Copy, GitBranch, GitCommitHorizontal, Link2 } from 'lucide-react'
+import {
+  Copy,
+  FileQuestion,
+  GitBranch,
+  GitCommitHorizontal,
+  Link2,
+  LoaderCircle,
+} from 'lucide-react'
 import { lazy, type ReactNode, Suspense, useEffect, useMemo } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { useProviders } from '../api/accounts.ts'
@@ -38,7 +45,14 @@ export function DocumentPage() {
   const message = (title: string, body: ReactNode) => (
     <>
       <ContentHeader repository={repository} title={title} />
-      <div className="content-body">{body}</div>
+      <div className="content-body">
+        <div className="empty-state">
+          <span className="empty-icon">
+            <FileQuestion size={20} />
+          </span>
+          {body}
+        </div>
+      </div>
     </>
   )
 
@@ -96,7 +110,7 @@ export function DocumentPage() {
     <>
       {header}
       <div className="content-body">
-        <p className="muted">Loading document…</p>
+        <LoadingDocument />
       </div>
     </>
   )
@@ -147,7 +161,7 @@ function DocumentView({ document }: { document: DocumentDetail }) {
     body = <RawSource content={document.content} path={document.path} />
   } else {
     body = (
-      <Suspense fallback={<p className="muted">Loading document…</p>}>
+      <Suspense fallback={<LoadingDocument />}>
         <MarkdownView
           content={document.content}
           path={document.path}
@@ -270,6 +284,15 @@ function RawSource({ content, path }: { content: string; path: string }) {
       <pre>
         <code>{content}</code>
       </pre>
+    </div>
+  )
+}
+
+function LoadingDocument() {
+  return (
+    <div className="empty-state loading">
+      <LoaderCircle className="spin" size={16} />
+      <p>Loading document…</p>
     </div>
   )
 }
