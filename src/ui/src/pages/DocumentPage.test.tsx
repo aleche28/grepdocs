@@ -17,6 +17,7 @@ import {
 } from '../test/repositories.tsx'
 import { server } from '../test/server.ts'
 import { formatDateTime } from './accounts/format.ts'
+import { copiedMessageMs } from './repository/clipboard.ts'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -54,6 +55,17 @@ async function findArticle() {
 
 function rawSource() {
   return document.querySelector('.document-raw code')
+}
+
+// Stands in for the Clipboard API, which jsdom does not have (user-event's
+// own stub is replaced, so a test can make the write fail).
+function stubClipboard(writeText: (text: string) => Promise<void>) {
+  const clipboard = { writeText: vi.fn(writeText) }
+  Object.defineProperty(navigator, 'clipboard', {
+    value: clipboard,
+    configurable: true,
+  })
+  return clipboard
 }
 
 describe('DocumentPage', () => {
@@ -189,16 +201,19 @@ describe('DocumentPage', () => {
 
     expect(
       await screen.findByRole('heading', {
-        level: 2,
+        level: 1,
         name: 'docs/my guide.md',
       }),
     ).toBeInTheDocument()
     const origin = within(screen.getByText('abcd123').closest('p')!)
     expect(origin.getByText('main')).toBeInTheDocument()
-    expect(
-      origin.getByText(`Synced ${formatDateTime(guide.synced_at)}`),
-    ).toBeInTheDocument()
-    const upstream = origin.getByRole('link', { name: 'View on GitHub' })
+    expect(origin.getByTitle(commit)).toHaveTextContent('Commit abcd123')
+    const syncedAt = origin.getByText(formatDateTime(guide.synced_at)!)
+    expect(syncedAt).toHaveAttribute('datetime', guide.synced_at)
+    expect(syncedAt.parentElement).toHaveTextContent(
+      `Synced ${formatDateTime(guide.synced_at)}`,
+    )
+    const upstream = screen.getByRole('link', { name: 'View on GitHub' })
     expect(upstream).toHaveAttribute(
       'href',
       `https://github.com/acme/docs/blob/${commit}/docs/my%20guide.md`,
@@ -267,10 +282,165 @@ describe('DocumentPage', () => {
     await waitFor(() => expect(scroll.mock.contexts).toContain(heading))
   })
 
+  test('numbers the lines of the raw view', async () => {
+    const readme = doc({ content: '# Title\n\nText\n' })
+    openDocument([readme], `/repositories/12/documents/${readme.id}?view=raw`)
+
+    const source = await screen.findByRole('region', {
+      name: 'Source of README.md',
+    })
+    // The final newline ends line 3; it does not start a fourth.
+    const numbers = source.querySelector('[aria-hidden="true"]')
+    expect(numbers?.textContent).toBe('1\n2\n3')
+  })
+
+  test('lists the sections of the document on this page', async () => {
+    openDocument([
+      doc({
+        content: [
+          '# Guide',
+          '## Install',
+          '### On `macOS`',
+          '#### Too deep',
+          '<h2>From HTML</h2>',
+          '',
+          '## Install',
+          'Text[^1]',
+          '',
+          '[^1]: A note.',
+        ].join('\n'),
+      }),
+    ])
+
+    const article = await findArticle()
+    const toc = within(
+      await screen.findByRole('navigation', { name: 'On this page' }),
+    )
+    const links = toc.getAllByRole('link')
+    expect(links.map((link) => link.textContent)).toEqual([
+      'Install',
+      'On macOS',
+      'From HTML',
+      'Install',
+    ])
+    // The ids as rendered, prefixed and made unique by rehype-slug.
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '#user-content-install',
+      '#user-content-on-macos',
+      '#user-content-from-html',
+      '#user-content-install-1',
+    ])
+    for (const link of links) {
+      const id = link.getAttribute('href')!.slice(1)
+      expect(article.getAllByRole('heading')).toContain(
+        document.getElementById(id),
+      )
+    }
+  })
+
+  test('has no table of contents without sections or in the raw view', async () => {
+    const plain = doc({ content: '# Only a title\n\nText' })
+    const sections = doc({ path: 'docs/a.md', content: '## Section' })
+    const { router } = openDocument([plain, sections])
+    await findArticle()
+
+    expect(
+      screen.queryByRole('navigation', { name: 'On this page' }),
+    ).not.toBeInTheDocument()
+
+    await router.navigate(`/repositories/12/documents/${sections.id}`)
+    expect(
+      await screen.findByRole('navigation', { name: 'On this page' }),
+    ).toBeInTheDocument()
+
+    await router.navigate(`/repositories/12/documents/${sections.id}?view=raw`)
+    await waitFor(() => expect(rawSource()).toHaveTextContent('## Section'))
+    expect(
+      screen.queryByRole('navigation', { name: 'On this page' }),
+    ).not.toBeInTheDocument()
+  })
+
+  test('copies a link to the document and its path', async () => {
+    const guide = doc({ path: 'docs/guide.md' })
+    const { user } = openDocument(
+      [guide],
+      `/repositories/12/documents/${guide.id}?view=raw`,
+    )
+    const clipboard = stubClipboard(() => Promise.resolve())
+    const status = await screen.findByRole('status')
+    expect(status).toBeEmptyDOMElement()
+
+    await user.click(
+      screen.getByRole('button', { name: 'Copy link to this document' }),
+    )
+
+    // Absolute, and without the view.
+    expect(clipboard.writeText).toHaveBeenLastCalledWith(
+      `${window.location.origin}/repositories/12/documents/${guide.id}`,
+    )
+    expect(status).toHaveTextContent('Link copied')
+
+    await user.click(screen.getByRole('button', { name: 'Copy file path' }))
+
+    expect(clipboard.writeText).toHaveBeenLastCalledWith('docs/guide.md')
+    expect(status).toHaveTextContent('Path copied')
+  })
+
+  test('clears the copied message after a while', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const { user } = openDocument([doc()])
+    stubClipboard(() => Promise.resolve())
+    await user.click(
+      await screen.findByRole('button', { name: 'Copy file path' }),
+    )
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent('Path copied')
+
+    await vi.advanceTimersByTimeAsync(copiedMessageMs - 100)
+    expect(status).toHaveTextContent('Path copied')
+    await vi.advanceTimersByTimeAsync(100)
+
+    await waitFor(() => expect(status).toBeEmptyDOMElement())
+  })
+
+  test.each([
+    [
+      'refuses the write',
+      () => stubClipboard(() => Promise.reject(new Error('denied'))),
+    ],
+    [
+      'has no Clipboard API',
+      () =>
+        Object.defineProperty(navigator, 'clipboard', {
+          value: undefined,
+          configurable: true,
+        }),
+    ],
+  ])('says it could not copy when the browser %s', async (_, stub) => {
+    const { user } = openDocument([doc()])
+    stub()
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Copy link to this document' }),
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Could not copy the link',
+    )
+  })
+
   test('sends no request for an ID that is not one', async () => {
     const { api } = openDocument([doc()], '/repositories/12/documents/abc')
 
-    expect(await screen.findByText('Document not found.')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'Document not found',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('There is no document at this address.'),
+    ).toBeInTheDocument()
     expect(api.detailRequests).toEqual([])
   })
 
@@ -278,9 +448,10 @@ describe('DocumentPage', () => {
     openDocument([doc()], '/repositories/12/documents/999')
 
     expect(
-      await screen.findByText(
-        'Document not found. The last sync may have removed it.',
-      ),
+      await screen.findByText('The last sync may have removed it.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Document not found' }),
     ).toBeInTheDocument()
   })
 
@@ -368,9 +539,7 @@ describe('DocumentPage', () => {
     await vi.advanceTimersByTimeAsync(fastPollMs)
 
     expect(
-      await screen.findByText(
-        'Document not found. The last sync may have removed it.',
-      ),
+      await screen.findByText('The last sync may have removed it.'),
     ).toBeInTheDocument()
     expect(screen.queryByRole('article')).not.toBeInTheDocument()
   })

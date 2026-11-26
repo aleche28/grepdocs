@@ -27,6 +27,9 @@
   --radius-xl: 12px;
 
   --control-height: 2rem;
+  /* The app header's height, without its border. The docs layout's sticky
+     sidebar and table of contents sit below it. */
+  --header-height: 3.25rem;
 
   /* Light theme. Text colours pass WCAG AA (4.5:1) on every background
      below, --fg-subtle included. */
@@ -40,7 +43,10 @@
   --fg-muted: #52525b;
   --fg-subtle: #6b6b75;
   --shadow: 0 1px 2px rgb(0 0 0 / 5%), 0 8px 24px rgb(0 0 0 / 8%);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 10%);
   --overlay: rgb(24 24 27 / 40%);
+  /* The chosen option of a segmented control, raised from --bg-inset. */
+  --bg-raised: #ffffff;
 
   --accent: #2563eb;
   --accent-hover: #1d4ed8;
@@ -73,7 +79,9 @@
     --fg-muted: #a8a8b0;
     --fg-subtle: #8e8e98;
     --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 50%);
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
     --overlay: rgb(0 0 0 / 60%);
+    --bg-raised: #232327;
 
     --accent: #2563eb;
     --accent-hover: #3b74f0;

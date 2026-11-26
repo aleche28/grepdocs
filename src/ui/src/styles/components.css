@@ -12,6 +12,17 @@ main {
   }
 }
 
+/* The docs layout (a route's handle, see AppLayout): the page fills the
+   window and lays itself out. */
+main.docs {
+  max-width: none;
+  padding: 0;
+}
+
+main.docs > .error {
+  margin: var(--space-4);
+}
+
 /* App shell (AppLayout) */
 
 .app-header {
@@ -20,10 +31,16 @@ main {
   display: flex;
   align-items: center;
   gap: var(--space-2) var(--space-6);
-  height: 3.25rem;
+  height: var(--header-height);
   padding: 0 var(--space-4);
   border-bottom: 1px solid var(--border);
   background: var(--bg);
+}
+
+/* In the docs layout, so the sidebar can stick below it. */
+.app-header.sticky {
+  position: sticky;
+  top: 0;
 }
 
 .app-name {
@@ -159,6 +176,35 @@ main {
 
 .menu-panel .menu-item:hover:enabled {
   background: var(--bg-muted);
+}
+
+/* A link in the panel looks like its buttons. */
+.menu-panel a.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  color: var(--fg);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+.menu-panel a.menu-item:hover {
+  background: var(--bg-muted);
+  text-decoration: none;
+}
+
+/* Where a check marks the current item; empty on the others, so the names
+   line up. */
+.menu-check {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  color: var(--accent-text);
+}
+
+.menu-panel .menu-check svg {
+  color: inherit;
 }
 
 .menu-item svg {

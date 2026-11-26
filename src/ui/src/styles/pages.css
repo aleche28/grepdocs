@@ -141,143 +141,761 @@
   margin: 0;
 }
 
-/* RepositoryPage */
+/* RepositoryPage: the docs layout, a sidebar and a content column. */
 
-.repository-heading {
+.docs-layout {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 var(--space-4);
+  min-height: calc(100dvh - var(--header-height) - 1px);
 }
 
-.repository-heading h1 {
-  overflow-wrap: anywhere;
+.docs-sidebar {
+  position: sticky;
+  top: var(--header-height);
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  width: 18rem;
+  height: calc(100dvh - var(--header-height));
+  padding: var(--space-3);
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-subtle);
 }
 
-.repository-browser {
-  display: grid;
-  grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr);
-  gap: var(--space-6);
-  align-items: start;
+.docs-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
 }
 
-@media (max-width: 40rem) {
-  .repository-browser {
-    grid-template-columns: minmax(0, 1fr);
+/* The sidebar stacks above the content, and scrolls with the page. */
+@media (max-width: 48rem) {
+  .docs-layout {
+    flex-direction: column;
+  }
+
+  .docs-sidebar {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* A long tree would push the document far down. */
+  .docs-sidebar .document-tree {
+    max-height: 40vh;
+    overflow-y: auto;
   }
 }
 
+/* RepositorySwitcher */
+
+.repository-switcher .menu-panel {
+  right: auto;
+  left: 0;
+  width: 100%;
+}
+
+.switcher-button {
+  justify-content: flex-start;
+  width: 100%;
+  height: 2.375rem;
+  padding: 0 var(--space-3);
+  border-color: var(--border);
+  border-radius: var(--radius-lg);
+  font-weight: 600;
+  text-align: left;
+}
+
+button.switcher-button:hover:enabled {
+  border-color: var(--border-strong);
+  background: var(--bg);
+}
+
+.switcher-button svg {
+  flex: none;
+  color: var(--fg-subtle);
+}
+
+.switcher-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switcher-list {
+  max-height: min(20rem, 60vh);
+  overflow-y: auto;
+}
+
+/* The sidebar's branch, sync status and upstream link. */
+
+.sidebar-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+}
+
+/* A fact in monospace, such as a branch or a commit. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  box-sizing: border-box;
+  height: 1.375rem;
+  padding: 0 0.4375rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-inset);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.chip code {
+  font-size: var(--text-xs);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 1.375rem;
+  padding: 0.125rem 0.5625rem;
+  box-sizing: border-box;
+  border-radius: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.status-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentcolor;
+}
+
+.status-pill.ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.status-pill.busy {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.status-pill.busy .status-dot {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.status-pill.failed {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.status-pill.pending {
+  background: var(--bg-muted);
+  color: var(--fg-muted);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-pill.busy .status-dot {
+    animation: none;
+  }
+}
+
+.sidebar-footer {
+  margin: auto 0 0;
+  padding: var(--space-2) 0.375rem 0;
+  border-top: 1px solid var(--border);
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+}
+
+/* DocumentTree */
+
+.tree-filter {
+  position: relative;
+}
+
+.tree-filter svg {
+  position: absolute;
+  top: 50%;
+  left: 0.625rem;
+  color: var(--fg-subtle);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.tree-filter input {
+  width: 100%;
+  padding-left: 1.875rem;
+  border-color: var(--border);
+}
+
+.tree-empty {
+  margin: 0;
+  padding: var(--space-2);
+  color: var(--fg-subtle);
+  font-size: var(--text-sm);
+}
+
 .document-tree ul {
+  display: grid;
+  gap: 1px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.document-tree ul ul {
-  padding-left: var(--space-4);
+/* The first row of a directory's list sits 1px below its own. */
+.document-tree details > ul {
+  margin-top: 1px;
 }
 
-.document-tree li {
-  padding: 0.125rem 0;
-  overflow-wrap: anywhere;
-}
-
-.document-tree summary {
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  box-sizing: border-box;
+  height: 1.75rem;
+  padding: 0 var(--space-2) 0 calc(0.375rem + var(--depth, 0) * 1rem);
+  border-radius: 5px;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
-.document-tree a {
-  color: inherit;
+.tree-row:hover {
+  background: var(--bg-muted);
+  color: var(--fg);
+  text-decoration: none;
 }
 
-.document-tree a[aria-current='page'] {
+summary.tree-row {
+  list-style: none;
+}
+
+summary.tree-row::-webkit-details-marker {
+  display: none;
+}
+
+/* NavLink sets aria-current="page" on the open document. */
+.tree-row[aria-current='page'],
+.tree-row[aria-current='page']:hover {
+  background: var(--accent-soft);
   color: var(--accent-text);
-  font-weight: 600;
+  font-weight: 500;
+}
+
+.tree-chevron {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  color: var(--fg-subtle);
+  transition: transform 0.1s;
+}
+
+details[open] > summary .tree-chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-chevron {
+    transition: none;
+  }
+}
+
+.tree-icon {
+  flex: none;
+  color: var(--fg-subtle);
+}
+
+.tree-row[aria-current='page'] .tree-icon {
+  color: var(--accent-text);
+}
+
+details[open] > summary .tree-icon.closed,
+details:not([open]) > summary .tree-icon.opened {
+  display: none;
+}
+
+.tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ContentHeader: the trail, the page's actions and a meta line. */
+
+.content-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem var(--space-4);
+  padding: 0.875rem var(--space-8) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.trail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  color: var(--fg-subtle);
+  font-size: var(--text-sm);
+}
+
+.trail ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trail li {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.trail a {
+  color: var(--fg-muted);
+}
+
+.trail a:hover {
+  color: var(--fg);
+}
+
+.trail-separator {
+  margin: 0 0.375rem;
+  color: var(--border-strong);
+}
+
+.trail li .trail-separator,
+.trail > .trail-separator {
+  margin: 0;
+}
+
+/* The page's heading, in the trail's size: the document's own title is the
+   big one. */
+.trail h1 {
+  margin: 0;
+  color: var(--fg);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+}
+
+.trail-directory {
+  color: var(--fg-subtle);
+  font-weight: 400;
+}
+
+.content-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin-left: auto;
+}
+
+.content-actions .external-icon {
+  margin: 0;
+  color: var(--fg-subtle);
+}
+
+.content-body {
+  padding: 2.25rem var(--space-8) 4.5rem;
+}
+
+@media (max-width: 48rem) {
+  .content-header {
+    padding-right: var(--space-4);
+    padding-left: var(--space-4);
+  }
+
+  .content-body {
+    padding: var(--space-6) var(--space-4) var(--space-8);
+  }
 }
 
 /* DocumentPage */
 
-.document h2 {
-  margin-top: 0;
-  overflow-wrap: anywhere;
+/* Rendered and Raw: links, one chosen (aria-current). */
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-inset);
 }
 
-.document-origin {
+.segmented a {
+  display: inline-flex;
+  align-items: center;
+  height: 1.625rem;
+  padding: 0 0.625rem;
+  border-radius: 5px;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.segmented a:hover {
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.segmented a[aria-current='page'] {
+  background: var(--bg-raised);
+  color: var(--fg);
+  box-shadow: var(--shadow-sm);
+}
+
+.document-meta {
   display: flex;
+  flex-basis: 100%;
   flex-wrap: wrap;
-  gap: 0 var(--space-4);
-  margin: 0 0 var(--space-3);
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
 }
 
-.document-modes {
+.copy-status {
+  color: var(--ok);
+  font-weight: 500;
+}
+
+/* The document, and its table of contents to the right on a wide screen. */
+.document-body {
+  display: grid;
+  grid-template-columns: minmax(0, 45rem);
+  gap: var(--space-8) 3rem;
+  align-items: start;
+  padding: 2.25rem var(--space-8) 4.5rem;
+}
+
+@media (min-width: 72rem) {
+  .document-body {
+    grid-template-columns: minmax(0, 45rem) 12.5rem;
+  }
+}
+
+@media (max-width: 48rem) {
+  .document-body {
+    padding: var(--space-6) var(--space-4) var(--space-8);
+  }
+}
+
+/* The source spans both columns: its lines are long. */
+.document-raw {
   display: flex;
-  gap: var(--space-4);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border);
+  grid-column: 1 / -1;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-inset);
 }
 
-.document-modes a {
+.document-raw pre {
+  margin: 0;
+  padding: 0.875rem var(--space-4) 0.875rem 0;
+  font-size: var(--text-sm);
+  line-height: 1.65;
+  white-space: pre;
+}
+
+.document-raw code {
+  font-size: inherit;
+}
+
+/* Stays in place while the source scrolls sideways. */
+.document-raw .line-numbers {
+  position: sticky;
+  left: 0;
+  flex: none;
+  min-width: 2.75rem;
+  box-sizing: border-box;
+  padding-left: var(--space-3);
+  background: var(--bg-inset);
+  color: var(--fg-subtle);
+  text-align: right;
+  user-select: none;
+}
+
+/* MarkdownView: the table of contents. */
+
+.toc {
+  position: sticky;
+  top: calc(var(--header-height) + var(--space-8));
+  display: none;
+  max-height: calc(100dvh - var(--header-height) - 2 * var(--space-8));
+  overflow-y: auto;
+  font-size: var(--text-sm);
+}
+
+@media (min-width: 72rem) {
+  .toc {
+    display: block;
+  }
+}
+
+.toc-title {
+  margin: 0.375rem 0 0.625rem;
+  color: var(--fg-subtle);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.toc ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toc a {
+  display: block;
+  padding: var(--space-1) 0 var(--space-1) var(--space-3);
+  border-left: 1px solid var(--border);
   color: var(--fg-muted);
 }
 
-.document-modes a[aria-current='page'] {
-  color: var(--fg);
-  font-weight: 600;
+.toc .toc-level-3 a {
+  padding-left: var(--space-6);
 }
 
-.document-raw {
-  overflow-x: auto;
-  white-space: pre;
+.toc a:hover {
+  border-left-color: var(--fg-subtle);
+  color: var(--fg);
+  text-decoration: none;
 }
 
 /* MarkdownView: the rendered document. */
 
 .markdown {
+  color: var(--fg);
+  font-size: 0.96875rem;
+  line-height: 1.7;
   overflow-wrap: break-word;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+/* Clear of the sticky header when a link scrolls to it. */
+.markdown [id] {
+  scroll-margin-top: calc(var(--header-height) + var(--space-4));
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-weight: 600;
+}
+
+.markdown h1 {
+  margin: 0 0 var(--space-4);
+  font-size: 1.875rem;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+.markdown h2 {
+  margin: 2.5rem 0 var(--space-3);
+  font-size: 1.3125rem;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.markdown h3 {
+  margin: 1.75rem 0 var(--space-2);
+  font-size: 1.0625rem;
+  line-height: 1.4;
+}
+
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin: var(--space-6) 0 var(--space-2);
+  font-size: 0.96875rem;
+  line-height: 1.5;
+}
+
+.markdown h6 {
+  color: var(--fg-muted);
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown dl {
+  margin: 0 0 var(--space-4);
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: var(--space-6);
+}
+
+.markdown li {
+  margin: var(--space-1) 0;
+}
+
+.markdown li > ul,
+.markdown li > ol {
+  margin-bottom: 0;
+}
+
+.markdown a {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.markdown hr {
+  height: 1px;
+  margin: var(--space-8) 0;
+  border: none;
+  background: var(--border);
 }
 
 .markdown img {
   max-width: 100%;
 }
 
-.markdown pre {
-  overflow-x: auto;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-inset);
-}
-
 .markdown code {
-  font-size: 0.9em;
+  font-size: 0.84em;
 }
 
 .markdown :not(pre) > code {
-  padding: 0.1em 0.3em;
+  padding: 0.125rem 0.3125rem;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-muted);
 }
 
+.markdown pre {
+  margin: 0 0 1.25rem;
+  padding: 0.875rem var(--space-4);
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-inset);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.markdown pre code {
+  font-size: inherit;
+}
+
 .markdown blockquote {
-  margin: var(--space-4) 0;
-  padding: 0 var(--space-4);
-  border-left: 3px solid var(--border-strong);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
   color: var(--fg-muted);
 }
 
+.markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+/* Scrolls sideways when wider than the column, and shrinks to its content
+   when narrower, so the rounded border fits it. */
 .markdown table {
   display: block;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 0 1.25rem;
   overflow-x: auto;
-  border-collapse: collapse;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  border-spacing: 0;
+  font-size: var(--text-md);
+  line-height: 1.5;
 }
 
 .markdown th,
 .markdown td {
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--border);
+  padding: 0.5625rem 0.875rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.markdown th + th,
+.markdown td + td {
+  border-left: 1px solid var(--border);
+}
+
+.markdown tr:last-child td {
+  border-bottom: none;
+}
+
+.markdown th {
+  background: var(--bg-subtle);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
 .markdown .contains-task-list {
   padding-left: 1.25rem;
   list-style: none;
+}
+
+.markdown .task-list-item input {
+  margin-right: var(--space-2);
+  vertical-align: -0.125em;
+}
+
+/* GitHub's class for the footnotes' heading, which it hides. */
+.markdown .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.markdown .footnotes {
+  margin-top: var(--space-8);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: var(--text-md);
 }

@@ -78,3 +78,28 @@ export function ancestorPaths(path: string): string[] {
   const segments = path.split('/').slice(0, -1)
   return segments.map((_, i) => segments.slice(0, i + 1).join('/'))
 }
+
+// The part of `nodes` whose files have `query` in their path, ignoring case:
+// a directory stays when one of its files does. An empty query (after
+// trimming) keeps everything.
+export function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
+  const needle = query.trim().toLowerCase()
+  return needle === '' ? nodes : filterNodes(nodes, needle)
+}
+
+function filterNodes(nodes: TreeNode[], needle: string): TreeNode[] {
+  const kept: TreeNode[] = []
+  for (const node of nodes) {
+    if (node.kind === 'file') {
+      if (node.path.toLowerCase().includes(needle)) {
+        kept.push(node)
+      }
+      continue
+    }
+    const children = filterNodes(node.children, needle)
+    if (children.length > 0) {
+      kept.push({ ...node, children })
+    }
+  }
+  return kept
+}

@@ -1,17 +1,26 @@
+import { GitBranch } from 'lucide-react'
 import { Link, Outlet, useOutlet, useParams } from 'react-router'
 import { useProviders } from '../api/accounts.ts'
 import { useDocuments } from '../api/documents.ts'
 import { parseId } from '../api/ids.ts'
-import { type Repository, useRepositories } from '../api/repositories.ts'
+import {
+  type Repository,
+  type SyncStatus,
+  useRepositories,
+} from '../api/repositories.ts'
 import { ApiErrorMessage } from '../components/ApiErrorMessage.tsx'
 import { providerDisplayName, syncStatusText } from './repositories/format.ts'
 import { UpstreamLink } from './repositories/UpstreamLink.tsx'
+import { ContentHeader } from './repository/ContentHeader.tsx'
 import type { RepositoryContext } from './repository/context.ts'
 import { DocumentTree } from './repository/DocumentTree.tsx'
+import { RepositorySwitcher } from './repository/RepositorySwitcher.tsx'
 
-// /repositories/:repoId: the repository's documents as a tree, with the
-// selected document (/repositories/:repoId/documents/:documentId) beside it.
-// The tree stays mounted while the document changes.
+// /repositories/:repoId: a sidebar with the repository's documents as a
+// tree, and the selected document (/repositories/:repoId/documents/
+// :documentId) in the content column beside it. The tree stays mounted
+// while the document changes. The route asks AppLayout for the full-width
+// docs layout (router.tsx).
 export function RepositoryPage() {
   const params = useParams()
   const repoId = parseId(params.repoId)
@@ -26,40 +35,38 @@ export function RepositoryPage() {
   const documents = useDocuments(repository?.id)
   const outlet = useOutlet()
 
-  const back = (
-    <p>
-      <Link to="/repositories">
-        <span aria-hidden="true">← </span>Repositories
-      </Link>
-    </p>
-  )
-
   if (!repository) {
     let content
     if (repositories.data || repoId === null) {
       content = (
         <>
-          <h1>Repository not found</h1>
-          <p>This repository isn't tracked.</p>
+          <ContentHeader title="Repository not found" />
+          <div className="content-body">
+            <p>This repository isn't tracked.</p>
+          </div>
         </>
       )
     } else if (repositories.error) {
       content = (
-        <ApiErrorMessage
-          error={repositories.error}
-          title="Could not load this repository"
-          onRetry={() => void repositories.refetch()}
-        />
+        <>
+          <ContentHeader title="Repository" />
+          <div className="content-body">
+            <ApiErrorMessage
+              error={repositories.error}
+              title="Could not load this repository"
+              onRetry={() => void repositories.refetch()}
+            />
+          </div>
+        </>
       )
     } else {
-      content = <p>Loading…</p>
+      content = (
+        <div className="content-body">
+          <p className="muted">Loading…</p>
+        </div>
+      )
     }
-    return (
-      <>
-        {back}
-        {content}
-      </>
-    )
+    return <div className="docs-content">{content}</div>
   }
 
   const { full_name: fullName } = repository
@@ -73,10 +80,10 @@ export function RepositoryPage() {
   if (documents.data) {
     tree =
       documents.data.length === 0 ? (
-        <EmptyState repository={repository} />
+        <p className="tree-empty">No documents.</p>
       ) : (
         <DocumentTree
-          // A fresh open/closed state per repository.
+          // A fresh open/closed state and filter per repository.
           key={repository.id}
           repositoryId={repository.id}
           fullName={fullName}
@@ -94,39 +101,86 @@ export function RepositoryPage() {
       />
     )
   } else {
-    tree = <p>Loading documents…</p>
+    tree = <p className="tree-empty">Loading documents…</p>
   }
 
+  let content
+  if (outlet) {
+    content = (
+      <Outlet
+        context={
+          {
+            repository,
+            documents: documents.data,
+          } satisfies RepositoryContext
+        }
+      />
+    )
+  } else {
+    let body
+    if (documents.data?.length === 0) {
+      body = <EmptyState repository={repository} />
+    } else if (documents.data) {
+      body = <p className="muted">Choose a document.</p>
+    }
+    content = (
+      <>
+        <ContentHeader repository={repository} />
+        <div className="content-body">{body}</div>
+      </>
+    )
+  }
+
+  const count = documents.data?.length
+
   return (
-    <>
-      {back}
-      <div className="repository-heading">
-        <h1>{fullName}</h1>
-        <span>
-          Branch <code>{repository.tracked_branch}</code>
-        </span>
-        <span aria-live="polite">{syncStatusText(repository)}</span>
-        <UpstreamLink repository={repository} displayName={displayName} />
-      </div>
-      <div className="repository-browser">
-        <div>{tree}</div>
-        <div>
-          {outlet ? (
-            <Outlet
-              context={
-                {
-                  repository,
-                  documents: documents.data,
-                } satisfies RepositoryContext
-              }
-            />
-          ) : (
-            <p className="muted">Choose a document.</p>
-          )}
+    <div className="docs-layout">
+      <div className="docs-sidebar">
+        <RepositorySwitcher
+          current={repository}
+          repositories={repositories.data ?? [repository]}
+        />
+        <div className="sidebar-meta">
+          <span className="chip">
+            <GitBranch size={12} />
+            <span className="visually-hidden">Branch </span>
+            <code>{repository.tracked_branch}</code>
+          </span>
+          <span
+            className={`status-pill ${syncTone(repository.sync_status)}`}
+            aria-live="polite"
+          >
+            <span className="status-dot" />
+            {syncStatusText(repository)}
+          </span>
+          <UpstreamLink repository={repository} displayName={displayName} />
         </div>
+        {tree}
+        {count !== undefined && count > 0 && (
+          <p className="sidebar-footer">
+            {count === 1 ? '1 document' : `${count} documents`} on{' '}
+            {repository.tracked_branch}
+          </p>
+        )}
       </div>
-    </>
+      <div className="docs-content">{content}</div>
+    </div>
   )
+}
+
+// The status pill's colour.
+function syncTone(status: SyncStatus): string {
+  switch (status) {
+    case 'ok':
+      return 'ok'
+    case 'queued':
+    case 'running':
+      return 'busy'
+    case 'failed':
+      return 'failed'
+    default:
+      return 'pending'
+  }
 }
 
 // Why a repository has no documents, from its sync status.

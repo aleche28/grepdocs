@@ -20,6 +20,13 @@ React + TypeScript, built with Vite, React Router for routes, TanStack Query for
 - Routes are in `src/router.tsx`, one component per route in `src/pages/`. Pages that need a
   signed-in user sit under the `AppLayout` route. `/settings/accounts` is fixed by the API, which
   redirects there after linking an account.
+- Every page under `AppLayout` renders inside its `<main>`, capped at 70rem and padded
+  (`components.css`). A route opts out with `handle: { layout: 'docs' } satisfies LayoutHandle`
+  (`router.tsx`): `AppLayout` reads it with `useMatches()`, drops the cap and the padding
+  (`main.docs`) and makes the header sticky, and the page lays itself out to the window's edges.
+  The repository route uses it for its full-height sidebar (`RepositoryPage`), whose sticky parts
+  sit below `--header-height`. Use the handle, not a class set from inside the page, so nested
+  routes inherit it.
 - Auth (`src/api/auth.ts`): `AppLayout` is the guard. It renders nothing until the shared
   `useCurrentUser()` query (`GET /users/me`) resolves, and sends a `not_authenticated` user to
   `/login?redirect=<path>`; any other error shows a retry, never the login page. Any query or

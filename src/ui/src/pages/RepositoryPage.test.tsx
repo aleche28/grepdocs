@@ -43,9 +43,14 @@ async function findTreeLink(name: string) {
   return tree().findByRole('link', { name, hidden: true })
 }
 
+// A directory's name in its <summary>, which toggles it when clicked.
+function summary(name: string) {
+  return screen.getByText(name, { selector: 'summary .tree-name' })
+}
+
 // The <details> of a directory, found by its <summary>.
 function directory(name: string) {
-  return screen.getByText(name, { selector: 'summary' }).closest('details')!
+  return summary(name).closest('details')!
 }
 
 describe('RepositoryPage', () => {
@@ -124,8 +129,8 @@ describe('RepositoryPage', () => {
     await findTreeLink('setup.md')
 
     // Open api, close guides (which holds the selected document).
-    await user.click(screen.getByText('api', { selector: 'summary' }))
-    await user.click(screen.getByText('guides', { selector: 'summary' }))
+    await user.click(summary('api'))
+    await user.click(summary('guides'))
     await user.click(tree().getByRole('link', { name: 'auth.md' }))
 
     expect(router.state.location.pathname).toBe(
@@ -148,6 +153,114 @@ describe('RepositoryPage', () => {
     ).toBeInTheDocument()
     await waitFor(() => expect(directory('guides')).toHaveAttribute('open'))
     expect(api.requests).toEqual(['12'])
+  })
+
+  test('shows a breadcrumb to the document, ending in its path as the heading', async () => {
+    mockRepositoriesApi({ repositories: [synced] })
+    const setup = documentDetail({ path: 'docs/guides/setup.md' })
+    mockDocumentsApi([setup])
+    renderRepositoryPage(`/repositories/12/documents/${setup.id}`)
+
+    const heading = await screen.findByRole('heading', {
+      level: 1,
+      name: 'docs/guides/setup.md',
+    })
+    const breadcrumb = within(
+      screen.getByRole('navigation', { name: 'Breadcrumb' }),
+    )
+    const links = breadcrumb.getAllByRole('link')
+    expect(links.map((link) => link.textContent)).toEqual([
+      'Repositories',
+      'acme/docs',
+    ])
+    expect(links[0]).toHaveAttribute('href', '/repositories')
+    expect(links[1]).toHaveAttribute('href', '/repositories/12')
+    // The heading ends the trail, after the breadcrumb.
+    expect(
+      screen
+        .getByRole('navigation', { name: 'Breadcrumb' })
+        .compareDocumentPosition(heading),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  test('switches to another tracked repository', async () => {
+    const other = repository({ id: 13, full_name: 'acme/api' })
+    const secret = repository({
+      id: 14,
+      full_name: 'zeta/notes',
+      is_private: true,
+    })
+    mockRepositoriesApi({ repositories: [secret, synced, other] })
+    mockDocumentsApi([trackedDocument({ path: 'README.md' })])
+    const { user } = renderRepositoryPage('/repositories/12')
+
+    const trigger = await screen.findByRole('button', {
+      name: 'acme/docs, switch repository',
+    })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await user.click(trigger)
+
+    const panel = within(
+      document.getElementById(trigger.getAttribute('aria-controls')!)!,
+    )
+    const links = panel.getAllByRole('link')
+    expect(links.map((link) => link.textContent)).toEqual([
+      'acme/api',
+      'acme/docs',
+      'zeta/notes',
+      'All repositories',
+    ])
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/repositories/13',
+      '/repositories/12',
+      '/repositories/14',
+      '/repositories',
+    ])
+    expect(panel.getByRole('link', { name: 'acme/docs' })).toHaveAttribute(
+      'aria-current',
+      'true',
+    )
+    expect(panel.getByRole('link', { name: 'acme/api' })).not.toHaveAttribute(
+      'aria-current',
+    )
+  })
+
+  test('filters the tree by path, opening the directories that match', async () => {
+    mockRepositoriesApi({ repositories: [synced] })
+    mockDocumentsApi([
+      trackedDocument({ path: 'README.md' }),
+      trackedDocument({ path: 'docs/guides/Setup.md' }),
+      trackedDocument({ path: 'docs/api/auth.md' }),
+    ])
+    const { user } = renderRepositoryPage('/repositories/12')
+    await findTreeLink('README.md')
+    expect(screen.getByText('3 documents on main')).toBeInTheDocument()
+    const filter = screen.getByRole('searchbox', { name: 'Filter documents' })
+
+    await user.type(filter, 'setup')
+
+    expect(tree().getByRole('link', { name: 'Setup.md' })).toBeVisible()
+    expect(
+      tree().queryByRole('link', { name: 'README.md', hidden: true }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('api')).not.toBeInTheDocument()
+    expect(directory('docs')).toHaveAttribute('open')
+    expect(directory('guides')).toHaveAttribute('open')
+
+    await user.clear(filter)
+    await user.type(filter, 'nothing')
+
+    expect(
+      tree().getByText('No documents match “nothing”.'),
+    ).toBeInTheDocument()
+    expect(tree().queryByRole('link', { hidden: true })).not.toBeInTheDocument()
+
+    // Cleared, the tree is back as it was: every directory closed.
+    await user.clear(filter)
+
+    expect(tree().getByRole('link', { name: 'README.md' })).toBeVisible()
+    expect(directory('docs')).not.toHaveAttribute('open')
+    expect(directory('api')).not.toHaveAttribute('open')
   })
 
   test('highlights nothing for a document that is not in the list', async () => {
@@ -274,7 +387,8 @@ describe('RepositoryPage', () => {
     const api = mockDocumentsApi([trackedDocument({ path: 'README.md' })])
     renderRepositoryPage('/repositories/12')
     await findTreeLink('README.md')
-    expect(screen.getByText('Syncing…')).toBeInTheDocument()
+    // Announced as it changes.
+    expect(screen.getByText('Syncing…')).toHaveAttribute('aria-live', 'polite')
 
     api.documents = [trackedDocument({ path: 'CHANGELOG.md' })]
     update(state, 12, {
