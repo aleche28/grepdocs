@@ -6,6 +6,7 @@ import {
 } from '../../api/accounts.ts'
 import { AccountRow } from './AccountRow.tsx'
 import { accountName } from './format.ts'
+import { ExternalLink } from '../../components/ExternalLink.tsx'
 
 interface ProviderSectionProps {
   // The provider's name as accounts carry it.
@@ -65,14 +66,9 @@ export function ProviderSection({
               : `Link a ${displayName} account`}
           </a>
           {provider.install_url && (
-            <a
-              href={provider.install_url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
+            <ExternalLink href={provider.install_url}>
               Install the {displayName} App or manage its repository access
-              <span aria-hidden="true"> ↗</span>
-            </a>
+            </ExternalLink>
           )}
         </div>
       )}

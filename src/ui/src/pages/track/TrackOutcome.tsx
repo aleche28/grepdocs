@@ -14,6 +14,7 @@ import { ApiErrorMessage } from '../../components/ApiErrorMessage.tsx'
 import { Banner } from '../../components/Banner.tsx'
 import { accountName } from '../accounts/format.ts'
 import { installUrlOf, retryAfterText } from '../../components/errorText.ts'
+import { ExternalLink } from '../../components/ExternalLink.tsx'
 
 interface TrackOutcomeProps {
   track: UseMutationResult<Repository, Error, TrackRepositoryRequest>
@@ -69,10 +70,9 @@ export function TrackOutcome({
             <Banner tone="error" onDismiss={dismiss}>
               {displayName} can't find {requested}, or the {displayName} App
               isn't installed on it.{' '}
-              <a href={installUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink href={installUrl}>
                 Manage the {displayName} App's repository access
-                <span aria-hidden="true"> ↗</span>
-              </a>
+              </ExternalLink>
             </Banner>
           )
         }

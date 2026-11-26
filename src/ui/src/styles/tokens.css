@@ -1,0 +1,96 @@
+/* Design tokens: every colour, font, size, radius and shadow the UI uses.
+   The other stylesheets read these variables and never hard-code a colour,
+   so the dark theme stays complete. The theme follows the system setting. */
+
+:root {
+  color-scheme: light dark;
+
+  --font-sans: 'Inter Variable', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-md: 0.875rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.5rem;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  --control-height: 2rem;
+
+  /* Light theme. Text colours pass WCAG AA (4.5:1) on every background
+     below, --fg-subtle included. */
+  --bg: #ffffff;
+  --bg-subtle: #f8f8f9;
+  --bg-muted: #efeff1;
+  --bg-inset: #f4f4f5;
+  --border: #e5e5e8;
+  --border-strong: #d4d4d8;
+  --fg: #18181b;
+  --fg-muted: #52525b;
+  --fg-subtle: #6b6b75;
+  --shadow: 0 1px 2px rgb(0 0 0 / 5%), 0 8px 24px rgb(0 0 0 / 8%);
+  --overlay: rgb(24 24 27 / 40%);
+
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-text: #1d4ed8;
+  --accent-soft: #eef3fe;
+  --on-accent: #ffffff;
+
+  --ok: #15803d;
+  --ok-bg: #e8f7ee;
+  --ok-border: #bbe5cb;
+  --warn: #b45309;
+  --warn-bg: #fff7ed;
+  --warn-border: #fed7aa;
+  --danger: #b91c1c;
+  --danger-solid: #b91c1c;
+  --danger-hover: #991b1b;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111113;
+    --bg-subtle: #161618;
+    --bg-muted: #232327;
+    --bg-inset: #1b1b1e;
+    --border: #2a2a2e;
+    --border-strong: #3a3a40;
+    --fg: #ededef;
+    --fg-muted: #a8a8b0;
+    --fg-subtle: #8e8e98;
+    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 50%);
+    --overlay: rgb(0 0 0 / 60%);
+
+    --accent: #2563eb;
+    --accent-hover: #3b74f0;
+    --accent-text: #8aabff;
+    --accent-soft: rgb(59 116 240 / 16%);
+    --on-accent: #ffffff;
+
+    --ok: #4ade80;
+    --ok-bg: rgb(74 222 128 / 10%);
+    --ok-border: rgb(74 222 128 / 25%);
+    --warn: #fbbf24;
+    --warn-bg: rgb(251 191 36 / 8%);
+    --warn-border: rgb(251 191 36 / 30%);
+    --danger: #f87171;
+    --danger-solid: #dc2626;
+    --danger-hover: #b91c1c;
+    --danger-bg: rgb(248 113 113 / 10%);
+    --danger-border: rgb(248 113 113 / 30%);
+  }
+}

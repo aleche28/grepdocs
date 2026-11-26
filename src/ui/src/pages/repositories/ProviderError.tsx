@@ -6,6 +6,7 @@ import { ApiErrorMessage } from '../../components/ApiErrorMessage.tsx'
 import { installUrlOf, retryAfterText } from '../../components/errorText.ts'
 import { providerDisplayName } from './format.ts'
 import { RelinkPrompt } from './RelinkPrompt.tsx'
+import { ExternalLink } from '../../components/ExternalLink.tsx'
 
 interface ProviderErrorProps {
   error: Error
@@ -58,10 +59,9 @@ export function ProviderError({
           <>
             {displayName} can't find {fullName}, or the {displayName} App isn't
             installed on it.{' '}
-            <a href={installUrl} target="_blank" rel="noopener noreferrer">
+            <ExternalLink href={installUrl}>
               Manage the {displayName} App's repository access
-              <span aria-hidden="true"> ↗</span>
-            </a>
+            </ExternalLink>
           </>
         ) : (
           `${displayName} can't find ${fullName} any more.`

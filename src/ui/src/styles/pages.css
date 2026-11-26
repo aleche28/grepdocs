@@ -1,0 +1,283 @@
+/* Styles that belong to one page, by page. */
+
+.page-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+/* AccountsPage */
+
+.provider-section {
+  margin-bottom: var(--space-8);
+}
+
+.account-list {
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+
+.account-row {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.account-identity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-4);
+}
+
+/* Fades out once, after a link attempt changed this row. */
+.account-row.highlighted {
+  animation: highlight 3s ease-out;
+}
+
+@keyframes highlight {
+  from {
+    background: var(--accent-soft);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-row.highlighted {
+    animation: none;
+    background: var(--accent-soft);
+  }
+}
+
+/* TrackRepositoryPage */
+
+.filter input {
+  min-width: 16rem;
+}
+
+.repository-list {
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+
+.repository-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto 6rem;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.repository-row a {
+  overflow-wrap: anywhere;
+}
+
+.public-repository label,
+.public-repository input {
+  min-width: 16rem;
+}
+
+/* RepositoriesPage */
+
+.repository-entries {
+  margin: var(--space-4) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.repository-entry {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.repository-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-4);
+}
+
+.repository-identity a:first-child {
+  overflow-wrap: anywhere;
+}
+
+.sync-state p {
+  margin: 0;
+}
+
+.sync-state .warning {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+/* EditDialog */
+
+.edit-repository {
+  display: grid;
+  gap: var(--space-4);
+}
+
+/* The branch field: label, select and its notes. */
+.edit-repository > div:first-child {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.edit-repository p {
+  margin: 0;
+}
+
+.edit-repository .checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+/* RepositoryPage */
+
+.repository-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-4);
+}
+
+.repository-heading h1 {
+  overflow-wrap: anywhere;
+}
+
+.repository-browser {
+  display: grid;
+  grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+@media (max-width: 40rem) {
+  .repository-browser {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.document-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.document-tree ul ul {
+  padding-left: var(--space-4);
+}
+
+.document-tree li {
+  padding: 0.125rem 0;
+  overflow-wrap: anywhere;
+}
+
+.document-tree summary {
+  cursor: pointer;
+}
+
+.document-tree a {
+  color: inherit;
+}
+
+.document-tree a[aria-current='page'] {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+/* DocumentPage */
+
+.document h2 {
+  margin-top: 0;
+  overflow-wrap: anywhere;
+}
+
+.document-origin {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-4);
+  margin: 0 0 var(--space-3);
+}
+
+.document-modes {
+  display: flex;
+  gap: var(--space-4);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.document-modes a {
+  color: var(--fg-muted);
+}
+
+.document-modes a[aria-current='page'] {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.document-raw {
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* MarkdownView: the rendered document. */
+
+.markdown {
+  overflow-wrap: break-word;
+}
+
+.markdown img {
+  max-width: 100%;
+}
+
+.markdown pre {
+  overflow-x: auto;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-inset);
+}
+
+.markdown code {
+  font-size: 0.9em;
+}
+
+.markdown :not(pre) > code {
+  padding: 0.1em 0.3em;
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+}
+
+.markdown blockquote {
+  margin: var(--space-4) 0;
+  padding: 0 var(--space-4);
+  border-left: 3px solid var(--border-strong);
+  color: var(--fg-muted);
+}
+
+.markdown table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.markdown th,
+.markdown td {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+}
+
+.markdown .contains-task-list {
+  padding-left: 1.25rem;
+  list-style: none;
+}

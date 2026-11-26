@@ -19,6 +19,7 @@ import { type OwnerAndName, ownerOf, repositoryKey } from './track/messages.ts'
 import { PublicRepositoryForm } from './track/PublicRepositoryForm.tsx'
 import { RepositoryList } from './track/RepositoryList.tsx'
 import { TrackOutcome } from './track/TrackOutcome.tsx'
+import { ExternalLink } from '../components/ExternalLink.tsx'
 
 // An account the page can list repositories from, with its provider.
 interface Selectable extends AccountOption {
@@ -204,10 +205,9 @@ function AccountRepositories({
   const { account, label, provider } = selected
   const displayName = provider.display_name
   const installLink = provider.install_url && (
-    <a href={provider.install_url} target="_blank" rel="noopener noreferrer">
+    <ExternalLink href={provider.install_url}>
       Manage the {displayName} App's repository access
-      <span aria-hidden="true"> ↗</span>
-    </a>
+    </ExternalLink>
   )
 
   if (account.needs_relink) {

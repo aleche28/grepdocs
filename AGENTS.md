@@ -90,6 +90,7 @@ commands from `src/ui`. The Makefile at the repo root wraps them and handles the
 - Routes are in `src/router.tsx`, one component per route in `src/pages/`. Show a failed API call
   with `ApiErrorMessage`, a just-happened message with `Banner`, a confirmation or small form with
   `Dialog` (all in `src/components/`).
+- Colours come only from `src/styles/tokens.css` (light and dark); icons from `lucide-react`.
 - Tests are Vitest + Testing Library next to the code, with the API mocked by MSW and pages rendered
   with `renderRoute`. Vitest does not type-check: run `make ui-typecheck` too.
 

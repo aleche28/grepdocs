@@ -6,13 +6,16 @@ import {
   Outlet,
   useLocation,
 } from 'react-router'
+import { ChevronDown, FileSearch, LogOut } from 'lucide-react'
 import {
   isNotAuthenticated,
   loginPath,
+  type User,
   useCurrentUser,
   useLogout,
 } from '../api/auth.ts'
 import { ApiErrorMessage } from '../components/ApiErrorMessage.tsx'
+import { Menu } from '../components/Menu.tsx'
 
 // The auth guard and app shell for every page under it: nothing renders until
 // GET /users/me says who is signed in, and a signed-out user goes to the login
@@ -47,27 +50,51 @@ export function AppLayout() {
     )
   }
 
+  const name = user.fullname || user.email
+
   return (
     <>
       <header className="app-header">
         <Link to="/" className="app-name">
+          <span className="app-mark">
+            <FileSearch size={14} strokeWidth={2.2} />
+          </span>
           GrepDocs
         </Link>
         {/* No `end`: a NavLink is also active below its path, so Repositories
             stays highlighted on a repository's documents and the track page. */}
-        <nav aria-label="Main">
+        <nav aria-label="Main" className="app-nav">
           <NavLink to="/repositories">Repositories</NavLink>
           <NavLink to="/settings/accounts">Accounts</NavLink>
         </nav>
         <div className="app-user">
-          <span>{user.fullname || user.email}</span>
-          <button
-            type="button"
-            onClick={() => logout.mutate()}
-            disabled={logout.isPending}
+          <Menu
+            triggerClassName="user-button"
+            trigger={
+              <>
+                <span className="avatar" aria-hidden="true">
+                  {initials(user)}
+                </span>
+                <span className="user-name">{name}</span>
+                <ChevronDown size={14} />
+              </>
+            }
           >
-            Sign out
-          </button>
+            <div className="menu-header">
+              <strong>{name}</strong>
+              {user.fullname && <span className="muted">{user.email}</span>}
+            </div>
+            <div className="menu-separator" />
+            <button
+              type="button"
+              className="menu-item"
+              onClick={() => logout.mutate()}
+              disabled={logout.isPending}
+            >
+              <LogOut size={15} />
+              Sign out
+            </button>
+          </Menu>
         </div>
       </header>
       <main>
@@ -78,4 +105,20 @@ export function AppLayout() {
       </main>
     </>
   )
+}
+
+// Up to two letters for the avatar: the first and last word of the name, or
+// the start of the email when there is no name.
+function initials(user: Pick<User, 'fullname' | 'email'>): string {
+  const words = user.fullname.trim().split(/\s+/).filter(Boolean)
+  const letters =
+    words.length === 0
+      ? [user.email]
+      : words.length === 1
+        ? [words[0]]
+        : [words[0], words[words.length - 1]]
+  return letters
+    .map((word) => Array.from(word)[0] ?? '')
+    .join('')
+    .toUpperCase()
 }
