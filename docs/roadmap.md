@@ -163,7 +163,8 @@ browses and reads their documentation in a browser. This is the first point a re
 exists.
 
 Status: **document API + re-link flag + UI project setup + logout fix + UI sign-in + app shell +
-linked accounts page + track page + repositories page + document tree + document viewer done** — `GET /documents`, `GET /documents/{id}` and `/raw` are implemented, `GET /accounts` flags
+linked accounts page + track page + repositories page + document tree + document viewer +
+visual design pass done** — `GET /documents`, `GET /documents/{id}` and `/raw` are implemented, `GET /accounts` flags
 accounts that need re-linking (`needs_relink`), and `POST /auth/logout` ends the session. `src/ui` is a Vite + React + TypeScript app with routing (placeholder pages), an API client
 that reads the error envelope, a shared TanStack Query client, and its own CI job; locally it runs
 beside the API through the Vite dev-server proxy. Signing in with Google returns the user to the
@@ -219,8 +220,12 @@ Google sign-in failures back to the UI (#119; the GitHub linking half is done).
   viewer (**done** — `docs/prd/071-document-viewer.md`: rendered client-side with react-markdown
   and GitHub's sanitizing allow-list, or raw with `?view=raw`; path, branch, synced commit and a
   GitHub link; relative links to synced documents open in the viewer, other relative links and
-  images point at GitHub at the synced commit). The project itself is **done** (routing, API
-  client, query client, lint/format, CI), and so is every screen of this phase.
+  images point at GitHub at the synced commit); visual design pass (**done**: design tokens with
+  light and dark themes, base controls, self-hosted fonts and icons, the app shell, a docs-site
+  layout for the repository and document pages, restyled management pages with status pills and
+  row menus, a real login page, and consistent empty and loading states on every page). The
+  project itself is **done** (routing, API client, query client, lint/format, CI), and so is every
+  screen of this phase.
 - A documented way to run the API and the UI together locally (dev-server proxy, so the session
   cookie stays same-origin). **Done** — `make run` + `make ui-dev`, README "Run the API and the UI
   together".

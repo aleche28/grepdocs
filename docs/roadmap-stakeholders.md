@@ -31,8 +31,10 @@ reading documentation; editing, search, and groups arrive afterwards, each with 
   to date, updates it on request or each time you open GrepDocs, and lets you change its branch or
   stop following it, browsing each repository's documents as a folder tree, and reading each
   document, formatted as on GitHub or as plain source, with links between documents that keep you
-  in GrepDocs. Still to come before it is ready for others to use: protection against misuse (such
-  as too many requests at once), and a clear message when signing in with Google fails.
+  in GrepDocs. The app also has a consistent look, in light and dark, with a proper sign-in page and
+  clear empty and loading states on every page. Still to come before it is ready for others to use:
+  protection against misuse (such as too many requests at once), and a clear message when signing
+  in with Google fails.
 
 ## Later
 
