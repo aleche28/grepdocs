@@ -30,20 +30,20 @@ describe('RepositoriesPage sync', () => {
     const row = await findRow('acme/docs')
     await user.click(row.getByRole('button', { name: 'Sync acme/docs' }))
 
-    expect(await row.findByText('Waiting to sync…')).toBeInTheDocument()
+    expect(await row.findByText('Queued')).toBeInTheDocument()
     expect(paths).toEqual([apiUrl('/repositories/12/sync')])
     expect(row.getByRole('button', { name: 'Sync acme/docs' })).toBeDisabled()
 
     update(state, 12, { sync_status: 'running' })
     await vi.advanceTimersByTimeAsync(fastPollMs)
-    expect(await row.findByText('Syncing…')).toBeInTheDocument()
+    expect(await row.findByText('Syncing')).toBeInTheDocument()
 
     update(state, 12, {
       sync_status: 'ok',
       last_sync_at: '2026-11-25T10:12:00Z',
     })
     await vi.advanceTimersByTimeAsync(fastPollMs)
-    expect(await row.findByText(/^Synced /)).toBeInTheDocument()
+    expect(await row.findByText('Synced')).toBeInTheDocument()
     expect(row.getByRole('button', { name: 'Sync acme/docs' })).toBeEnabled()
   })
 
@@ -55,7 +55,7 @@ describe('RepositoriesPage sync', () => {
 
     const row = await findRow('acme/docs')
     await user.click(row.getByRole('button', { name: 'Sync acme/docs' }))
-    await row.findByText('Waiting to sync…')
+    await row.findByText('Queued')
 
     update(state, 12, {
       sync_status: 'failed',
@@ -85,7 +85,7 @@ describe('RepositoriesPage sync', () => {
     const row = await findRow('acme/docs')
     await user.click(row.getByRole('button', { name: 'Sync acme/docs' }))
 
-    expect(await row.findByText('Syncing…')).toBeInTheDocument()
+    expect(await row.findByText('Syncing')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
@@ -162,9 +162,9 @@ describe('RepositoriesPage sync', () => {
     const handbook = await findRow('acme/handbook')
     await user.click(docs.getByRole('button', { name: 'Sync acme/docs' }))
 
-    const pending = docs.getByRole('button', { name: 'Sync acme/docs' })
-    expect(pending).toBeDisabled()
-    expect(pending).toHaveTextContent('Starting…')
+    expect(docs.getByRole('button', { name: 'Sync acme/docs' })).toBeDisabled()
+    expect(docs.getByText('Starting…')).toBeInTheDocument()
+    expect(handbook.queryByText('Starting…')).not.toBeInTheDocument()
     expect(
       handbook.getByRole('button', { name: 'Sync acme/handbook' }),
     ).toBeEnabled()
@@ -222,7 +222,7 @@ describe('RepositoriesPage auto-sync', () => {
     renderRepositoriesPage()
 
     const row = await findRow('acme/pending')
-    expect(await row.findByText('Waiting to sync…')).toBeInTheDocument()
+    expect(await row.findByText('Queued')).toBeInTheDocument()
     await waitFor(() => expect(paths).toHaveLength(4))
     expect(paths.toSorted()).toEqual(
       [1, 2, 3, 4].map((id) => apiUrl(`/repositories/${id}/sync`)),

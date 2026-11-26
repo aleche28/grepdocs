@@ -14,7 +14,7 @@ import {
   repository,
   update,
 } from '../test/repositories.tsx'
-import { errorResponse } from '../test/helpers.ts'
+import { errorResponse, findRow } from '../test/helpers.ts'
 import { server } from '../test/server.ts'
 
 function branch(name: string): Branch {
@@ -62,8 +62,9 @@ async function openEdit(
   user: ReturnType<typeof renderRepositoriesPage>['user'],
 ) {
   await user.click(
-    await screen.findByRole('button', { name: 'Edit acme/docs' }),
+    await screen.findByRole('button', { name: 'More actions for acme/docs' }),
   )
+  await user.click(screen.getByRole('button', { name: 'Edit branch and sync' }))
   return within(await screen.findByRole('dialog', { name: 'Edit acme/docs' }))
 }
 
@@ -75,7 +76,7 @@ describe('RepositoriesPage edit', () => {
     const calls = mockBranches([branch('main'), branch('trunk'), branch('dev')])
     const { user } = renderRepositoriesPage()
 
-    await screen.findByRole('button', { name: 'Edit acme/docs' })
+    await screen.findByRole('button', { name: 'More actions for acme/docs' })
     // Requested only once the dialog opens.
     expect(calls.count).toBe(0)
     const dialog = await openEdit(user)
@@ -147,9 +148,11 @@ describe('RepositoriesPage edit', () => {
     await waitFor(() =>
       expect(syncs).toEqual([apiUrl('/repositories/12/sync')]),
     )
-    expect(await screen.findByText('Waiting to sync…')).toBeInTheDocument()
-    // Focus returns to the button that opened the dialog.
-    expect(screen.getByRole('button', { name: 'Edit acme/docs' })).toHaveFocus()
+    expect(await screen.findByText('Queued')).toBeInTheDocument()
+    // Focus returns to the menu button the dialog was opened from.
+    expect(
+      screen.getByRole('button', { name: 'More actions for acme/docs' }),
+    ).toHaveFocus()
   })
 
   test('turns auto-sync on without a sync', async () => {
@@ -170,7 +173,7 @@ describe('RepositoriesPage edit', () => {
       'Saved acme/docs.',
     )
     expect(bodies).toEqual([{ auto_sync: true }])
-    expect(screen.getByText('Auto-sync')).toBeInTheDocument()
+    expect((await findRow('acme/docs')).getByText('On')).toBeInTheDocument()
   })
 
   test('closes without a request when nothing changed', async () => {

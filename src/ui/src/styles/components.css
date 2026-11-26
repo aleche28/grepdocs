@@ -211,6 +211,25 @@ main.docs > .error {
   color: var(--fg-subtle);
 }
 
+/* A destructive action, such as Untrack. */
+.menu-panel .menu-item.menu-danger,
+.menu-panel .menu-danger svg {
+  color: var(--danger);
+}
+
+.menu-panel .menu-item.menu-danger:hover:enabled {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+/* An ExternalLink in the panel: its icon leads, like the others'. */
+.menu-panel .menu-item .external-icon {
+  order: -1;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
 /* ApiErrorMessage, Banner and .warning: a message box with a tone. */
 
 .error,
@@ -281,6 +300,20 @@ main.docs > .error {
   background: var(--warn-bg);
 }
 
+/* A warning with a leading icon and a <p>, like the other messages. */
+.warning.with-icon {
+  display: flex;
+}
+
+.warning p {
+  flex: 1;
+  margin: 0;
+}
+
+.warning .notice-icon {
+  color: var(--warn);
+}
+
 /* A row of buttons. */
 .actions {
   display: flex;
@@ -328,6 +361,58 @@ main.docs > .error {
   margin-top: var(--space-6);
   padding-top: var(--space-4);
   border-top: 1px solid var(--border);
+}
+
+/* An empty list (a short explanation and the action that fills it), and the
+   same frame while the list loads. */
+
+.empty-state {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  padding: 3rem var(--space-6);
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.empty-state h2 {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-md);
+}
+
+.empty-state p {
+  max-width: 26rem;
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+.empty-state .button {
+  margin-top: var(--space-2);
+}
+
+.empty-icon {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: var(--bg-muted);
+  color: var(--fg-muted);
+}
+
+.empty-state.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-style: solid;
+  border-color: var(--border);
+  color: var(--fg-subtle);
+}
+
+.empty-state.loading p {
+  color: inherit;
 }
 
 /* A fact in monospace, such as a branch or a commit. */

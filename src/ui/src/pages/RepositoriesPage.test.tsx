@@ -36,24 +36,121 @@ describe('RepositoriesPage', () => {
     const docs = await findRow('acme/docs')
     expect(docs.getByText('Public')).toBeInTheDocument()
     expect(docs.getByText('trunk')).toBeInTheDocument()
-    const upstream = docs.getByRole('link', { name: 'acme/docs on GitHub' })
-    expect(upstream).toHaveAttribute('href', 'https://github.com/acme/docs')
-    expect(upstream).toHaveAttribute('target', '_blank')
-    expect(upstream).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(docs.getByText('GitHub · @octocat')).toBeInTheDocument()
 
     const notes = await findRow('octocat/notes')
     expect(notes.getByText('Private')).toBeInTheDocument()
   })
 
-  test('links to the track page', async () => {
+  test('labels each cell for screen readers', async () => {
+    mockRepositoriesApi({ repositories: [repository({ sync_status: 'ok' })] })
+    renderRepositoriesPage()
+
+    const row = await findRow('acme/docs')
+    // The column headers are hidden from them.
+    expect(row.getByText('Branch')).toHaveClass('visually-hidden')
+    expect(row.getByText('Status')).toHaveClass('visually-hidden')
+    expect(row.getByText('Auto-sync')).toHaveClass('cell-label')
+  })
+
+  test('names where a repository without an account comes from', async () => {
+    mockRepositoriesApi({
+      repositories: [
+        repository({ id: 12, full_name: 'acme/docs', account_id: null }),
+        repository({
+          id: 13,
+          full_name: 'acme/private',
+          account_id: null,
+          is_private: true,
+        }),
+      ],
+    })
+    renderRepositoriesPage()
+
+    expect(
+      (await findRow('acme/docs')).getByText('GitHub · public, no account'),
+    ).toBeInTheDocument()
+    expect(
+      (await findRow('acme/private')).getByText('GitHub · no account'),
+    ).toBeInTheDocument()
+  })
+
+  test('counts the tracked repositories', async () => {
+    mockRepositoriesApi({
+      repositories: [
+        repository({ id: 12, full_name: 'acme/docs' }),
+        repository({ id: 13, full_name: 'acme/handbook' }),
+      ],
+    })
+    renderRepositoriesPage()
+
+    expect(
+      await screen.findByText('2 tracked repositories'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'Track a repository' }),
+    ).toHaveAttribute('href', '/repositories/track')
+  })
+
+  test('says one tracked repository', async () => {
+    mockRepositoriesApi({ repositories: [repository()] })
+    renderRepositoriesPage()
+
+    expect(await screen.findByText('1 tracked repository')).toBeInTheDocument()
+  })
+
+  test('shows the other actions in a menu', async () => {
+    mockRepositoriesApi({ repositories: [repository()] })
+    const { user } = renderRepositoriesPage()
+
+    const row = await findRow('acme/docs')
+    const more = row.getByRole('button', { name: 'More actions for acme/docs' })
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    expect(
+      row.queryByRole('button', { name: 'Untrack' }),
+    ).not.toBeInTheDocument()
+
+    await user.click(more)
+
+    expect(more).toHaveAttribute('aria-expanded', 'true')
+    expect(
+      row.getByRole('button', { name: 'Edit branch and sync' }),
+    ).toBeInTheDocument()
+    const upstream = row.getByRole('link', { name: 'View on GitHub' })
+    expect(upstream).toHaveAttribute('href', 'https://github.com/acme/docs')
+    expect(upstream).toHaveAttribute('target', '_blank')
+    expect(upstream).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(row.getByRole('button', { name: 'Untrack' })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    expect(more).toHaveFocus()
+  })
+
+  test('explains an empty list, with the way to track one', async () => {
     mockRepositoriesApi({})
     renderRepositoriesPage()
 
     expect(
+      await screen.findByRole('heading', { name: 'No repositories yet' }),
+    ).toBeInTheDocument()
+    // Only the empty state's: the heading drops its own.
+    expect(
       screen.getByRole('link', { name: 'Track a repository' }),
     ).toHaveAttribute('href', '/repositories/track')
+    expect(screen.queryByText(/tracked repositor/)).not.toBeInTheDocument()
+  })
+
+  test('says the list is loading', async () => {
+    mockRepositoriesApi({})
+    server.use(
+      http.get(apiUrl('/repositories'), () => new Promise<Response>(() => {})),
+    )
+    renderRepositoriesPage()
+
+    expect(await screen.findByText('Loading repositories…')).toBeInTheDocument()
     expect(
-      await screen.findByText("You don't track any repository yet."),
+      screen.getByRole('link', { name: 'Track a repository' }),
     ).toBeInTheDocument()
   })
 
@@ -72,10 +169,8 @@ describe('RepositoriesPage', () => {
     )
     renderRepositoriesPage()
 
-    expect((await findRow('acme/docs')).getByText('Auto-sync')).toBeVisible()
-    expect(
-      (await findRow('acme/handbook')).queryByText('Auto-sync'),
-    ).not.toBeInTheDocument()
+    expect((await findRow('acme/docs')).getByText('On')).toBeVisible()
+    expect((await findRow('acme/handbook')).getByText('Off')).toBeVisible()
   })
 
   test('shows a failure to load with a retry', async () => {
@@ -103,13 +198,9 @@ describe('RepositoriesPage', () => {
 
   test.each<[string, Partial<Repository>, string]>([
     ['pending', { sync_status: 'pending' }, 'Not synced yet'],
-    ['queued', { sync_status: 'queued' }, 'Waiting to sync…'],
-    ['running', { sync_status: 'running' }, 'Syncing…'],
-    [
-      'ok',
-      { sync_status: 'ok', last_sync_at: syncedAt },
-      `Synced ${formatDateTime(syncedAt)}`,
-    ],
+    ['queued', { sync_status: 'queued' }, 'Queued'],
+    ['running', { sync_status: 'running' }, 'Syncing'],
+    ['ok', { sync_status: 'ok', last_sync_at: syncedAt }, 'Synced'],
     [
       'an unknown status',
       { sync_status: 'paused' as Repository['sync_status'] },
@@ -118,7 +209,7 @@ describe('RepositoriesPage', () => {
     [
       'a retry queued after a failure',
       { sync_status: 'queued', sync_error: 'internal' },
-      'Waiting to sync…',
+      'Queued',
     ],
   ])('shows %s', async (_, overrides, text) => {
     mockRepositoriesApi({ repositories: [repository(overrides)] })
@@ -127,6 +218,22 @@ describe('RepositoriesPage', () => {
     const row = await findRow('acme/docs')
     expect(row.getByText(text)).toBeInTheDocument()
     expect(row.queryByText('Sync failed.')).not.toBeInTheDocument()
+  })
+
+  test('says how long ago a repository synced', async () => {
+    const fourMinutesAgo = new Date(Date.now() - 4 * 60_000).toISOString()
+    mockRepositoriesApi({
+      repositories: [
+        repository({ sync_status: 'ok', last_sync_at: fourMinutesAgo }),
+      ],
+    })
+    renderRepositoriesPage()
+
+    const row = await findRow('acme/docs')
+    const when = row.getByText('4 minutes ago')
+    expect(when).toHaveAttribute('datetime', fourMinutesAgo)
+    // The date and time on hover.
+    expect(when).toHaveAttribute('title', formatDateTime(fourMinutesAgo))
   })
 
   test('disables Sync while a sync is busy', async () => {
@@ -226,15 +333,19 @@ describe('RepositoriesPage sync errors', () => {
       "acme/docs has too many files for GitHub to list at once. This isn't supported yet.",
     ],
     ['provider_not_supported', "GitHub isn't available on this server."],
-    ['internal', 'The sync failed. Try again; if it keeps failing, report it.'],
+    [
+      'internal',
+      'Something went wrong. Try again; if it keeps failing, report it.',
+    ],
     [
       'a_new_code',
-      'The sync failed. Try again; if it keeps failing, report it.',
+      'Something went wrong. Try again; if it keeps failing, report it.',
     ],
   ])('explains %s', async (code, text) => {
     renderFailed(code)
 
     const row = await findRow('acme/docs')
+    expect(row.getByText('Failed')).toBeInTheDocument()
     expect(row.getByText('Sync failed.')).toBeInTheDocument()
     expect(row.getByText(text)).toBeInTheDocument()
   })

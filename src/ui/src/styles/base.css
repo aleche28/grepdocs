@@ -63,6 +63,24 @@ pre {
   white-space: nowrap;
 }
 
+/* An icon that turns while something starts, such as a sync. Still for
+   users who ask for reduced motion: the text around it says what happens. */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+
 /* Buttons. A plain <button> is the secondary style; .button gives a link that
    starts a flow (link, re-link) the same look. */
 
