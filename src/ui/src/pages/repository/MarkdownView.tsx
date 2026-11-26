@@ -1,4 +1,13 @@
-import { type ComponentProps, memo, useEffect } from 'react'
+import {
+  type ComponentProps,
+  memo,
+  type RefObject,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import Markdown, {
   type Components,
   defaultUrlTransform,
@@ -29,13 +38,85 @@ interface MarkdownViewProps {
   links: LinkTargets
 }
 
-// The rendered document. Loaded lazily (DocumentPage), so the Markdown
-// libraries are a chunk of their own. It follows the URL's fragment here,
-// outside the memoized MarkdownContent, so a click on a heading link does
-// not parse the document again.
+interface MarkdownContentProps extends MarkdownViewProps {
+  articleRef: RefObject<HTMLElement | null>
+}
+
+// The rendered document, then its table of contents. Loaded lazily
+// (DocumentPage), so the Markdown libraries are a chunk of their own. It
+// follows the URL's fragment here, outside the memoized MarkdownContent, so
+// a click on a heading link does not parse the document again.
 export default function MarkdownView(props: MarkdownViewProps) {
-  useScrollToFragment(props.path)
-  return <MarkdownContent {...props} />
+  const { content, path, links } = props
+  const articleRef = useRef<HTMLElement>(null)
+  const [headings, setHeadings] = useState<Heading[]>([])
+  useScrollToFragment(path)
+
+  // Read from the rendered article, on the props MarkdownContent renders
+  // from: the ids are the ones the sanitizer and rehype-slug gave, prefixed,
+  // headings from inline HTML included. Before paint, so the table does not
+  // appear a frame late.
+  useLayoutEffect(() => {
+    setHeadings(readHeadings(articleRef.current))
+  }, [content, path, links])
+
+  return (
+    <>
+      <MarkdownContent {...props} articleRef={articleRef} />
+      <TableOfContents headings={headings} />
+    </>
+  )
+}
+
+// An h2 or h3 of the document, for the table of contents.
+interface Heading {
+  id: string
+  text: string
+  level: 2 | 3
+}
+
+function readHeadings(article: HTMLElement | null): Heading[] {
+  if (!article) {
+    return []
+  }
+  const headings: Heading[] = []
+  for (const element of article.querySelectorAll('h2[id], h3[id]')) {
+    const text = element.textContent?.trim() ?? ''
+    // The footnotes' own heading, which GitHub hides, is not a section.
+    if (text === '' || element.closest('section[data-footnotes]')) {
+      continue
+    }
+    headings.push({
+      id: element.id,
+      text,
+      level: element.tagName === 'H2' ? 2 : 3,
+    })
+  }
+  return headings
+}
+
+// "On this page": a link to each heading, which scrolls there the way a
+// heading link in the document does (the URL's fragment changes, and
+// useScrollToFragment follows it). Nothing when there are no headings.
+function TableOfContents({ headings }: { headings: Heading[] }) {
+  const titleId = useId()
+  if (headings.length === 0) {
+    return null
+  }
+  return (
+    <nav className="toc" aria-labelledby={titleId}>
+      <p id={titleId} className="toc-title">
+        On this page
+      </p>
+      <ul>
+        {headings.map((heading) => (
+          <li key={heading.id} className={`toc-level-${heading.level}`}>
+            <a href={`#${heading.id}`}>{heading.text}</a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
 }
 
 // GitHub Flavored Markdown, with the inline HTML GitHub allows, as React
@@ -65,9 +146,10 @@ const MarkdownContent = memo(function MarkdownContent({
   content,
   path,
   links,
-}: MarkdownViewProps) {
+  articleRef,
+}: MarkdownContentProps) {
   return (
-    <article className="markdown">
+    <article className="markdown" ref={articleRef}>
       <Markdown
         remarkPlugins={remarkPlugins}
         remarkRehypeOptions={remarkRehypeOptions}
