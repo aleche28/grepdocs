@@ -7,7 +7,7 @@ import {
   useLocation,
   useMatches,
 } from 'react-router'
-import { ChevronDown, FileSearch, LogOut } from 'lucide-react'
+import { ChevronDown, FileSearch, LoaderCircle, LogOut } from 'lucide-react'
 import {
   isNotAuthenticated,
   loginPath,
@@ -64,7 +64,10 @@ export function AppLayout() {
     }
     return (
       <main>
-        <p>Loading…</p>
+        <div className="empty-state loading">
+          <LoaderCircle className="spin" size={16} />
+          <p>Loading…</p>
+        </div>
       </main>
     )
   }

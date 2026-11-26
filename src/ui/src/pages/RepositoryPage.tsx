@@ -1,4 +1,13 @@
-import { GitBranch } from 'lucide-react'
+import {
+  FileQuestion,
+  FileText,
+  FolderGit2,
+  GitBranch,
+  LoaderCircle,
+  RefreshCw,
+  TriangleAlert,
+} from 'lucide-react'
+import type { ReactNode } from 'react'
 import { Link, Outlet, useOutlet, useParams } from 'react-router'
 import { useProviders } from '../api/accounts.ts'
 import { useDocuments } from '../api/documents.ts'
@@ -43,7 +52,15 @@ export function RepositoryPage() {
         <>
           <ContentHeader title="Repository not found" />
           <div className="content-body">
-            <p>This repository isn't tracked.</p>
+            <div className="empty-state">
+              <span className="empty-icon">
+                <FileQuestion size={20} />
+              </span>
+              <p>This repository isn't tracked.</p>
+              <Link to="/repositories" className="button">
+                Go to your repositories
+              </Link>
+            </div>
           </div>
         </>
       )
@@ -63,7 +80,10 @@ export function RepositoryPage() {
     } else {
       content = (
         <div className="content-body">
-          <p className="muted">Loading…</p>
+          <div className="empty-state loading">
+            <LoaderCircle className="spin" size={16} />
+            <p>Loading repository…</p>
+          </div>
         </div>
       )
     }
@@ -176,30 +196,47 @@ function EmptyState({ repository }: { repository: Repository }) {
     case 'queued':
     case 'running':
       return (
-        <p>
+        <EmptyFrame icon={<RefreshCw size={20} />} title="Syncing">
           {fullName} is syncing. Its documents appear here when the sync ends.
-        </p>
+        </EmptyFrame>
       )
     case 'failed':
       return (
-        <p className="warning">
+        <EmptyFrame icon={<TriangleAlert size={20} />} title="Last sync failed">
           The last sync of {fullName} failed.{' '}
           <Link to="/repositories">See what went wrong</Link>
-        </p>
+        </EmptyFrame>
       )
     case 'ok':
       return (
-        <p>
+        <EmptyFrame icon={<FileText size={20} />} title="No documents">
           There are no Markdown files on branch{' '}
           <code>{repository.tracked_branch}</code>.
-        </p>
+        </EmptyFrame>
       )
     default:
       return (
-        <p>
+        <EmptyFrame icon={<FolderGit2 size={20} />} title="Not synced yet">
           {fullName} hasn't been synced yet.{' '}
           <Link to="/repositories">Sync it from Repositories</Link>
-        </p>
+        </EmptyFrame>
       )
   }
+}
+
+interface EmptyFrameProps {
+  icon: ReactNode
+  title: string
+  // One sentence, with its link.
+  children: ReactNode
+}
+
+function EmptyFrame({ icon, title, children }: EmptyFrameProps) {
+  return (
+    <div className="empty-state">
+      <span className="empty-icon">{icon}</span>
+      <h2>{title}</h2>
+      <p>{children}</p>
+    </div>
+  )
 }

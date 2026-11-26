@@ -65,7 +65,7 @@ export const DocumentTree = memo(function DocumentTree({
 
   return (
     <>
-      <div className="tree-filter">
+      <div className="search-field tree-filter">
         <label htmlFor={filterId} className="visually-hidden">
           Filter documents
         </label>

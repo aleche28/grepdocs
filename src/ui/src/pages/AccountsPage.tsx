@@ -1,3 +1,4 @@
+import { LoaderCircle, ServerOff, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import {
@@ -62,14 +63,37 @@ export function AccountsPage() {
       notice && 'link' in notice && 'result' in notice.link
         ? notice.link.accountId
         : null
-    content = groupByProvider(providers.data, accounts.data).map((group) => (
-      <ProviderSection
-        key={group.name}
-        highlightId={highlightId}
-        onUnlink={(account, name) => setUnlinkTarget({ account, name })}
-        {...group}
-      />
-    ))
+    const groups = groupByProvider(providers.data, accounts.data)
+    // Only the accounts the page can re-link.
+    const expired = groups
+      .filter((group) => group.provider)
+      .flatMap((group) => group.accounts)
+      .filter((account) => account.needs_relink).length
+    content =
+      groups.length === 0 ? (
+        <NoProviders />
+      ) : (
+        <>
+          {expired > 0 && (
+            <div className="warning with-icon">
+              <TriangleAlert className="notice-icon" size={16} />
+              <p>
+                {expired === 1
+                  ? "1 account needs re-linking: repositories that use it can't sync until you do."
+                  : `${expired} accounts need re-linking: repositories that use them can't sync until you do.`}
+              </p>
+            </div>
+          )}
+          {groups.map((group) => (
+            <ProviderSection
+              key={group.name}
+              highlightId={highlightId}
+              onUnlink={(account, name) => setUnlinkTarget({ account, name })}
+              {...group}
+            />
+          ))}
+        </>
+      )
   } else if (providers.error || accounts.error) {
     // Only when there is nothing to show: a failed background refetch keeps
     // the lists on screen, like the auth guard keeps the current user.
@@ -84,14 +108,30 @@ export function AccountsPage() {
       />
     )
   } else {
-    content = <p>Loading…</p>
+    content = (
+      <div className="empty-state loading">
+        <LoaderCircle className="spin" size={16} />
+        <p>Loading accounts…</p>
+      </div>
+    )
   }
+
+  const count = accounts.data?.length
 
   return (
     <>
-      <h1 ref={headingRef} tabIndex={-1}>
-        Linked accounts
-      </h1>
+      <div className="page-heading">
+        <div>
+          <h1 ref={headingRef} tabIndex={-1}>
+            Linked accounts
+          </h1>
+          {count !== undefined && count > 0 && (
+            <p className="page-subtitle">
+              {count === 1 ? '1 linked account' : `${count} linked accounts`}
+            </p>
+          )}
+        </div>
+      </div>
       {notice && 'unlinked' in notice && (
         <Banner tone="success" onDismiss={() => setNotice(null)}>
           Unlinked {notice.unlinked}.
@@ -125,6 +165,22 @@ export function AccountsPage() {
         />
       )}
     </>
+  )
+}
+
+// The server configures no provider, so there is nothing to link.
+function NoProviders() {
+  return (
+    <div className="empty-state">
+      <span className="empty-icon">
+        <ServerOff size={20} />
+      </span>
+      <h2>No git providers set up</h2>
+      <p>
+        This server has no git provider configured, so there is no account to
+        link yet. Ask whoever runs GrepDocs to set one up.
+      </p>
+    </div>
   )
 }
 

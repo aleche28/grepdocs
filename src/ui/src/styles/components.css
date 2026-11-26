@@ -265,7 +265,8 @@ main.docs > .error {
   justify-items: start;
 }
 
-.notice-body button {
+.notice-body button,
+.notice-body .button {
   margin-top: var(--space-1);
 }
 
@@ -379,6 +380,26 @@ main.docs > .error {
   border-top: 1px solid var(--border);
 }
 
+/* A search box with its icon inside, such as a filter. The label is
+   visually hidden; the placeholder repeats it. */
+
+.search-field {
+  position: relative;
+}
+
+.search-field svg {
+  position: absolute;
+  top: 50%;
+  left: 0.625rem;
+  color: var(--fg-subtle);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.search-field input {
+  padding-left: 1.875rem;
+}
+
 /* Form fields: a label, the control, and hints below it. */
 
 .field {
@@ -422,6 +443,108 @@ main.docs > .error {
   font-size: var(--text-sm);
 }
 
+/* A bordered list, such as the repositories or a provider's accounts: a
+   header row (.list-card-header, or the repositories' column names), then
+   .list-card-rows split by hairlines. Rows keep their own padding. */
+
+.list-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.list-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  box-sizing: border-box;
+  min-height: 2.875rem;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  border-radius: 9px 9px 0 0;
+  background: var(--bg-subtle);
+}
+
+.list-card-header h2 {
+  margin: 0;
+  font-size: var(--text-md);
+}
+
+.list-card-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.list-card-rows > li + li {
+  border-top: 1px solid var(--border);
+}
+
+.list-card-rows > li:hover {
+  background: var(--bg-subtle);
+}
+
+/* The hover background stays inside the card's rounded corners. */
+.list-card-rows > li:last-child {
+  border-radius: 0 0 9px 9px;
+}
+
+/* A message in place of the rows, such as a failure. */
+.list-card-body {
+  padding: var(--space-4);
+}
+
+.list-card-body > .error,
+.list-card-body > .warning {
+  margin: 0;
+}
+
+/* A warning with its fix at the end, such as Re-link. */
+.list-card-body > .warning {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.list-card-body > .warning p {
+  flex: 1 1 12rem;
+}
+
+.list-card-body > .warning .notice-icon {
+  margin-top: 0;
+}
+
+/* A short line in place of the rows, such as a filter that matches none. */
+.list-card-note {
+  margin: 0;
+  padding: var(--space-6) var(--space-4);
+  color: var(--fg-subtle);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+/* A line under the card, such as where to manage access. */
+.list-card-footer {
+  margin: var(--space-2) 0 0;
+  color: var(--fg-subtle);
+  font-size: var(--text-sm);
+}
+
+/* The square icon that leads a row, such as private or public. */
+.row-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg-subtle);
+}
+
 /* An empty list (a short explanation and the action that fills it), and the
    same frame while the list loads. */
 
@@ -435,9 +558,17 @@ main.docs > .error {
   text-align: center;
 }
 
-.empty-state h2 {
+.empty-state h1,
+.empty-state h2,
+.empty-state h3 {
   margin: var(--space-1) 0 0;
   font-size: var(--text-md);
+  font-weight: 600;
+}
+
+/* A page that is only an empty state, such as Page not found. */
+.empty-state h1 {
+  font-size: var(--text-lg);
 }
 
 .empty-state p {
@@ -472,6 +603,13 @@ main.docs > .error {
 
 .empty-state.loading p {
   color: inherit;
+}
+
+/* An empty or loading list inside a .list-card: the card is the frame. */
+.list-card > .empty-state,
+.list-card > .empty-state.loading {
+  border: none;
+  border-radius: 0 0 9px 9px;
 }
 
 /* A fact in monospace, such as a branch or a commit. */

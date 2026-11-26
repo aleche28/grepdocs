@@ -57,10 +57,10 @@ export function RepositoryRow({
   const displayName = providerDisplayName(provider, repository)
 
   return (
-    <li className="repository-entry">
+    <li>
       <div className="entry-main">
         <div className="entry-name">
-          <span className="entry-icon">
+          <span className="row-icon">
             {repository.is_private ? <Lock size={14} /> : <Globe size={14} />}
             <span className="visually-hidden">
               {repository.is_private ? 'Private' : 'Public'}

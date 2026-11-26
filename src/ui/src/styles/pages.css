@@ -20,29 +20,112 @@
   font-size: var(--text-sm);
 }
 
-/* AccountsPage */
+/* LoginPage: one card in the middle of the window, without the app shell. */
+
+main.login {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  max-width: none;
+  min-height: 100dvh;
+  padding: var(--space-6) var(--space-4);
+  background: var(--bg-subtle);
+}
+
+.login-card {
+  display: grid;
+  box-sizing: border-box;
+  width: min(23rem, 100%);
+  padding: var(--space-8) var(--space-6) var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-6);
+  font-weight: 600;
+}
+
+.login-card h1 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+}
+
+.login-lede {
+  margin: 0 0 var(--space-6);
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+.login-card .button {
+  height: 2.375rem;
+}
+
+.login-note {
+  margin: var(--space-4) 0 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+}
+
+/* AccountsPage: a .list-card per provider, with a row per account (name,
+   status, actions). */
 
 .provider-section {
-  margin-bottom: var(--space-8);
+  margin-bottom: var(--space-6);
 }
 
-.account-list {
-  margin: 0 0 var(--space-4);
-  padding: 0;
-  list-style: none;
+.provider-note {
+  margin: 0;
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
 }
 
+/* The status and actions columns have fixed widths, so the pills line up
+   from row to row. */
 .account-row {
   display: grid;
-  gap: var(--space-2);
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--border);
+  grid-template-columns: minmax(0, 1fr) 8.5rem 7.5rem;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  min-height: 3.75rem;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-4);
 }
 
-.account-identity {
+.account-name {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--space-4);
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.account-text {
+  display: grid;
+  min-width: 0;
+}
+
+.account-text strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.account-meta {
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+}
+
+.account-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 /* Fades out once, after a link attempt changed this row. */
@@ -63,44 +146,150 @@
   }
 }
 
+/* Name and actions on the first line, the status below the name. */
+@media (max-width: 40rem) {
+  .account-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .account-actions {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .account-status {
+    grid-column: 1 / -1;
+    padding-left: 2.375rem;
+  }
+}
+
 /* TrackRepositoryPage */
 
-.filter input {
-  min-width: 16rem;
+.track-section {
+  margin-bottom: var(--space-8);
 }
 
-.repository-list {
-  margin: 0 0 var(--space-4);
-  padding: 0;
-  list-style: none;
+.track-section h2 {
+  margin-top: 0;
 }
 
-.repository-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto 6rem;
+.account-picker {
+  display: flex;
   align-items: center;
-  gap: var(--space-2) var(--space-4);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border);
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-sm);
 }
 
-.repository-row a {
+.account-picker-label {
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+.account-picker strong {
   overflow-wrap: anywhere;
 }
 
-.public-repository label,
-.public-repository input {
-  min-width: 16rem;
+.account-picker select {
+  min-width: 0;
+  max-width: 20rem;
 }
 
-/* RepositoriesPage: a grid of rows (Repository, Branch, Status, Auto-sync,
-   actions), stacked into cards on a narrow screen. */
+.track-filter {
+  flex: 0 1 16rem;
+}
 
-.repository-table {
+.track-filter input {
+  width: 100%;
+}
+
+/* Name, default branch and action: the branch and action columns have fixed
+   widths, so they line up from row to row. */
+.track-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 11rem) 6.5rem;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  min-height: 3.25rem;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-4);
+}
+
+.track-name {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.track-name a {
+  min-width: 0;
+  color: var(--fg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.track-name a:hover {
+  color: var(--fg);
+}
+
+.track-branch {
+  min-width: 0;
+}
+
+.track-action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.public-repository {
+  padding: var(--space-4);
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--bg);
 }
+
+.public-repository-control {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.public-repository-control input {
+  flex: 0 1 24rem;
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+
+/* The filter takes the header's width, and each row puts its name and
+   action on the first line, the branch below the name. */
+@media (max-width: 40rem) {
+  .track-filter {
+    flex-basis: 100%;
+  }
+
+  .track-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .track-action {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .track-branch {
+    grid-column: 1 / -1;
+    padding-left: 2.375rem;
+  }
+
+  .public-repository-control input {
+    flex: 1 1 auto;
+  }
+}
+
+/* RepositoriesPage: a .list-card whose rows are a grid (Repository, Branch,
+   Status, Auto-sync, actions), stacked into cards on a narrow screen. */
 
 .entry-columns,
 .entry-main {
@@ -123,28 +312,6 @@
   font-weight: 500;
 }
 
-.repository-entries {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.repository-entry {
-  border-top: 1px solid var(--border);
-}
-
-.repository-entry:first-child {
-  border-top: none;
-}
-
-.repository-entry:hover {
-  background: var(--bg-subtle);
-}
-
-.repository-entry:last-child {
-  border-radius: 0 0 9px 9px;
-}
-
 .entry-main {
   min-height: 3.75rem;
 }
@@ -160,19 +327,6 @@
   align-items: center;
   gap: 0.625rem;
   min-width: 0;
-}
-
-.entry-icon {
-  display: grid;
-  flex: none;
-  place-items: center;
-  box-sizing: border-box;
-  width: 1.75rem;
-  height: 1.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--fg-subtle);
 }
 
 .entry-text {
@@ -434,22 +588,8 @@ button.switcher-button:hover:enabled {
 
 /* DocumentTree */
 
-.tree-filter {
-  position: relative;
-}
-
-.tree-filter svg {
-  position: absolute;
-  top: 50%;
-  left: 0.625rem;
-  color: var(--fg-subtle);
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
 .tree-filter input {
   width: 100%;
-  padding-left: 1.875rem;
   border-color: var(--border);
 }
 

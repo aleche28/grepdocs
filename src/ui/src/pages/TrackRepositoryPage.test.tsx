@@ -37,16 +37,19 @@ describe('TrackRepositoryPage accounts', () => {
     })
     renderTrackPage()
 
-    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(screen.getByText('Loading accounts…')).toBeInTheDocument()
     const rows = await findRows()
     expect(screen.getByText('@octocat')).toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     expect(rows).toHaveLength(2)
-    expect(rows[0]).toHaveTextContent('acme/docsPublicmain')
-    expect(rows[1]).toHaveTextContent('acme/handbookPrivatetrunk')
-    expect(
-      within(rows[0]).getByRole('link', { name: 'acme/docs' }),
-    ).toHaveAttribute('href', 'https://github.com/acme/docs')
+    expect(rows[0]).toHaveTextContent('Publicacme/docsDefault branch main')
+    expect(rows[1]).toHaveTextContent(
+      'Privateacme/handbookDefault branch trunk',
+    )
+    const link = within(rows[0]).getByRole('link', { name: 'acme/docs' })
+    expect(link).toHaveAttribute('href', 'https://github.com/acme/docs')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
     expect(requests).toContain(
       'GET /api/accounts/github/repositories?account_id=3',
     )
@@ -129,10 +132,37 @@ describe('TrackRepositoryPage accounts', () => {
     expect(screen.getByText('@work-bot')).toBeInTheDocument()
   })
 
+  test('says the repositories are loading, under the account', async () => {
+    mockTrackApi({ accounts: [account()] })
+    server.use(
+      http.get(
+        apiUrl('/accounts/github/repositories'),
+        () => new Promise<Response>(() => {}),
+      ),
+    )
+    renderTrackPage()
+
+    expect(await screen.findByText('Loading repositories…')).toBeInTheDocument()
+    expect(screen.getByText('@octocat')).toBeInTheDocument()
+  })
+
+  test('asks for one of several accounts', async () => {
+    mockTrackApi({ accounts: [account(), work] })
+    renderTrackPage()
+
+    expect(
+      await screen.findByText('Choose an account to see its repositories.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('list')).not.toBeInTheDocument()
+  })
+
   test('sends a user without accounts to the accounts page', async () => {
     mockTrackApi({ accounts: [] })
     renderTrackPage()
 
+    expect(
+      await screen.findByRole('heading', { name: 'No linked accounts' }),
+    ).toBeInTheDocument()
     expect(
       await screen.findByText(
         /Link a GitHub account to track its repositories/,
@@ -185,7 +215,9 @@ describe('TrackRepositoryPage list', () => {
     renderTrackPage()
 
     const rows = await findRows()
-    expect(await within(rows[1]).findByText('Tracked')).toBeInTheDocument()
+    expect(await within(rows[1]).findByText('Tracked')).toHaveClass(
+      'status-pill',
+    )
     expect(within(rows[1]).queryByRole('button')).not.toBeInTheDocument()
     expect(
       within(rows[0]).getByRole('button', { name: 'Track acme/docs' }),

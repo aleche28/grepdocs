@@ -71,8 +71,12 @@ function failWith(method: 'get' | 'delete', path: string, status: number) {
 
 async function openDialog(name = '@octocat') {
   const rendered = renderAccountsPage()
-  const trigger = await screen.findByRole('button', { name: `Unlink ${name}` })
+  // Unlink is in the row's menu, which gives focus back to its button.
+  const trigger = await screen.findByRole('button', {
+    name: `More actions for ${name}`,
+  })
   await rendered.user.click(trigger)
+  await rendered.user.click(screen.getByRole('button', { name: 'Unlink' }))
   const dialog = await screen.findByRole('dialog', { name: `Unlink ${name}?` })
   return { ...rendered, trigger, dialog: within(dialog), dialogElement: dialog }
 }
@@ -282,6 +286,7 @@ describe('AccountsPage unlink dialog closed by the browser', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
     )
     await user.click(trigger)
+    await user.click(screen.getByRole('button', { name: 'Unlink' }))
     expect(
       await screen.findByRole('dialog', { name: 'Unlink @octocat?' }),
     ).toBeVisible()

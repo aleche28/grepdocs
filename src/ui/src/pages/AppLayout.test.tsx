@@ -4,6 +4,7 @@ import { Outlet } from 'react-router'
 import { describe, expect, test } from 'vitest'
 import type { User } from '../api/auth.ts'
 import { apiUrl } from '../api/client.ts'
+import { gate } from '../test/helpers.ts'
 import { renderRoute } from '../test/renderRoute.tsx'
 import { server } from '../test/server.ts'
 import { AppLayout, type LayoutHandle } from './AppLayout.tsx'
@@ -25,6 +26,29 @@ function renderLayout(user: User = ada) {
     routes: [{ path: '/login', element: <p>Login page</p> }],
   })
 }
+
+describe('AppLayout session', () => {
+  test('says it is loading until the user is known, without the shell', async () => {
+    const { released, release } = gate()
+    server.use(
+      http.get(apiUrl('/users/me'), async () => {
+        await released
+        return HttpResponse.json(ada)
+      }),
+    )
+    renderRoute({
+      path: '/',
+      element: <AppLayout />,
+      children: [{ index: true, element: <p>Home</p> }],
+    })
+
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
+    release()
+    expect(await screen.findByText('Home')).toBeInTheDocument()
+    expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
+  })
+})
 
 describe('AppLayout user menu', () => {
   test('shows the signed-in user and opens on click', async () => {

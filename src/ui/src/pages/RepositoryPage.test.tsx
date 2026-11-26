@@ -273,42 +273,55 @@ describe('RepositoryPage', () => {
     expect(directory('docs')).not.toHaveAttribute('open')
   })
 
-  test.each<[SyncStatus, string | RegExp, string | null]>([
+  test.each<[SyncStatus, string, string | RegExp, string | null]>([
     [
       'pending',
+      'Not synced yet',
       "acme/docs hasn't been synced yet.",
       'Sync it from Repositories',
     ],
     [
       'queued',
+      'Syncing',
       'acme/docs is syncing. Its documents appear here when the sync ends.',
       null,
     ],
     [
       'running',
+      'Syncing',
       'acme/docs is syncing. Its documents appear here when the sync ends.',
       null,
     ],
-    ['failed', /^The last sync of acme\/docs failed\./, 'See what went wrong'],
-    ['ok', /^There are no Markdown files on branch/, null],
-  ])('says why there are no documents when %s', async (status, text, link) => {
-    mockRepositoriesApi({
-      repositories: [repository({ id: 12, sync_status: status })],
-    })
-    mockDocumentsApi([])
-    renderRepositoryPage('/repositories/12')
+    [
+      'failed',
+      'Last sync failed',
+      /^The last sync of acme\/docs failed\./,
+      'See what went wrong',
+    ],
+    ['ok', 'No documents', /^There are no Markdown files on branch/, null],
+  ])(
+    'says why there are no documents when %s',
+    async (status, title, text, link) => {
+      mockRepositoriesApi({
+        repositories: [repository({ id: 12, sync_status: status })],
+      })
+      mockDocumentsApi([])
+      renderRepositoryPage('/repositories/12')
 
-    const message = await screen.findByText(text)
-    expect(
-      screen.queryByRole('navigation', { name: treeName }),
-    ).not.toBeInTheDocument()
-    if (link) {
-      expect(within(message).getByRole('link', { name: link })).toHaveAttribute(
-        'href',
-        '/repositories',
-      )
-    }
-  })
+      const message = await screen.findByText(text)
+      expect(
+        screen.getByRole('heading', { level: 2, name: title }),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByRole('navigation', { name: treeName }),
+      ).not.toBeInTheDocument()
+      if (link) {
+        expect(
+          within(message).getByRole('link', { name: link }),
+        ).toHaveAttribute('href', '/repositories')
+      }
+    },
+  )
 
   test('shows the documents of the last good sync while a sync fails', async () => {
     mockRepositoriesApi({
