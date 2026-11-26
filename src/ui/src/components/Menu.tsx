@@ -14,8 +14,8 @@ interface MenuProps {
 // A button that shows a panel of actions below it. It is a disclosure
 // (aria-expanded), not an ARIA menu: the actions are ordinary buttons and
 // links, reached with Tab, so it needs no arrow-key handling. The panel
-// closes on Esc (focus goes back to the button), on a click outside, when
-// focus leaves it, and after an action in it is clicked.
+// closes on Esc and after an action in it is clicked (focus goes back to the
+// button both times), on a click outside, and when focus leaves it.
 export function Menu({
   trigger,
   label,
@@ -76,10 +76,14 @@ export function Menu({
         <div
           id={panelId}
           className="menu-panel"
-          // Bubbles up after the action's own onClick has run.
+          // Bubbles up after the action's own onClick has run. Focus goes
+          // back to the button: the action unmounts with the panel. It is
+          // moved before the render, so a Dialog the action opens reads the
+          // button as its opener, and returns focus there when it closes.
           onClick={(event) => {
             if ((event.target as Element).closest('a, button')) {
               setOpen(false)
+              triggerRef.current?.focus()
             }
           }}
         >
