@@ -20,29 +20,58 @@
   font-size: var(--text-sm);
 }
 
-/* AccountsPage */
+/* AccountsPage: a .list-card per provider, with a row per account (name,
+   status, actions). */
 
 .provider-section {
-  margin-bottom: var(--space-8);
+  margin-bottom: var(--space-6);
 }
 
-.account-list {
-  margin: 0 0 var(--space-4);
-  padding: 0;
-  list-style: none;
+.provider-note {
+  margin: 0;
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
 }
 
+/* The status and actions columns have fixed widths, so the pills line up
+   from row to row. */
 .account-row {
   display: grid;
-  gap: var(--space-2);
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--border);
+  grid-template-columns: minmax(0, 1fr) 8.5rem 7.5rem;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  min-height: 3.75rem;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-4);
 }
 
-.account-identity {
+.account-name {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--space-4);
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.account-text {
+  display: grid;
+  min-width: 0;
+}
+
+.account-text strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.account-meta {
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+}
+
+.account-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 /* Fades out once, after a link attempt changed this row. */
@@ -60,6 +89,24 @@
   .account-row.highlighted {
     animation: none;
     background: var(--accent-soft);
+  }
+}
+
+/* Name and actions on the first line, the status below the name. */
+@media (max-width: 40rem) {
+  .account-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .account-actions {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .account-status {
+    grid-column: 1 / -1;
+    padding-left: 2.375rem;
   }
 }
 

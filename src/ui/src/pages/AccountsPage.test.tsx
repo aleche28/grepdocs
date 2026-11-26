@@ -20,9 +20,9 @@ describe('AccountsPage list', () => {
     mockAccountsApi({ accounts: [account()] })
     renderAccountsPage()
 
-    expect(screen.getByText('Loading…')).toBeInTheDocument()
+    expect(screen.getByText('Loading accounts…')).toBeInTheDocument()
     expect(await screen.findByText('@octocat')).toBeInTheDocument()
-    expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
+    expect(screen.queryByText('Loading accounts…')).not.toBeInTheDocument()
   })
 
   test('lists each account by login with its link date', async () => {
@@ -62,31 +62,108 @@ describe('AccountsPage list', () => {
     expect(section.getByRole('listitem')).not.toHaveTextContent('Linked')
   })
 
-  test('re-links an account by its ID, as a secondary action', async () => {
+  test('counts the linked accounts', async () => {
+    mockAccountsApi({
+      accounts: [account(), account({ id: 4, provider_login: 'work-bot' })],
+    })
+    renderAccountsPage()
+
+    expect(await screen.findByText('2 linked accounts')).toBeInTheDocument()
+  })
+
+  test('says one linked account, and nothing without any', async () => {
+    mockAccountsApi({ accounts: [account()] })
+    const { unmount } = renderAccountsPage()
+    expect(await screen.findByText('1 linked account')).toBeInTheDocument()
+    unmount()
+
+    mockAccountsApi({ accounts: [] })
+    renderAccountsPage()
+    await findSection('GitHub')
+    expect(screen.queryByText(/linked account$/)).not.toBeInTheDocument()
+  })
+
+  test('marks an account whose access works', async () => {
     mockAccountsApi({ accounts: [account()] })
     renderAccountsPage()
 
-    const relink = await screen.findByRole('link', { name: 'Re-link @octocat' })
+    const section = await findSection('GitHub')
+    expect(section.getByText('Connected')).toBeInTheDocument()
+    expect(section.queryByText('Access expired')).not.toBeInTheDocument()
+    expect(screen.queryByText(/needs? re-linking/)).not.toBeInTheDocument()
+  })
+
+  test('re-links and unlinks from the menu', async () => {
+    mockAccountsApi({ accounts: [account()] })
+    const { user } = renderAccountsPage()
+
+    const section = await findSection('GitHub')
+    const more = section.getByRole('button', {
+      name: 'More actions for @octocat',
+    })
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    expect(section.queryByRole('link', { name: /Re-link/ })).toBeNull()
+
+    await user.click(more)
+
+    expect(more).toHaveAttribute('aria-expanded', 'true')
+    expect(section.getByRole('link', { name: 'Re-link' })).toHaveAttribute(
+      'href',
+      '/api/accounts/github/login?account_id=3',
+    )
+    expect(section.getByRole('button', { name: 'Unlink' })).toHaveClass(
+      'menu-danger',
+    )
+
+    await user.keyboard('{Escape}')
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    expect(more).toHaveFocus()
+  })
+
+  test('puts the re-link an expired account needs on its row, as the main action', async () => {
+    mockAccountsApi({ accounts: [account({ needs_relink: true })] })
+    const { user } = renderAccountsPage()
+
+    const section = await findSection('GitHub')
+    expect(section.getByText('Access expired')).toBeInTheDocument()
+    expect(screen.getByText(/^1 account needs re-linking/)).toHaveTextContent(
+      "1 account needs re-linking: repositories that use it can't sync until you do.",
+    )
+    const relink = section.getByRole('link', { name: 'Re-link @octocat' })
+    expect(relink).toHaveClass('primary')
     expect(relink).toHaveAttribute(
       'href',
       '/api/accounts/github/login?account_id=3',
     )
-    expect(relink).not.toHaveClass('primary')
-    expect(
-      screen.queryByText('Access expired. Re-link to keep syncing.'),
-    ).not.toBeInTheDocument()
+
+    // Not twice: the menu keeps only Unlink.
+    await user.click(
+      section.getByRole('button', { name: 'More actions for @octocat' }),
+    )
+    expect(section.getAllByRole('link', { name: /Re-link/ })).toHaveLength(1)
+    expect(section.getByRole('button', { name: 'Unlink' })).toBeInTheDocument()
   })
 
-  test('warns about an account that needs re-linking, and makes re-link primary', async () => {
-    mockAccountsApi({ accounts: [account({ needs_relink: true })] })
+  test('counts the accounts that need re-linking', async () => {
+    mockAccountsApi({
+      accounts: [
+        account({ needs_relink: true }),
+        account({ id: 4, provider_login: 'work-bot', needs_relink: true }),
+        // Cannot be re-linked, so not counted.
+        account({
+          id: 7,
+          provider: 'gitlab',
+          provider_login: 'old-me',
+          needs_relink: true,
+        }),
+      ],
+    })
     renderAccountsPage()
 
-    const section = await findSection('GitHub')
     expect(
-      section.getByText('Access expired. Re-link to keep syncing.'),
-    ).toBeInTheDocument()
-    expect(section.getByRole('link', { name: 'Re-link @octocat' })).toHaveClass(
-      'primary',
+      await screen.findByText(/^2 accounts need re-linking/),
+    ).toHaveTextContent(
+      "2 accounts need re-linking: repositories that use them can't sync until you do.",
     )
   })
 
@@ -105,6 +182,8 @@ describe('AccountsPage list', () => {
     renderAccountsPage()
 
     const section = await findSection('GitHub')
+    // Only the empty state's: the card header drops its own.
+    expect(section.getAllByRole('link', { name: /^Link / })).toHaveLength(1)
     expect(
       section.getByText(
         'No GitHub account linked yet. Link one to track your repositories.',
@@ -164,8 +243,24 @@ describe('AccountsPage list', () => {
     expect(section.getByText('@old-me')).toBeInTheDocument()
     expect(section.queryByRole('link')).not.toBeInTheDocument()
     expect(
+      section.getByText(
+        'No longer configured: its accounts can only be unlinked.',
+      ),
+    ).toBeInTheDocument()
+    expect(
       screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent),
     ).toEqual(['GitHub', 'gitlab'])
+  })
+
+  test('explains a server without providers', async () => {
+    mockAccountsApi({ providers: [] })
+    renderAccountsPage()
+
+    expect(
+      await screen.findByRole('heading', { name: 'No git providers set up' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('region')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })
 
   test.each([
@@ -223,7 +318,7 @@ describe('AccountsPage list', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Try again' }))
 
-    expect(await screen.findByText('Loading…')).toBeInTheDocument()
+    expect(await screen.findByText('Loading accounts…')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     releaseRetry()
     expect(await screen.findByText('@octocat')).toBeInTheDocument()

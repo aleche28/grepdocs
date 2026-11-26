@@ -48,7 +48,7 @@ export function UnlinkDialog({
       title={`Unlink ${name}?`}
       busy={unlink.isPending}
       onClose={onClose}
-      // Cancel rather than the destructive action, which is first.
+      // Cancel rather than the destructive action.
       initialFocus={cancelRef}
       fallbackFocus={fallbackFocus}
     >
@@ -66,19 +66,19 @@ export function UnlinkDialog({
       <div className="actions">
         <button
           type="button"
-          className="danger"
-          onClick={confirm}
-          disabled={unlink.isPending}
-        >
-          {unlink.isPending ? 'Unlinking…' : 'Unlink'}
-        </button>
-        <button
-          type="button"
           ref={cancelRef}
           onClick={onClose}
           disabled={unlink.isPending}
         >
           Cancel
+        </button>
+        <button
+          type="button"
+          className="danger"
+          onClick={confirm}
+          disabled={unlink.isPending}
+        >
+          {unlink.isPending ? 'Unlinking…' : 'Unlink'}
         </button>
       </div>
     </Dialog>
@@ -95,7 +95,7 @@ interface ImpactLineProps {
 // failed to load: it never blocks unlinking.
 function ImpactLine({ accountId, repositories, isPending }: ImpactLineProps) {
   if (isPending) {
-    return <p className="muted">Checking tracked repositories…</p>
+    return <p className="dialog-lede">Checking tracked repositories…</p>
   }
   if (!repositories) {
     return null
@@ -103,10 +103,12 @@ function ImpactLine({ accountId, repositories, isPending }: ImpactLineProps) {
 
   const count = repositories.filter((r) => r.account_id === accountId).length
   if (count === 0) {
-    return <p>No tracked repositories use this account.</p>
+    return (
+      <p className="dialog-lede">No tracked repositories use this account.</p>
+    )
   }
   return (
-    <p>
+    <p className="dialog-lede">
       {count === 1
         ? '1 tracked repository uses this account. It stays'
         : `${count} tracked repositories use this account. They stay`}{' '}
