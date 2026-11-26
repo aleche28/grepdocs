@@ -111,7 +111,7 @@ export function RepositoriesPage() {
               </p>
             </div>
           )}
-          <div className="repository-table">
+          <div className="list-card">
             {/* Hidden from screen readers: each row labels its own cells. */}
             <div className="entry-columns" aria-hidden="true">
               <span>Repository</span>
@@ -119,7 +119,7 @@ export function RepositoriesPage() {
               <span>Status</span>
               <span>Auto-sync</span>
             </div>
-            <ul className="repository-entries">
+            <ul className="list-card-rows">
               {sorted.map((repository) => (
                 <RepositoryRow
                   key={repository.id}

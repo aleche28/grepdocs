@@ -93,14 +93,8 @@
   min-width: 16rem;
 }
 
-/* RepositoriesPage: a grid of rows (Repository, Branch, Status, Auto-sync,
-   actions), stacked into cards on a narrow screen. */
-
-.repository-table {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg);
-}
+/* RepositoriesPage: a .list-card whose rows are a grid (Repository, Branch,
+   Status, Auto-sync, actions), stacked into cards on a narrow screen. */
 
 .entry-columns,
 .entry-main {
@@ -123,28 +117,6 @@
   font-weight: 500;
 }
 
-.repository-entries {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.repository-entry {
-  border-top: 1px solid var(--border);
-}
-
-.repository-entry:first-child {
-  border-top: none;
-}
-
-.repository-entry:hover {
-  background: var(--bg-subtle);
-}
-
-.repository-entry:last-child {
-  border-radius: 0 0 9px 9px;
-}
-
 .entry-main {
   min-height: 3.75rem;
 }
@@ -160,19 +132,6 @@
   align-items: center;
   gap: 0.625rem;
   min-width: 0;
-}
-
-.entry-icon {
-  display: grid;
-  flex: none;
-  place-items: center;
-  box-sizing: border-box;
-  width: 1.75rem;
-  height: 1.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--fg-subtle);
 }
 
 .entry-text {
@@ -434,22 +393,8 @@ button.switcher-button:hover:enabled {
 
 /* DocumentTree */
 
-.tree-filter {
-  position: relative;
-}
-
-.tree-filter svg {
-  position: absolute;
-  top: 50%;
-  left: 0.625rem;
-  color: var(--fg-subtle);
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
 .tree-filter input {
   width: 100%;
-  padding-left: 1.875rem;
   border-color: var(--border);
 }
 
