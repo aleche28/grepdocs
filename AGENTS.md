@@ -57,7 +57,8 @@ commands from `src/ui`. The Makefile at the repo root wraps them and handles the
 
 - The `ui-*` targets, and `make ci` (it runs `ui-ci`), need `node_modules`: run `make ui-install`
   once, and again after `package-lock.json` changes.
-- The dev container has no Docker CLI on purpose: run `make infra-*` on the host.
+- The dev container runs its own Docker daemon (Docker-in-Docker), not the host's: `make infra-*`
+  inside it starts a separate copy of the infra. Run `make infra-*` on the host.
 - Health check: <http://localhost:3000/api/ping> returns `pong`.
 
 ## Rules most tasks need

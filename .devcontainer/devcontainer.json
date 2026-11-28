@@ -10,7 +10,11 @@
   "features": {
     // nvm only: post-create.sh installs the Node version in src/ui/.nvmrc, the file CI reads
     "ghcr.io/devcontainers/features/node:1": { "version": "none" },
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    // A Docker daemon of its own, not the host's socket: agents in the container never reach the
+    // host daemon. Needs a privileged container (the feature sets it). Docker CE, not Moby: Moby has
+    // no packages for Debian trixie, the base image's release.
+    "ghcr.io/devcontainers/features/docker-in-docker:4": { "moby": false }
   },
 
   "postCreateCommand": "bash .devcontainer/post-create.sh",
