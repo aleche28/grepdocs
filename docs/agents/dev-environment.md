@@ -34,8 +34,13 @@ Dev container rules worth preserving:
   directory, so its login survives a rebuild too. Keep the native installer rather than the
   `claude-code` dev container feature: the feature needs npm at build time, when the image has
   only nvm, and would install a second, outdated Node (details in `post-create.sh`).
-- The image has no Docker CLI or socket on purpose: it keeps agents running inside the container away
-  from the host's Docker daemon. Run `make infra-*` on the host.
+- Docker comes from the `docker-in-docker` feature: the container runs its own daemon (Docker CE,
+  since Moby has no trixie packages, hence `"moby": false`), and is privileged for it. Never mount
+  the host's `/var/run/docker.sock` or switch to `docker-outside-of-docker`: that would give agents
+  running inside the container the host's Docker daemon, which is root on the host.
+- That inner daemon is not the one running the infra: `make infra-*` inside the container starts a
+  second, separate Postgres/Redis/pgAdmin, while the app reaches the compose ones through
+  `DATABASE_URL`/`REDIS_ADDR`. Manage the real infra with `make infra-*` on the host.
 Health check: <http://localhost:3000/api/ping> returns `pong`.
 
 Interactive API docs (Swagger UI) are at <http://localhost:3000/api/docs>, mounted only when `ENV`

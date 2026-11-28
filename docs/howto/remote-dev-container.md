@@ -71,8 +71,9 @@ Below, `<host>` is the remote machine's name (with Tailscale's MagicDNS, its mac
 - **Those ports listen on every interface of the remote machine**, with the default passwords.
   Reachable only over the tailnet, that is fine; if the machine also has a public or shared-LAN
   interface, firewall them or set `POSTGRES_PASSWORD` and `PGADMIN_PASSWORD`.
-- **Run `make infra-*` in an SSH terminal on the remote machine**, not in the container: the image
-  has no Docker CLI on purpose. Opening the container already starts the infra.
+- **Run `make infra-*` in an SSH terminal on the remote machine**, not in the container: the
+  container's Docker is its own daemon (Docker-in-Docker), so there it would start a separate copy.
+  Opening the container already starts the infra.
 - **Git uses your local credentials**: VS Code forwards your ssh-agent and git credential helper
   through both hops, so pushing from the container needs no keys on the remote machine.
 
